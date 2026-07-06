@@ -186,25 +186,27 @@ static esp_err_t download_get_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    /*
+     * The controller UI is embedded into the firmware image. Always serve
+     * these core assets from flash so stale SPIFFS uploads cannot mask a
+     * successful firmware update.
+     */
+    if (strcmp(filename, "/") == 0 || strcmp(filename, "/index.html") == 0) {
+        return index_get_handler(req);
+    } else if (strcmp(filename, "/favicon.ico") == 0) {
+        return favicon_get_handler(req);
+    } else if (strcmp(filename, "/style.css") == 0) {
+        return style_get_handler(req);
+    } else if (strcmp(filename, "/script.js") == 0 || strcmp(filename, "/jquery-min.js") == 0) {
+        return script_get_handler(req);
+    }
+
     /* If name has trailing '/', respond with directory contents (serve index) */
     if (filename[strlen(filename) - 1] == '/' || strlen(filename) == 0) {
         return http_resp_dir_html(req, filepath);
     }
 
     if (stat(filepath, &file_stat) == -1) {
-        /* If file not present on SPIFFS check if URI
-         * corresponds to one of the hardcoded paths */
-        if (strcmp(filename, "/") == 0 || strcmp(filename, "/index.html") == 0) {
-            return index_get_handler(req);
-        } else if (strcmp(filename, "/favicon.ico") == 0) {
-            return favicon_get_handler(req);
-        } else if (strcmp(filename, "/style.css") == 0) {
-            return style_get_handler(req);
-				} else if (strcmp(filename, "/script.js") == 0) {
-            return script_get_handler(req);
-        } else if (strcmp(filename, "/jquery-min.js") == 0) {
-            return script_get_handler(req);
-        }
         ESP_LOGE(FILE_TAG, "Failed to stat file : %s", filepath);
         /* Respond with 404 Not Found */
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File does not exist");
