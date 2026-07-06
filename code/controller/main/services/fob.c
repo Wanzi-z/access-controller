@@ -71,9 +71,11 @@ int handle_fob_property (char * prop)
 
 void check_fobs (struct fob *fb)
 {
-	if (!fb->enable) return;
-
 	fb->isPressed = get_mcp_io(fb->pin);
+	if (!fb->enable) {
+		fb->prevPress = fb->isPressed;
+		return;
+	}
 
 	if (fb->latch && fb->isPressed != fb->prevPress) {
 		// Latch mode: FOB state directly controls lock state
@@ -108,11 +110,12 @@ int storeFobSettings()
 		strcpy(type, fobs[i].type);
 		sprintf(fobs[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"latch\": %s}}",
+			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s}}",
 			type,
 			i+1,
 			(fobs[i].enable) ? "true" : "false",
 			(fobs[i].alert) ? "true" : "false",
+			fobs[i].delay,
 			(fobs[i].latch) ? "true" : "false");
 
 		sprintf(fobs[i].key, "%s%d", type, i);
@@ -157,7 +160,9 @@ cJSON *fob_state_snapshot(void) {
         cJSON_AddNumberToObject(entry, "channel", fobs[i].channel);
         cJSON_AddBoolToObject(entry, "enable", fobs[i].enable);
         cJSON_AddBoolToObject(entry, "alert", fobs[i].alert);
+        cJSON_AddNumberToObject(entry, "delay", fobs[i].delay);
         cJSON_AddBoolToObject(entry, "latch", fobs[i].latch);
+        cJSON_AddBoolToObject(entry, "signal", fobs[i].isPressed);
         cJSON_AddItemToArray(array, entry);
     }
 
@@ -186,6 +191,10 @@ void handle_fob_message(cJSON * payload)
 		if (cJSON_GetObjectItem(payload,"alert")) {
 			val = cJSON_IsTrue(cJSON_GetObjectItem(payload,"alert"));
 			fobs[ch - 1].alert = val;
+		}
+
+		if (cJSON_GetObjectItem(payload,"delay")) {
+			fobs[ch - 1].delay = cJSON_GetObjectItem(payload,"delay")->valueint;
 		}
 
 		if (cJSON_GetObjectItem(payload,"latch")) {

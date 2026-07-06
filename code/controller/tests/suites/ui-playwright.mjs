@@ -134,8 +134,10 @@ export default async function run(api, report) {
     const getState = async () => (await api.getState()).exits;
     await uiToggleTest('UI: Exit CH1 enable toggle', 'enableExit_1', getState, 1, 'enable');
     await uiToggleTest('UI: Exit CH1 alert toggle', 'alertExit_1', getState, 1, 'alert');
+    await uiToggleTest('UI: Exit CH1 latch toggle', 'latchExit_1', getState, 1, 'latch');
     await uiToggleTest('UI: Exit CH2 enable toggle', 'enableExit_2', getState, 2, 'enable');
     await uiToggleTest('UI: Exit CH2 alert toggle', 'alertExit_2', getState, 2, 'alert');
+    await uiToggleTest('UI: Exit CH2 latch toggle', 'latchExit_2', getState, 2, 'latch');
   }
 
   // 7. Exit delay (CH1)
@@ -178,13 +180,50 @@ export default async function run(api, report) {
     await uiToggleTest('UI: Fob CH2 latch toggle', 'latchFob_2', getState, 2, 'latch');
   }
 
+  // 8b. Fob delay (CH1)
+  {
+    const t0 = Date.now();
+    try {
+      const delayInput = await page.$('#fobDelay_1');
+      const saveBtn = await page.$('#fobSave_1');
+      if (delayInput && saveBtn) {
+        const before = (await api.getState()).fobs.find(f => f.channel === 1)?.delay || 0;
+        await delayInput.fill('11');
+        await saveBtn.click();
+        await page.waitForTimeout(800);
+        const after = (await api.getState()).fobs.find(f => f.channel === 1)?.delay;
+        await delayInput.fill(String(before));
+        await saveBtn.click();
+
+        if (after === 11) {
+          report.pass('UI: Fob CH1 delay set to 11', '', Date.now() - t0);
+        } else {
+          report.fail('UI: Fob CH1 delay', `Expected 11, got ${after}`, Date.now() - t0);
+        }
+      } else {
+        report.skip('UI: Fob CH1 delay', 'Elements not found', Date.now() - t0);
+      }
+    } catch (err) {
+      report.fail('UI: Fob CH1 delay', err.message, Date.now() - t0);
+    }
+  }
+
   // 9. Keypad toggles
   {
     const getState = async () => (await api.getState()).keypads;
     await uiToggleTest('UI: Keypad CH1 enable toggle', 'enableKeypad_1', getState, 1, 'enable');
     await uiToggleTest('UI: Keypad CH1 alert toggle', 'alertKeypad_1', getState, 1, 'alert');
+    await uiToggleTest('UI: Keypad CH1 latch toggle', 'latchKeypad_1', getState, 1, 'latch');
     await uiToggleTest('UI: Keypad CH2 enable toggle', 'enableKeypad_2', getState, 2, 'enable');
     await uiToggleTest('UI: Keypad CH2 alert toggle', 'alertKeypad_2', getState, 2, 'alert');
+    await uiToggleTest('UI: Keypad CH2 latch toggle', 'latchKeypad_2', getState, 2, 'latch');
+  }
+
+  // 9b. Motion latch toggles
+  {
+    const getState = async () => (await api.getState()).motions;
+    await uiToggleTest('UI: Motion CH1 latch toggle', 'latchMotion_1', getState, 1, 'latch');
+    await uiToggleTest('UI: Motion CH2 latch toggle', 'latchMotion_2', getState, 2, 'latch');
   }
 
   // 10. Keypad user management (UI)

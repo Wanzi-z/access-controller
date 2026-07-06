@@ -217,7 +217,19 @@ body {
   padding: 6px 0;
 }
 
-.lock-status-label {
+.access-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(53, 240, 194, 0.04);
+}
+
+.lock-status-label,
+.access-status-label {
   font-size: 0.9rem;
   color: var(--color-muted);
 }

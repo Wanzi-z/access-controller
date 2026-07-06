@@ -15,6 +15,7 @@ struct exitButton
 	int count;
 	bool expired;
 	bool enable;
+	bool latch;
 	int delay;
 	int channel;
 	char settings[1000];
@@ -66,12 +67,13 @@ int storeExitSettings()
 		strcpy(type, exits[i].type);
 		sprintf(exits[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d}}",
+			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s}}",
 			type,
 			i+1,
 			(exits[i].enable) ? "true" : "false",
 			(exits[i].alert) ? "true" : "false",
-			exits[i].delay);
+			exits[i].delay,
+			(exits[i].latch) ? "true" : "false");
 
 		sprintf(exits[i].key, "%s%d", type, i);
 		storeSetting(exits[i].key, cJSON_Parse(exits[i].settings));
@@ -118,6 +120,8 @@ cJSON *exit_state_snapshot(void) {
         cJSON_AddBoolToObject(entry, "enable", exits[i].enable);
         cJSON_AddBoolToObject(entry, "alert", exits[i].alert);
         cJSON_AddNumberToObject(entry, "delay", exits[i].delay);
+        cJSON_AddBoolToObject(entry, "latch", exits[i].latch);
+        cJSON_AddBoolToObject(entry, "signal", exits[i].isPressed);
         cJSON_AddItemToArray(array, entry);
     }
 
@@ -153,13 +157,26 @@ void setArmDelay (int ch, int val)
 		if (exits[i].channel == ch) exits[i].delay = val;
 }
 
+void latchExit (int ch, bool val)
+{
+	for (int i=0; i < NUM_OF_EXITS; i++)
+		if (exits[i].channel == ch) exits[i].latch = val;
+}
+
 void check_exit (struct exitButton *ext)
 {
-	if (!ext->enable) return;
-
 	ext->isPressed = !get_io(ext->pin);
+	if (!ext->enable) {
+		ext->prevPress = ext->isPressed;
+		return;
+	}
 
-	if (ext->isPressed && !ext->prevPress) {
+	if (ext->latch && ext->isPressed != ext->prevPress) {
+		ESP_LOGI(TAG, "Exit button %d state changed to %s (latch mode)", ext->channel, ext->isPressed ? "active" : "inactive");
+		lock_set_action_source("exit_latch");
+		arm_lock(ext->channel, ext->isPressed, ext->alert);
+		start_exit_timer(ext, false);
+	} else if (!ext->latch && ext->isPressed && !ext->prevPress) {
 		ESP_LOGI(TAG, "Exit button %d pressed - disarming lock", ext->channel);
 		lock_set_action_source("exit_press");
 		arm_lock(ext->channel, false, ext->alert);
@@ -194,9 +211,14 @@ void handle_exit_message(cJSON * payload)
 	 		enableExit(ch, tmp);
 	 	}
 
-	 	if (cJSON_GetObjectItem(payload,"delay")) {
-	 		setArmDelay(ch, cJSON_GetObjectItem(payload,"delay")->valueint);
-	 	}
+		if (cJSON_GetObjectItem(payload,"delay")) {
+			setArmDelay(ch, cJSON_GetObjectItem(payload,"delay")->valueint);
+		}
+
+		if (cJSON_GetObjectItem(payload,"latch")) {
+			tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"latch"));
+			latchExit(ch, tmp);
+		}
 		storeExitSettings();
 	}
 
@@ -224,6 +246,7 @@ void exit_main()
 	exits[0].channel = 1;
 	exits[0].alert = false;
 	exits[0].enable = false;
+	exits[0].latch = false;
 	strcpy(exits[0].type, "exit");
 
 	exits[1].pin = USE_MCP23017 ? EXIT_BUTTON_MCP_IO_2 : EXIT_BUTTON_IO_2;
@@ -231,6 +254,7 @@ void exit_main()
 	exits[1].channel = 2;
 	exits[1].enable = false;
 	exits[1].alert = false;
+	exits[1].latch = false;
 	strcpy(exits[1].type, "exit");
 
 	restoreExitSettings();

@@ -187,6 +187,19 @@ const applyServerInfo = (server = {}) => {
   }
 };
 
+const applySignalDot = (elementId, value, activeText = 'Signal active', inactiveText = 'Signal inactive') => {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+
+  el.classList.remove('status-ok', 'status-alert');
+  if (typeof value === 'boolean') {
+    el.classList.add(value ? 'status-ok' : 'status-alert');
+    el.title = value ? activeText : inactiveText;
+  } else {
+    el.title = 'Signal state unknown';
+  }
+};
+
 const applyLockState = (locks = []) => {
   locks.forEach((lock) => {
     const ch = lock.channel;
@@ -206,26 +219,8 @@ const applyLockState = (locks = []) => {
     const contactState = ch === 1 ? lock.sense : lock.contact;
     const signalState = ch === 1 ? lock.contact : lock.sense;
 
-    if (contactStatusEl) {
-      if (typeof contactState === 'boolean') {
-        contactStatusEl.classList.remove('status-ok', 'status-alert');
-        contactStatusEl.classList.add(contactState ? 'status-ok' : 'status-alert');
-        contactStatusEl.title = contactState ? 'Contact closed' : 'Contact open';
-      } else {
-        contactStatusEl.classList.remove('status-ok', 'status-alert');
-        contactStatusEl.title = 'Contact state unknown';
-      }
-    }
-    if (senseStatusEl) {
-      if (typeof signalState === 'boolean') {
-        senseStatusEl.classList.remove('status-ok', 'status-alert');
-        senseStatusEl.classList.add(signalState ? 'status-ok' : 'status-alert');
-        senseStatusEl.title = signalState ? 'Signal active' : 'Signal inactive';
-      } else {
-        senseStatusEl.classList.remove('status-ok', 'status-alert');
-        senseStatusEl.title = 'Signal state unknown';
-      }
-    }
+    if (contactStatusEl) applySignalDot(`lockContact_${ch}`, contactState, 'Contact closed', 'Contact open');
+    if (senseStatusEl) applySignalDot(`lockSense_${ch}`, signalState);
   });
 };
 
@@ -234,11 +229,14 @@ const applyExitState = (exits = []) => {
     const ch = exit.channel;
     const enableEl = document.getElementById(`enableExit_${ch}`);
     const alertEl = document.getElementById(`alertExit_${ch}`);
+    const latchEl = document.getElementById(`latchExit_${ch}`);
     const delayEl = document.getElementById(`armDelay_${ch}`);
 
     if (enableEl) enableEl.checked = !!exit.enable;
     if (alertEl) alertEl.checked = !!exit.alert;
+    if (latchEl) latchEl.checked = !!exit.latch;
     if (delayEl) delayEl.value = exit.delay ?? 0;
+    applySignalDot(`exitSignal_${ch}`, exit.signal);
   });
 };
 
@@ -248,10 +246,13 @@ const applyFobState = (fobs = []) => {
     const enableEl = document.getElementById(`enableFob_${ch}`);
     const alertEl = document.getElementById(`alertFob_${ch}`);
     const latchEl = document.getElementById(`latchFob_${ch}`);
+    const delayEl = document.getElementById(`fobDelay_${ch}`);
 
     if (enableEl) enableEl.checked = !!fob.enable;
     if (alertEl) alertEl.checked = !!fob.alert;
     if (latchEl) latchEl.checked = !!fob.latch;
+    if (delayEl) delayEl.value = fob.delay ?? 4;
+    applySignalDot(`fobSignal_${ch}`, fob.signal);
   });
 };
 
@@ -260,11 +261,14 @@ const applyKeypadState = (keypads = []) => {
     const ch = pad.channel;
     const enableEl = document.getElementById(`enableKeypad_${ch}`);
     const alertEl = document.getElementById(`alertKeypad_${ch}`);
+    const latchEl = document.getElementById(`latchKeypad_${ch}`);
     const delayEl = document.getElementById(`keypadDelay_${ch}`);
 
     if (enableEl) enableEl.checked = !!pad.enable;
     if (alertEl) alertEl.checked = !!pad.alert;
+    if (latchEl) latchEl.checked = !!pad.latch;
     if (delayEl) delayEl.value = pad.delay ?? 0;
+    applySignalDot(`keypadSignal_${ch}`, pad.signal);
   });
 };
 
@@ -273,11 +277,14 @@ const applyMotionState = (motions = []) => {
     const ch = motion.channel;
     const enableEl = document.getElementById(`enableMotion_${ch}`);
     const alertEl = document.getElementById(`alertMotion_${ch}`);
+    const latchEl = document.getElementById(`latchMotion_${ch}`);
     const delayEl = document.getElementById(`motionDelay_${ch}`);
 
     if (enableEl) enableEl.checked = !!motion.enable;
     if (alertEl) alertEl.checked = !!motion.alert;
+    if (latchEl) latchEl.checked = !!motion.latch;
     if (delayEl) delayEl.value = motion.delay ?? 4;
+    applySignalDot(`motionSignal_${ch}`, motion.signal);
   });
 };
 
@@ -851,6 +858,7 @@ const setupExitHandlers = () => {
   [1, 2].forEach((ch) => {
     const enableEl = document.getElementById(`enableExit_${ch}`);
     const alertEl = document.getElementById(`alertExit_${ch}`);
+    const latchEl = document.getElementById(`latchExit_${ch}`);
     const saveBtn = document.getElementById(ch === 1 ? 'relock' : 'relock_2');
     const delayEl = document.getElementById(`armDelay_${ch}`);
 
@@ -862,6 +870,11 @@ const setupExitHandlers = () => {
     if (alertEl) {
       alertEl.addEventListener('change', (event) => {
         updateExit(ch, { alert: event.target.checked });
+      });
+    }
+    if (latchEl) {
+      latchEl.addEventListener('change', (event) => {
+        updateExit(ch, { latch: event.target.checked });
       });
     }
     if (saveBtn && delayEl) {
@@ -878,6 +891,8 @@ const setupFobHandlers = () => {
     const enableEl = document.getElementById(`enableFob_${ch}`);
     const alertEl = document.getElementById(`alertFob_${ch}`);
     const latchEl = document.getElementById(`latchFob_${ch}`);
+    const delayEl = document.getElementById(`fobDelay_${ch}`);
+    const saveBtn = document.getElementById(`fobSave_${ch}`);
 
     if (enableEl) {
       enableEl.addEventListener('change', (event) => {
@@ -894,6 +909,12 @@ const setupFobHandlers = () => {
         updateFob(ch, { latch: event.target.checked });
       });
     }
+    if (delayEl && saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const value = parseInt(delayEl.value, 10) || 0;
+        updateFob(ch, { delay: value });
+      });
+    }
   });
 };
 
@@ -901,6 +922,7 @@ const setupKeypadHandlers = () => {
   [1, 2].forEach((ch) => {
     const enableEl = document.getElementById(`enableKeypad_${ch}`);
     const alertEl = document.getElementById(`alertKeypad_${ch}`);
+    const latchEl = document.getElementById(`latchKeypad_${ch}`);
     const delayEl = document.getElementById(`keypadDelay_${ch}`);
     const saveBtn = document.getElementById(`keypadSave_${ch}`);
 
@@ -912,6 +934,11 @@ const setupKeypadHandlers = () => {
     if (alertEl) {
       alertEl.addEventListener('change', (event) => {
         updateKeypad(ch, { alert: event.target.checked });
+      });
+    }
+    if (latchEl) {
+      latchEl.addEventListener('change', (event) => {
+        updateKeypad(ch, { latch: event.target.checked });
       });
     }
     if (delayEl && saveBtn) {
@@ -927,6 +954,7 @@ const setupMotionHandlers = () => {
   [1, 2].forEach((ch) => {
     const enableEl = document.getElementById(`enableMotion_${ch}`);
     const alertEl = document.getElementById(`alertMotion_${ch}`);
+    const latchEl = document.getElementById(`latchMotion_${ch}`);
     const delayEl = document.getElementById(`motionDelay_${ch}`);
     const saveBtn = document.getElementById(`motionSave_${ch}`);
 
@@ -938,6 +966,11 @@ const setupMotionHandlers = () => {
     if (alertEl) {
       alertEl.addEventListener('change', (event) => {
         updateMotion(ch, { alert: event.target.checked });
+      });
+    }
+    if (latchEl) {
+      latchEl.addEventListener('change', (event) => {
+        updateMotion(ch, { latch: event.target.checked });
       });
     }
     if (delayEl && saveBtn) {

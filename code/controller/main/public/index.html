@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
   <header class="app-bar">
@@ -75,13 +75,21 @@
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_exit_1" value="Exit" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="exitSignal_1" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableExit_1">
-                <span>Enable exit button</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertExit_1">
-                <span>Exit button alert</span>
+                <span>Alert</span>
+              </label>
+              <label class="form-switch">
+                <input type="checkbox" id="latchExit_1">
+                <span>Latch</span>
               </label>
               <div class="input-row">
                 <label for="armDelay_1">Re-arm delay (seconds)</label>
@@ -93,13 +101,21 @@
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_keypad_1" value="Keypad" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="keypadSignal_1" class="status-dot" title="Keypad signal state" aria-label="Keypad signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableKeypad_1">
-                <span>Enable keypad</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertKeypad_1">
-                <span>Keypad alert</span>
+                <span>Alert</span>
+              </label>
+              <label class="form-switch">
+                <input type="checkbox" id="latchKeypad_1">
+                <span>Latch</span>
               </label>
               <div class="input-row">
                 <label for="keypadDelay_1">Re-arm delay (seconds)</label>
@@ -111,28 +127,47 @@
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_fob_1" value="FOB" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="fobSignal_1" class="status-dot" title="FOB signal state" aria-label="FOB signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableFob_1">
-                <span>Enable FOB button</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertFob_1">
-                <span>FOB alert</span>
+                <span>Alert</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="latchFob_1">
-                <span>FOB latch</span>
+                <span>Latch</span>
               </label>
+              <div class="input-row">
+                <label for="fobDelay_1">Re-arm delay (seconds)</label>
+                <div class="input-group">
+                  <input type="number" id="fobDelay_1" min="0" step="1" value="4">
+                  <button id="fobSave_1" type="button" class="secondary">Save</button>
+                </div>
+              </div>
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_motion_1" value="Motion" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="motionSignal_1" class="status-dot" title="Motion signal state" aria-label="Motion signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableMotion_1">
-                <span>Enable motion</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertMotion_1">
-                <span>Motion alert</span>
+                <span>Alert</span>
+              </label>
+              <label class="form-switch">
+                <input type="checkbox" id="latchMotion_1">
+                <span>Latch</span>
               </label>
               <div class="input-row">
                 <label for="motionDelay_1">Re-arm delay (seconds)</label>
@@ -175,13 +210,21 @@
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_exit_2" value="Exit" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="exitSignal_2" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableExit_2">
-                <span>Enable exit button</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertExit_2">
-                <span>Exit button alert</span>
+                <span>Alert</span>
+              </label>
+              <label class="form-switch">
+                <input type="checkbox" id="latchExit_2">
+                <span>Latch</span>
               </label>
               <div class="input-row">
                 <label for="armDelay_2">Re-arm delay (seconds)</label>
@@ -193,13 +236,21 @@
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_keypad_2" value="Keypad" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="keypadSignal_2" class="status-dot" title="Keypad signal state" aria-label="Keypad signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableKeypad_2">
-                <span>Enable keypad</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertKeypad_2">
-                <span>Keypad alert</span>
+                <span>Alert</span>
+              </label>
+              <label class="form-switch">
+                <input type="checkbox" id="latchKeypad_2">
+                <span>Latch</span>
               </label>
               <div class="input-row">
                 <label for="keypadDelay_2">Re-arm delay (seconds)</label>
@@ -211,28 +262,47 @@
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_fob_2" value="FOB" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="fobSignal_2" class="status-dot" title="FOB signal state" aria-label="FOB signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableFob_2">
-                <span>Enable FOB button</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertFob_2">
-                <span>FOB alert</span>
+                <span>Alert</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="latchFob_2">
-                <span>FOB latch</span>
+                <span>Latch</span>
               </label>
+              <div class="input-row">
+                <label for="fobDelay_2">Re-arm delay (seconds)</label>
+                <div class="input-group">
+                  <input type="number" id="fobDelay_2" min="0" step="1" value="4">
+                  <button id="fobSave_2" type="button" class="secondary">Save</button>
+                </div>
+              </div>
             </div>
             <div class="control-section">
               <input type="text" class="section-label" id="label_motion_2" value="Motion" maxlength="20">
+              <div class="access-status-row">
+                <span class="access-status-label">Signal</span>
+                <span id="motionSignal_2" class="status-dot" title="Motion signal state" aria-label="Motion signal state"></span>
+              </div>
               <label class="form-switch">
                 <input type="checkbox" id="enableMotion_2">
-                <span>Enable motion</span>
+                <span>Enable</span>
               </label>
               <label class="form-switch">
                 <input type="checkbox" id="alertMotion_2">
-                <span>Motion alert</span>
+                <span>Alert</span>
+              </label>
+              <label class="form-switch">
+                <input type="checkbox" id="latchMotion_2">
+                <span>Latch</span>
               </label>
               <div class="input-row">
                 <label for="motionDelay_2">Re-arm delay (seconds)</label>
@@ -484,6 +554,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=10"></script>
+  <script src="script.js?v=11"></script>
 </body>
 </html>

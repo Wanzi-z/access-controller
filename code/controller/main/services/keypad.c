@@ -20,6 +20,7 @@ struct keypadButton
 	int count;
 	bool expired;
 	bool enable;
+	bool latch;
 	int delay;
 	int channel;
 	char settings[1000];
@@ -73,12 +74,13 @@ int storeKeypadSettings()
 		strcpy(type, keypads[i].type);
 		sprintf(keypads[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": \"%s\", \"alert\": \"%s\", \"delay\": %d}}",
+			"\"payload\":{\"channel\":%d, \"enable\": \"%s\", \"alert\": \"%s\", \"delay\": %d, \"latch\": \"%s\"}}",
 			type,
 			i+1,
 			(keypads[i].enable) ? "true" : "false",
 			(keypads[i].alert) ? "true" : "false",
-			keypads[i].delay);
+			keypads[i].delay,
+			(keypads[i].latch) ? "true" : "false");
 
 		sprintf(keypads[i].key, "%s%d", type, i);
 		storeSetting(keypads[i].key, cJSON_Parse(keypads[i].settings));
@@ -114,6 +116,8 @@ cJSON *keypad_state_snapshot(void) {
         cJSON_AddBoolToObject(entry, "enable", keypads[i].enable);
         cJSON_AddBoolToObject(entry, "alert", keypads[i].alert);
         cJSON_AddNumberToObject(entry, "delay", keypads[i].delay);
+        cJSON_AddBoolToObject(entry, "latch", keypads[i].latch);
+        cJSON_AddBoolToObject(entry, "signal", keypads[i].isPressed);
         cJSON_AddItemToArray(array, entry);
     }
 
@@ -175,13 +179,26 @@ void setKeypadArmDelay (int ch, int val)
 		if (keypads[i].channel == ch) keypads[i].delay = val;
 }
 
+void latchKeypad (int ch, bool val)
+{
+	for (int i=0; i < NUM_OF_KEYPADS; i++)
+		if (keypads[i].channel == ch) keypads[i].latch = val;
+}
+
 void check_keypads (struct keypadButton *pad)
 {
-	if (!pad->enable) return;
-
 	pad->isPressed = !get_io(pad->pin);
+	if (!pad->enable) {
+		pad->prevPress = pad->isPressed;
+		return;
+	}
 
-	if (pad->isPressed && !pad->prevPress) {
+	if (pad->latch && pad->isPressed != pad->prevPress) {
+		ESP_LOGI(TAG, "Keypad %d state changed to %s (latch mode)", pad->channel, pad->isPressed ? "active" : "inactive");
+		lock_set_action_source("kp_latch");
+		arm_lock(pad->channel, pad->isPressed, pad->alert);
+		start_keypad_timer(pad, false);
+	} else if (!pad->latch && pad->isPressed && !pad->prevPress) {
 		ESP_LOGI(TAG, "Keypad %d pressed - disarming lock", pad->channel);
 		lock_set_action_source("kp_press");
 		arm_lock(pad->channel, false, pad->alert);
@@ -219,6 +236,11 @@ void handle_keypad_message(cJSON * payload)
 			 setKeypadArmDelay(ch, cJSON_GetObjectItem(payload,"delay")->valueint);
 		 }
 
+		 if (cJSON_GetObjectItem(payload,"latch")) {
+			 tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"latch"));
+			 latchKeypad(ch, tmp);
+		 }
+
 		 storeKeypadSettings();
 	}
 
@@ -248,6 +270,7 @@ void keypad_main()
 	keypads[0].channel = 1;
 	keypads[0].alert = true;
 	keypads[0].enable = true;
+	keypads[0].latch = false;
 	strcpy(keypads[0].type, "keypad");
 
 	keypads[1].pin = USE_MCP23017 ? KEYPAD_MCP_IO_2 : KEYPAD_IO_2;
@@ -255,6 +278,7 @@ void keypad_main()
 	keypads[1].channel = 2;
 	keypads[1].enable = true;
 	keypads[1].alert = true;
+	keypads[1].latch = false;
 	strcpy(keypads[1].type, "keypad");
 
 	storeKeypadSettings();

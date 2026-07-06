@@ -20,6 +20,7 @@ struct motionButton
 	int count;
 	bool expired;
 	bool enable;
+	bool latch;
 	int delay;
 	int channel;
 	char settings[1000];
@@ -37,12 +38,13 @@ int storeMotionSettings()
 		strcpy(type, motions[i].type);
 		sprintf(motions[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d}}",
+			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s}}",
 			type,
 			i+1,
 			(motions[i].enable) ? "true" : "false",
 			(motions[i].alert) ? "true" : "false",
-			motions[i].delay);
+			motions[i].delay,
+			(motions[i].latch) ? "true" : "false");
 
 		sprintf(motions[i].key, "%s%d", type, i);
 		storeSetting(motions[i].key, cJSON_Parse(motions[i].settings));
@@ -103,6 +105,18 @@ void alertOnMotion (int ch, bool val)
 		if (motions[i].channel == ch) motions[i].alert = val;
 }
 
+void setMotionArmDelay (int ch, int val)
+{
+	for (int i=0; i < NUM_OF_MOTIONS; i++)
+		if (motions[i].channel == ch) motions[i].delay = val;
+}
+
+void latchMotion (int ch, bool val)
+{
+	for (int i=0; i < NUM_OF_MOTIONS; i++)
+		if (motions[i].channel == ch) motions[i].latch = val;
+}
+
 void start_motion_timer (struct motionButton *mot, bool val)
 {
   if (val) {
@@ -115,11 +129,18 @@ void start_motion_timer (struct motionButton *mot, bool val)
 
 void check_motion (struct motionButton *mot)
 {
-	if (!mot->enable) return;
-
 	mot->isPressed = !get_mcp_io(mot->pin);
+	if (!mot->enable) {
+		mot->prevPress = mot->isPressed;
+		return;
+	}
 
-	if (mot->isPressed && !mot->prevPress) {
+	if (mot->latch && mot->isPressed != mot->prevPress) {
+		ESP_LOGI(TAG, "Motion channel %d state changed to %s (latch mode)", mot->channel, mot->isPressed ? "active" : "inactive");
+        lock_set_action_source("motion_latch");
+		arm_lock(mot->channel, mot->isPressed, mot->alert);
+		start_motion_timer(mot, false);
+	} else if (!mot->latch && mot->isPressed && !mot->prevPress) {
 		ESP_LOGI(TAG, "Motion detected on channel %d - disarming lock", mot->channel);
         lock_set_action_source("motion");
 		arm_lock(mot->channel, false, mot->alert);
@@ -155,8 +176,13 @@ void handle_motion_message(cJSON * payload)
 	 		enableMotion(ch, tmp);
 	 	}
 
-	 	if (cJSON_GetObjectItem(payload,"delay")) {
-	 		setArmDelay(ch, cJSON_GetObjectItem(payload,"delay")->valueint);
+		if (cJSON_GetObjectItem(payload,"delay")) {
+			setMotionArmDelay(ch, cJSON_GetObjectItem(payload,"delay")->valueint);
+		}
+
+		if (cJSON_GetObjectItem(payload,"latch")) {
+			tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"latch"));
+			latchMotion(ch, tmp);
 	 	}
 		storeMotionSettings();
 	}
@@ -212,6 +238,8 @@ cJSON *motion_state_snapshot(void)
 		cJSON_AddBoolToObject(item, "enable", motions[i].enable);
 		cJSON_AddBoolToObject(item, "alert", motions[i].alert);
 		cJSON_AddNumberToObject(item, "delay", motions[i].delay);
+		cJSON_AddBoolToObject(item, "latch", motions[i].latch);
+		cJSON_AddBoolToObject(item, "signal", motions[i].isPressed);
 		cJSON_AddItemToArray(array, item);
 	}
 	return array;
@@ -226,6 +254,7 @@ void motion_main()
 	motions[0].channel = 1;
 	motions[0].alert = true;
 	motions[0].enable = true;
+	motions[0].latch = false;
 	strcpy(motions[0].type, "motion");
 
 	motions[1].pin = MOTION_MCP_IO_2;
@@ -233,6 +262,7 @@ void motion_main()
 	motions[1].channel = 2;
 	motions[1].alert = true;
 	motions[1].enable = true;
+	motions[1].latch = false;
 	strcpy(motions[1].type, "motion");
 
 	restoreMotionSettings();

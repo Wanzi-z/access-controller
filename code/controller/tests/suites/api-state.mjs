@@ -2,6 +2,25 @@ export default async function run(api, report) {
   report.startSuite('API State & Monitoring', 'Testing all GET state/monitoring endpoints');
   let systemInfo = {};
 
+  function verifyAccessFields(label, item) {
+    const hasFields =
+      typeof item.enable === 'boolean' &&
+      typeof item.alert === 'boolean' &&
+      typeof item.delay === 'number' &&
+      typeof item.latch === 'boolean' &&
+      typeof item.signal === 'boolean';
+
+    if (hasFields) {
+      report.pass(
+        `${label} CH${item.channel}: signal=${item.signal} enable=${item.enable} alert=${item.alert} latch=${item.latch} delay=${item.delay}`,
+        '',
+        0
+      );
+    } else {
+      report.fail(`${label} CH${item.channel} missing uniform access fields`, JSON.stringify(item), 0);
+    }
+  }
+
   // 1. GET /api/state — full system state
   {
     const t0 = Date.now();
@@ -42,7 +61,7 @@ export default async function run(api, report) {
       } else {
         report.pass(`Exits: ${exits.length} channels`, '', 0);
         for (const e of exits) {
-          report.pass(`Exit CH${e.channel}: enable=${e.enable} alert=${e.alert} delay=${e.delay}`, '', 0);
+          verifyAccessFields('Exit', e);
         }
       }
 
@@ -52,6 +71,9 @@ export default async function run(api, report) {
         report.fail('State has fobs array (min 2)', `got ${fobs?.length || 0}`, 0);
       } else {
         report.pass(`Fobs: ${fobs.length} channels`, '', 0);
+        for (const fob of fobs) {
+          verifyAccessFields('FOB', fob);
+        }
       }
 
       // Keypads
@@ -60,6 +82,20 @@ export default async function run(api, report) {
         report.fail('State has keypads array (min 2)', `got ${keypads?.length || 0}`, 0);
       } else {
         report.pass(`Keypads: ${keypads.length} channels`, '', 0);
+        for (const keypad of keypads) {
+          verifyAccessFields('Keypad', keypad);
+        }
+      }
+
+      // Motions
+      const motions = state?.motions;
+      if (!Array.isArray(motions) || motions.length < 2) {
+        report.fail('State has motions array (min 2)', `got ${motions?.length || 0}`, 0);
+      } else {
+        report.pass(`Motions: ${motions.length} channels`, '', 0);
+        for (const motion of motions) {
+          verifyAccessFields('Motion', motion);
+        }
       }
 
       // Wiegand
