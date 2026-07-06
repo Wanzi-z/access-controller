@@ -951,7 +951,7 @@ const setupEnrollmentHandlers = () => {
         body: JSON.stringify({ name, pin: '' }),
       });
       const list = Array.isArray(users) ? users : [];
-      const created = list.find((user) => user.name === name) || list[list.length - 1];
+      const created = list[list.length - 1];
       if (App.data) App.data.keypadUsers = list;
       renderKeypadUsers(list);
       if (created?.uuid && userSelect) userSelect.value = created.uuid;
@@ -990,7 +990,6 @@ const setupEnrollmentHandlers = () => {
         showToast('Listening for credentials.');
       } catch (error) {
         handleError(error, 'Failed to start enrollment');
-      } finally {
         startBtn.disabled = false;
       }
     });
@@ -1012,7 +1011,6 @@ const setupEnrollmentHandlers = () => {
         showToast('Enrollment stopped.');
       } catch (error) {
         handleError(error, 'Failed to stop enrollment');
-      } finally {
         stopBtn.disabled = false;
       }
     });

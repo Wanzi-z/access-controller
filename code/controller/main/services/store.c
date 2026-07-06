@@ -869,8 +869,19 @@ esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_
             return ESP_ERR_NO_MEM;
         }
 
-        bool exists = cJSON_IsString(legacy_pin) && legacy_pin->valuestring && strcmp(legacy_pin->valuestring, pin) == 0;
+        bool legacy_present = cJSON_IsString(legacy_pin) && legacy_pin->valuestring && legacy_pin->valuestring[0] != '\0';
+        bool legacy_in_pins = false;
         int pin_count = cJSON_GetArraySize(pins);
+        for (int p = 0; legacy_present && !legacy_in_pins && p < pin_count; p++) {
+            cJSON *pin_item = cJSON_GetArrayItem(pins, p);
+            legacy_in_pins = cJSON_IsString(pin_item) && pin_item->valuestring && strcmp(pin_item->valuestring, legacy_pin->valuestring) == 0;
+        }
+        if (legacy_present && !legacy_in_pins) {
+            cJSON_AddItemToArray(pins, cJSON_CreateString(legacy_pin->valuestring));
+            pin_count++;
+        }
+
+        bool exists = legacy_present && strcmp(legacy_pin->valuestring, pin) == 0;
         for (int p = 0; !exists && p < pin_count; p++) {
             cJSON *pin_item = cJSON_GetArrayItem(pins, p);
             exists = cJSON_IsString(pin_item) && pin_item->valuestring && strcmp(pin_item->valuestring, pin) == 0;
