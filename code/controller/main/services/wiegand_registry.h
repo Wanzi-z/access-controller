@@ -40,6 +40,7 @@ esp_err_t wiegand_registry_add_for_user(const char *code, uint8_t channel, const
 esp_err_t wiegand_registry_update_name(const char *id, const char *name);
 esp_err_t wiegand_registry_update_status(const char *id, wiegand_user_status_t status);
 esp_err_t wiegand_registry_remove(const char *id);
+esp_err_t wiegand_registry_clear(void);
 esp_err_t wiegand_registry_reload(void);
 esp_err_t wiegand_registry_save(void);
 cJSON *wiegand_registry_snapshot(void);

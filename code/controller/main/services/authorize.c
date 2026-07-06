@@ -175,7 +175,10 @@ void handle_authorize_message(cJSON * payload) {
             cJSON *value = cJSON_GetObjectItem(payload, "value");
             if (value) {
                 sprintf(uuid, "%s", value->valuestring);
-                delete_user_from_flash(uuid);
+                esp_err_t delete_err = delete_user_from_flash(uuid);
+                if (delete_err != ESP_OK) {
+                    ESP_LOGW(TAG, "Failed to delete user %s: %s", uuid, esp_err_to_name(delete_err));
+                }
             }
         }
     } else if (cJSON_GetObjectItem(payload,"uuid")) {

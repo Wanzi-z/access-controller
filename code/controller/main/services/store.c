@@ -28,6 +28,13 @@ static const char* STORE_TAG = "storage.c";
 
 static bool spiffs_mounted = false;
 
+static void get_user_file_path(uint32_t file_index, char *path, size_t path_size) {
+    if (!path || path_size == 0) {
+        return;
+    }
+    snprintf(path, path_size, USER_FILE_PATH_FORMAT, (unsigned long)file_index);
+}
+
 static esp_err_t ensure_spiffs(void) {
     if (spiffs_mounted) {
         return ESP_OK;
@@ -804,8 +811,10 @@ void modify_user_from_flash(const char *uuid, const char *newName, const char *n
     }
 }
 
-void delete_user_from_flash(const char *uuid_to_delete) {
-    if (!uuid_to_delete) return;
+esp_err_t delete_user_from_flash(const char *uuid_to_delete) {
+    if (!uuid_to_delete || uuid_to_delete[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
 
     uint32_t user_count = get_u32("auth_user_count", 0);
     for (uint32_t i = 0; i < user_count; i++) {
@@ -819,20 +828,47 @@ void delete_user_from_flash(const char *uuid_to_delete) {
         if (!match) continue;
 
         for (uint32_t j = i; j < user_count - 1; j++) {
-            char src_path[USER_FILE_MAX_PATH];
-            char dest_path[USER_FILE_MAX_PATH];
-            snprintf(src_path, sizeof(src_path), USER_FILE_PATH_FORMAT, (unsigned long)(j + 1));
-            snprintf(dest_path, sizeof(dest_path), USER_FILE_PATH_FORMAT, (unsigned long)j);
-            rename(src_path, dest_path);
+            cJSON *next_user = load_user_from_flash(j + 2);
+            if (!next_user) {
+                ESP_LOGE(STORE_TAG, "Failed to load user file %" PRIu32 " while deleting %s", j + 1, uuid_to_delete);
+                return ESP_FAIL;
+            }
+
+            esp_err_t write_err = write_user_to_file(j, next_user);
+            cJSON_Delete(next_user);
+            if (write_err != ESP_OK) {
+                ESP_LOGE(STORE_TAG, "Failed to compact user file %" PRIu32 " while deleting %s", j, uuid_to_delete);
+                return write_err;
+            }
         }
 
         char last_path[USER_FILE_MAX_PATH];
-        snprintf(last_path, sizeof(last_path), USER_FILE_PATH_FORMAT, (unsigned long)(user_count - 1));
-        remove(last_path);
+        get_user_file_path(user_count - 1, last_path, sizeof(last_path));
+        if (remove(last_path) != 0 && errno != ENOENT) {
+            ESP_LOGW(STORE_TAG, "Failed to remove stale user file %s: errno=%d", last_path, errno);
+        }
         store_u32("auth_user_count", user_count - 1);
         ESP_LOGI(STORE_TAG, "Deleted user %s", uuid_to_delete);
-        return;
+        return ESP_OK;
     }
+
+    return ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t delete_all_users_from_flash(void) {
+    uint32_t user_count = get_u32("auth_user_count", 0);
+
+    for (uint32_t i = 0; i < MAX_USER_COUNT; i++) {
+        char path[USER_FILE_MAX_PATH];
+        get_user_file_path(i, path, sizeof(path));
+        if (remove(path) != 0 && errno != ENOENT) {
+            ESP_LOGW(STORE_TAG, "Failed to remove user file %s: errno=%d", path, errno);
+        }
+    }
+
+    store_u32("auth_user_count", 0);
+    ESP_LOGI(STORE_TAG, "Deleted all %" PRIu32 " users", user_count);
+    return ESP_OK;
 }
 
 esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_added) {

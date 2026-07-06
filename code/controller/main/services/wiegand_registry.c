@@ -499,6 +499,19 @@ esp_err_t wiegand_registry_remove(const char *id) {
     return ESP_OK;
 }
 
+esp_err_t wiegand_registry_clear(void) {
+    ensure_mutex();
+    if (!s_mutex) return ESP_ERR_NO_MEM;
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    s_user_count = 0;
+    persist_locked();
+    xSemaphoreGive(s_mutex);
+    return ESP_OK;
+}
+
 cJSON *wiegand_registry_snapshot(void) {
     if (!s_initialised) {
         ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY, "Registry not initialised");

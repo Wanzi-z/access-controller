@@ -10,7 +10,8 @@
     "test:physical": "node runner.mjs --physical-only",
     "test:ui": "node runner.mjs --ui-only",
     "test:quick": "node runner.mjs --quick",
-    "test:stress": "node runner.mjs --stress"
+    "test:stress": "node runner.mjs --stress",
+    "test:bulk-remove": "node runner.mjs --bulk-remove"
   },
   "dependencies": {
     "playwright": "^1.45.0"

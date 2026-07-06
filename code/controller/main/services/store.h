@@ -9,7 +9,8 @@
 
 void store_user_to_flash(char *uuid, char *name, char *pin);
 cJSON *load_user_from_flash(uint32_t user_id);
-void delete_user_from_flash(const char *uuid_to_delete);
+esp_err_t delete_user_from_flash(const char *uuid_to_delete);
+esp_err_t delete_all_users_from_flash(void);
 void modify_user_from_flash(const char *uuid, const char *newName, const char *newPin);
 esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_added);
 esp_err_t store_char(const char *key, const char *value);

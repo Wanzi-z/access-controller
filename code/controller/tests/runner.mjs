@@ -95,6 +95,7 @@ async function main() {
   const uiOnly = args.includes('--ui-only');
   const quick = args.includes('--quick');
   const stressOnly = args.includes('--stress');
+  const bulkRemoveOnly = args.includes('--bulk-remove');
 
   console.log('╔══════════════════════════════════════════════════════════╗');
   console.log('║       Access Controller - Comprehensive Test Suite      ║');
@@ -129,6 +130,8 @@ async function main() {
     suiteFiles.push('physical-hardware');
   } else if (stressOnly) {
     suiteFiles.push('stress-bulk');
+  } else if (bulkRemoveOnly) {
+    suiteFiles.push('bulk-remove');
   } else if (uiOnly) {
     suiteFiles.push('ui-playwright');
   } else {

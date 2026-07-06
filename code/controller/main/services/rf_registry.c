@@ -352,6 +352,15 @@ esp_err_t rf_registry_remove(const char *id) {
     return ESP_OK;
 }
 
+esp_err_t rf_registry_clear(void) {
+    rf_ensure_mutex();
+    xSemaphoreTake(rf_mutex, portMAX_DELAY);
+    rf_user_count = 0;
+    rf_persist_locked();
+    xSemaphoreGive(rf_mutex);
+    return ESP_OK;
+}
+
 static cJSON *serialize_state_locked(void) {
     cJSON *obj = cJSON_CreateObject();
     if (!obj) return NULL;

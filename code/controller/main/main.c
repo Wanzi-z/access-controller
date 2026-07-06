@@ -168,6 +168,11 @@ esp_err_t http_event_handle(esp_http_client_event_t *evt) {
 }
 
 void fetch_firmware_md5_from_server(char *buffer, size_t buffer_size, const char *server_ip, const char *server_port) {
+    if (!buffer || buffer_size == 0) {
+        return;
+    }
+    buffer[0] = '\0';
+
     esp_http_client_config_t http_config = {
         .url = NULL,
     };
@@ -177,19 +182,27 @@ void fetch_firmware_md5_from_server(char *buffer, size_t buffer_size, const char
     http_config.url = url;
 
     esp_http_client_handle_t client = esp_http_client_init(&http_config);
-    
-    esp_err_t err = esp_http_client_perform(client);
+
+    esp_err_t err = esp_http_client_open(client, 0);
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "HTTPS Status = %d", esp_http_client_get_status_code(client));
-        
-        int read_len = esp_http_client_read(client, buffer, buffer_size - 1);
-        if (read_len <= 0) {
-            // Handle the error, maybe set buffer to an empty string or a known value.
-            buffer[0] = '\0';
-            ESP_LOGE(TAG, "Failed to read response or response is empty");
-        } else {
-            buffer[read_len] = '\0'; // Null-terminate the buffer
+        esp_http_client_fetch_headers(client);
+
+        int total_read = 0;
+        while (total_read < (int)buffer_size - 1) {
+            int read_len = esp_http_client_read(client, buffer + total_read, buffer_size - 1 - total_read);
+            if (read_len <= 0) {
+                break;
+            }
+            total_read += read_len;
         }
+        buffer[total_read] = '\0';
+
+        for (int i = total_read - 1; i >= 0 && (buffer[i] == '\r' || buffer[i] == '\n' || buffer[i] == ' '); i--) {
+            buffer[i] = '\0';
+        }
+
+        ESP_LOGI(TAG, "Firmware MD5 status=%d value=%s", esp_http_client_get_status_code(client), buffer);
+        esp_http_client_close(client);
     } else {
         ESP_LOGE(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
     }
@@ -244,6 +257,9 @@ void app_main(void) {
         need_to_update_firmware = strcmp(stored_firmware_md5, latest_firmware_md5) != 0;
 
         if (need_to_update_firmware) {
+            if (latest_firmware_md5[0] != '\0') {
+                store_char("firmware_md5", latest_firmware_md5);
+            }
             perform_ota_update(ota_url);
         }
 

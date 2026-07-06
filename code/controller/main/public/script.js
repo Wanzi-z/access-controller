@@ -1193,7 +1193,10 @@ const setupWiegandHandlers = () => {
 
       removeAllBtn.disabled = true;
       try {
-        const wiegand = await deleteItemsSequentially(users, 'api/wiegand/delete', 'id');
+        const wiegand = await fetchJSON('api/wiegand/delete-all', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
         renderWiegand(wiegand || { users: [] });
         await loadState();
         showToast(`Removed ${users.length} RFID card${users.length === 1 ? '' : 's'}.`);
@@ -1305,7 +1308,10 @@ const setupRfHandlers = () => {
 
       removeAllBtn.disabled = true;
       try {
-        const rf = await deleteItemsSequentially(users, 'api/rf/delete', 'id');
+        const rf = await fetchJSON('api/rf/delete-all', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
         renderRf(rf || { users: [] });
         await loadState();
         showToast(`Removed ${users.length} remote FOB${users.length === 1 ? '' : 's'}.`);
@@ -1642,7 +1648,10 @@ const setupKeypadPinHandlers = () => {
 
       removeAllBtn.disabled = true;
       try {
-        const latest = await deleteItemsSequentially(users, 'api/keypad/user', 'uuid');
+        const latest = await fetchJSON('api/keypad/users/delete-all', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
         const list = Array.isArray(latest) ? latest : [];
         renderKeypadUsers(list);
         if (App.data) App.data.keypadUsers = list;

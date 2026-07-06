@@ -45,7 +45,8 @@ extern char device_id[100];
 extern uint32_t get_u32(const char *key, uint32_t default_value);
 extern cJSON *load_user_from_flash(uint32_t user_id);
 extern void store_user_to_flash(char *uuid, char *name, char *pin);
-extern void delete_user_from_flash(const char *uuid);
+extern esp_err_t delete_user_from_flash(const char *uuid);
+extern esp_err_t delete_all_users_from_flash(void);
 extern void modify_user_from_flash(const char *uuid, const char *newName, const char *newPin);
 
 // Forward declaration
@@ -779,8 +780,28 @@ static esp_err_t api_keypad_user_delete_handler(httpd_req_t *req) {
     }
 
     ESP_LOGI(API_TAG, "Deleting keypad user: uuid=%s", uuid);
-    delete_user_from_flash(uuid);
+    err = delete_user_from_flash(uuid);
     cJSON_Delete(payload);
+
+    if (err == ESP_ERR_NOT_FOUND) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "User not found");
+    }
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete user");
+    }
+
+    cJSON *users = keypad_users_snapshot();
+    return send_json_response(req, users);
+}
+
+// POST /api/keypad/users/delete-all - Remove all PIN users
+static esp_err_t api_keypad_users_delete_all_post_handler(httpd_req_t *req) {
+    (void)req;
+    ESP_LOGI(API_TAG, "Deleting all keypad users");
+    esp_err_t err = delete_all_users_from_flash();
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete users");
+    }
 
     cJSON *users = keypad_users_snapshot();
     return send_json_response(req, users);
@@ -840,6 +861,17 @@ static esp_err_t api_wiegand_delete_post_handler(httpd_req_t *req) {
     return send_wiegand_state_response(req);
 }
 
+// POST /api/wiegand/delete-all - Remove all Wiegand users
+static esp_err_t api_wiegand_delete_all_post_handler(httpd_req_t *req) {
+    (void)req;
+    ESP_LOGI(API_TAG, "Deleting all Wiegand users");
+    esp_err_t err = wiegand_registry_clear();
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete Wiegand users");
+    }
+    return send_wiegand_state_response(req);
+}
+
 /* RF remote fobs */
 static esp_err_t send_rf_state_response(httpd_req_t *req) {
     return send_json_response(req, rf_state_snapshot());
@@ -847,6 +879,16 @@ static esp_err_t send_rf_state_response(httpd_req_t *req) {
 
 static esp_err_t api_rf_get_handler(httpd_req_t *req) {
     ESP_LOGI(API_TAG, "RF state requested");
+    return send_rf_state_response(req);
+}
+
+static esp_err_t api_rf_delete_all_post_handler(httpd_req_t *req) {
+    (void)req;
+    ESP_LOGI(API_TAG, "Deleting all RF codes");
+    esp_err_t err = rf_registry_clear();
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete RF codes");
+    }
     return send_rf_state_response(req);
 }
 
@@ -1073,6 +1115,13 @@ void register_api_routes(httpd_handle_t server) {
     };
     httpd_register_uri_handler(server, &wiegand_delete_post);
 
+    httpd_uri_t wiegand_delete_all_post = {
+        .uri = "/api/wiegand/delete-all",
+        .method = HTTP_POST,
+        .handler = api_wiegand_delete_all_post_handler,
+    };
+    httpd_register_uri_handler(server, &wiegand_delete_all_post);
+
     httpd_uri_t rf_get = {
         .uri = "/api/rf",
         .method = HTTP_GET,
@@ -1108,6 +1157,13 @@ void register_api_routes(httpd_handle_t server) {
     };
     httpd_register_uri_handler(server, &rf_delete_post);
 
+    httpd_uri_t rf_delete_all_post = {
+        .uri = "/api/rf/delete-all",
+        .method = HTTP_POST,
+        .handler = api_rf_delete_all_post_handler,
+    };
+    httpd_register_uri_handler(server, &rf_delete_all_post);
+
     httpd_uri_t rf_config_post = {
         .uri = "/api/rf/config",
         .method = HTTP_POST,
@@ -1128,6 +1184,13 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_keypad_users_get_handler,
     };
     httpd_register_uri_handler(server, &keypad_users_get);
+
+    httpd_uri_t keypad_users_delete_all_post = {
+        .uri = "/api/keypad/users/delete-all",
+        .method = HTTP_POST,
+        .handler = api_keypad_users_delete_all_post_handler,
+    };
+    httpd_register_uri_handler(server, &keypad_users_delete_all_post);
 
     httpd_uri_t logs_get = {
         .uri = "/api/logs",

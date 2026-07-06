@@ -86,6 +86,9 @@ class ApiClient {
   async deleteKeypadUser(uuid) {
     return this.del('/api/keypad/user', { uuid });
   }
+  async deleteAllKeypadUsers() {
+    return this.post('/api/keypad/users/delete-all', {});
+  }
 
   // Wiegand (RFID)
   async getWiegand() { return this.get('/api/wiegand'); }
@@ -100,6 +103,9 @@ class ApiClient {
   }
   async deleteWiegand(id) {
     return this.post('/api/wiegand/delete', { id });
+  }
+  async deleteAllWiegand() {
+    return this.post('/api/wiegand/delete-all', {});
   }
 
   // RF Fobs
@@ -118,6 +124,9 @@ class ApiClient {
   }
   async deleteRf(id) {
     return this.post('/api/rf/delete', { id });
+  }
+  async deleteAllRf() {
+    return this.post('/api/rf/delete-all', {});
   }
 
   // WiFi
