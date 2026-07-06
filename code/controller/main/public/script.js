@@ -229,6 +229,19 @@ const applyKeypadState = (keypads = []) => {
   });
 };
 
+const applyMotionState = (motions = []) => {
+  motions.forEach((motion) => {
+    const ch = motion.channel;
+    const enableEl = document.getElementById(`enableMotion_${ch}`);
+    const alertEl = document.getElementById(`alertMotion_${ch}`);
+    const delayEl = document.getElementById(`motionDelay_${ch}`);
+
+    if (enableEl) enableEl.checked = !!motion.enable;
+    if (alertEl) alertEl.checked = !!motion.alert;
+    if (delayEl) delayEl.value = motion.delay ?? 4;
+  });
+};
+
 const buildWiegandUserRow = (user, existingValue) => {
   if (!user) return '';
   const meta = WIEGAND_STATUS_META[user.status] || WIEGAND_STATUS_META[2];
@@ -505,6 +518,7 @@ const renderState = (state = {}) => {
   applyExitState(state.exits || []);
   applyFobState(state.fobs || []);
   applyKeypadState(state.keypads || []);
+  applyMotionState(state.motions || []);
   renderWiegand(state.wiegand || {});
   renderRf(state.rf || {});
   // Keypad users and logs are heavy; loaded via dedicated endpoints so state polling
@@ -671,6 +685,19 @@ const updateKeypad = async (channel, updates) => {
   }
 };
 
+const updateMotion = async (channel, updates) => {
+  const body = { channel, ...updates };
+  try {
+    const motions = await fetchJSON('api/motion', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    applyMotionState(motions || []);
+  } catch (error) {
+    handleError(error, 'Failed to update motion state');
+  }
+};
+
 const setupLockHandlers = () => {
   [1, 2].forEach((ch) => {
     const enableEl = document.getElementById(`enableLock_${ch}`);
@@ -772,6 +799,32 @@ const setupKeypadHandlers = () => {
       saveBtn.addEventListener('click', () => {
         const value = parseInt(delayEl.value, 10) || 0;
         updateKeypad(ch, { delay: value });
+      });
+    }
+  });
+};
+
+const setupMotionHandlers = () => {
+  [1, 2].forEach((ch) => {
+    const enableEl = document.getElementById(`enableMotion_${ch}`);
+    const alertEl = document.getElementById(`alertMotion_${ch}`);
+    const delayEl = document.getElementById(`motionDelay_${ch}`);
+    const saveBtn = document.getElementById(`motionSave_${ch}`);
+
+    if (enableEl) {
+      enableEl.addEventListener('change', (event) => {
+        updateMotion(ch, { enable: event.target.checked });
+      });
+    }
+    if (alertEl) {
+      alertEl.addEventListener('change', (event) => {
+        updateMotion(ch, { alert: event.target.checked });
+      });
+    }
+    if (delayEl && saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const value = parseInt(delayEl.value, 10) || 0;
+        updateMotion(ch, { delay: value });
       });
     }
   });
@@ -1295,6 +1348,34 @@ const setupKeypadPinHandlers = () => {
   }
 };
 
+const setupEditableLabels = () => {
+  const LABEL_STORAGE_KEY = 'ac_section_labels';
+
+  // Load saved labels
+  let savedLabels = {};
+  try {
+    savedLabels = JSON.parse(localStorage.getItem(LABEL_STORAGE_KEY) || '{}');
+  } catch (e) { /* ignore */ }
+
+  document.querySelectorAll('.section-label').forEach((input) => {
+    const id = input.id;
+    // Restore saved value if present
+    if (savedLabels[id]) {
+      input.value = savedLabels[id];
+    }
+
+    // Save on change
+    input.addEventListener('change', () => {
+      let labels = {};
+      try {
+        labels = JSON.parse(localStorage.getItem(LABEL_STORAGE_KEY) || '{}');
+      } catch (e) { labels = {}; }
+      labels[id] = input.value;
+      localStorage.setItem(LABEL_STORAGE_KEY, JSON.stringify(labels));
+    });
+  });
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   App.elements = {
     navItems: Array.from(document.querySelectorAll('.nav-item')),
@@ -1335,6 +1416,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupWiegandHandlers();
   setupRfHandlers();
   setupKeypadPinHandlers();
+  setupMotionHandlers();
+  setupEditableLabels();
 
   loadState();
   // Defer heavy endpoints until their tabs are opened; tunneling adds overhead

@@ -200,6 +200,23 @@ motion_service (void *pvParameter)
   }
 }
 
+cJSON *motion_state_snapshot(void)
+{
+	cJSON *array = cJSON_CreateArray();
+	if (!array) return NULL;
+
+	for (int i = 0; i < NUM_OF_MOTIONS; i++) {
+		cJSON *item = cJSON_CreateObject();
+		if (!item) continue;
+		cJSON_AddNumberToObject(item, "channel", motions[i].channel);
+		cJSON_AddBoolToObject(item, "enable", motions[i].enable);
+		cJSON_AddBoolToObject(item, "alert", motions[i].alert);
+		cJSON_AddNumberToObject(item, "delay", motions[i].delay);
+		cJSON_AddItemToArray(array, item);
+	}
+	return array;
+}
+
 void motion_main()
 {
   ESP_LOGI(TAG, "Starting motion service.");

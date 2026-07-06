@@ -48,6 +48,10 @@ struct wiegand {
 	int keypressCount;
 	bool expired;
 	bool keypressExpired;
+    // Some installations have DATA0/DATA1 effectively inverted for keypad frames
+    // (e.g., wiring swap or reader variant). When detected, we invert 4-bit nibbles
+    // before decoding so digits like '2' aren't treated as invalid.
+    bool keypad_nibble_inverted;
 	bool enable;
 	bool newKey;
 	bool newCode;
@@ -416,7 +420,25 @@ static bool handleKeyCode(struct wiegand *ctx) {
         //   1→0xE  2→0xD  3→0xC  4→0xB  5→0xA
         //   6→0x9  7→0x8  8→0x7  9→0x6  0→0xF
         //   *→0x5  #→0x4
-        uint8_t nibble = (uint8_t)strtol(ctx->incomingCode, NULL, 2) & 0x0F;
+        uint8_t raw_nibble = (uint8_t)strtol(ctx->incomingCode, NULL, 2) & 0x0F;
+
+        // Auto-detect inverted DATA0/DATA1 for keypad frames.
+        // In the expected encoding below, nibbles 0x0-0x3 are invalid (never produced).
+        // If we see them, assume the nibble is bitwise-inverted and flip it.
+        if (!ctx->keypad_nibble_inverted && raw_nibble <= 0x03) {
+            ctx->keypad_nibble_inverted = true;
+            ESP_LOGW(LOG_TAG_WIEGAND,
+                     "Ch%d: Detected inverted keypad nibble encoding (raw=0x%X); "
+                     "will invert future 4-bit keypad frames",
+                     ctx->channel,
+                     (unsigned)raw_nibble);
+        }
+
+        uint8_t nibble = raw_nibble;
+        if (ctx->keypad_nibble_inverted) {
+            nibble = (uint8_t)(nibble ^ 0x0F);
+        }
+
         uint8_t decoded = 0xF - nibble;  // inverted encoding
         if (decoded <= 9) {
             keyIndex = (int)decoded;       // digits 0-9
@@ -429,10 +451,11 @@ static bool handleKeyCode(struct wiegand *ctx) {
         }
 
         ESP_LOGI(LOG_TAG_WIEGAND,
-                 "Keypad 4-bit frame on channel %d: bits=%s nibble=0x%X mapped=%d",
+                 "Keypad 4-bit frame on channel %d: bits=%s nibble=0x%X%s mapped=%d",
                  ctx->channel,
                  ctx->incomingCode,
-                 (unsigned)nibble,
+                 (unsigned)raw_nibble,
+                 ctx->keypad_nibble_inverted ? " (inverted)" : "",
                  keyIndex);
     } else {
         ESP_LOGD(LOG_TAG_WIEGAND, "Unexpected keypad frame length %u bits (%s) on channel %d",
@@ -630,6 +653,7 @@ void wiegand_main(void) {
 	wg[0].keypressCount = 0;
 	wg[0].expired = true;
 	wg[0].count = 0;
+    wg[0].keypad_nibble_inverted = false;
     memset(wg[0].incomingCode, 0, sizeof(wg[0].incomingCode));
     memset(wg[0].code, 0, sizeof(wg[0].code));
     wg[0].incomingCodeCount = 0;
@@ -649,6 +673,7 @@ void wiegand_main(void) {
 	wg[1].keypressCount = 0;
 	wg[1].expired = true;
 	wg[1].count = 0;
+    wg[1].keypad_nibble_inverted = false;
     memset(wg[1].incomingCode, 0, sizeof(wg[1].incomingCode));
     memset(wg[1].code, 0, sizeof(wg[1].code));
     wg[1].incomingCodeCount = 0;

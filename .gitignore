@@ -10,3 +10,7 @@ sdkconfig*
 *.zip
 node_modules/
 .package-lock.json
+.agents/
+.deepseek/
+circuits/controller/.history/
+code/controller/tests/test-report.html

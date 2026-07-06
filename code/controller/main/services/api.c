@@ -26,6 +26,7 @@ extern cJSON *lock_state_snapshot(void);
 extern cJSON *exit_state_snapshot(void);
 extern cJSON *fob_state_snapshot(void);
 extern cJSON *keypad_state_snapshot(void);
+extern cJSON *motion_state_snapshot(void);
 extern cJSON *wiegand_state_snapshot(void);
 extern cJSON *system_logs_snapshot(void);
 
@@ -33,6 +34,7 @@ extern void handle_lock_message(cJSON *payload);
 extern void handle_exit_message(cJSON *payload);
 extern void handle_fob_message(cJSON *payload);
 extern void handle_keypad_message(cJSON *payload);
+extern void handle_motion_message(cJSON *payload);
 extern void handle_authorize_message(cJSON *payload);
 
 extern char device_id[100];
@@ -80,6 +82,12 @@ static cJSON *build_state_snapshot(void) {
         keypads = cJSON_CreateArray();
     }
     cJSON_AddItemToObject(root, "keypads", keypads);
+
+    cJSON *motions = motion_state_snapshot();
+    if (!motions) {
+        motions = cJSON_CreateArray();
+    }
+    cJSON_AddItemToObject(root, "motions", motions);
 
     cJSON *wiegand = wiegand_state_snapshot();
     if (!wiegand) {
@@ -402,6 +410,12 @@ static void keypad_message_wrapper(cJSON *payload) {
     }
 }
 
+static void motion_message_wrapper(cJSON *payload) {
+    if (payload) {
+        handle_motion_message(payload);
+    }
+}
+
 static esp_err_t api_lock_post_handler(httpd_req_t *req) {
     return handle_json_post(req, lock_message_wrapper, lock_state_snapshot);
 }
@@ -416,6 +430,10 @@ static esp_err_t api_fob_post_handler(httpd_req_t *req) {
 
 static esp_err_t api_keypad_post_handler(httpd_req_t *req) {
     return handle_json_post(req, keypad_message_wrapper, keypad_state_snapshot);
+}
+
+static esp_err_t api_motion_post_handler(httpd_req_t *req) {
+    return handle_json_post(req, motion_message_wrapper, motion_state_snapshot);
 }
 
 static esp_err_t api_wifi_post_handler(httpd_req_t *req) {
@@ -911,6 +929,13 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_keypad_post_handler,
     };
     httpd_register_uri_handler(server, &keypad_post);
+
+    httpd_uri_t motion_post = {
+        .uri = "/api/motion",
+        .method = HTTP_POST,
+        .handler = api_motion_post_handler,
+    };
+    httpd_register_uri_handler(server, &motion_post);
 
     httpd_uri_t wifi_post = {
         .uri = "/api/wifi",
