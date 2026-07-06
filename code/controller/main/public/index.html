@@ -13,13 +13,18 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=7">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
   <header class="app-bar">
     <div class="app-brand">
       <span class="app-title">Access Controller</span>
       <span class="app-subtitle">Device Manager</span>
+    </div>
+    <div class="header-status">
+      <span class="header-chip">AP <strong id="headerApIp">—</strong></span>
+      <span class="header-chip">STA <strong id="headerStaIp">—</strong></span>
+      <span class="header-chip">Server <strong id="headerServerUrl">pyfisecurity.com/devices</strong></span>
     </div>
   </header>
 
@@ -353,6 +358,34 @@
             <span class="label">UUID</span>
             <span class="value" id="uuid">—</span>
           </div>
+          <div class="info-row">
+            <span class="label">Server URL</span>
+            <span class="value" id="systemServerUrl">pyfisecurity.com/devices</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Wi-Fi STA IP</span>
+            <span class="value" id="wifiStaIp">—</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Wi-Fi AP IP</span>
+            <span class="value" id="wifiApIp">—</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Ethernet IP</span>
+            <span class="value" id="ethIp">—</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Wi-Fi STA MAC</span>
+            <span class="value" id="wifiStaMac">—</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Wi-Fi AP MAC</span>
+            <span class="value" id="wifiApMac">—</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Ethernet MAC</span>
+            <span class="value" id="ethMac">—</span>
+          </div>
         </div>
       </div>
 
@@ -391,10 +424,25 @@
             <button type="submit">Save Wi-Fi</button>
           </div>
         </form>
+        <div class="wifi-scan-panel">
+          <div class="list-heading">
+            <div>
+              <span class="label">Available networks</span>
+              <span class="muted">Click a network to fill the SSID.</span>
+            </div>
+            <button type="button" class="secondary" id="wifiScanBtn">Scan</button>
+          </div>
+          <div id="wifiAvailableNetworks" class="wifi-network-grid">
+            <p class="empty-state muted">Open Settings or click Scan to refresh nearby networks.</p>
+          </div>
+        </div>
         <div class="info-list" id="wifiSaved">
           <div class="info-row">
-            <span class="label">Saved networks</span>
+            <span class="label">Active network</span>
             <span class="value muted" id="wifiActive">—</span>
+          </div>
+          <div class="list-heading">
+            <span class="label">Saved networks</span>
           </div>
           <div id="wifiNetworks" class="user-list"></div>
         </div>
@@ -404,17 +452,13 @@
         <div class="card-header">
           <div>
             <h2>Server Settings</h2>
-            <p class="subtitle">Define upstream controller IP and port.</p>
+            <p class="subtitle">Define the upstream controller URL.</p>
           </div>
         </div>
         <form id="serverForm" class="form">
           <label class="form-field">
-            <span>Server IP</span>
-            <input type="text" id="ipAddress" placeholder="192.168.1.100">
-          </label>
-          <label class="form-field">
-            <span>Server port</span>
-            <input type="text" id="port" placeholder="9000">
+            <span>Server URL</span>
+            <input type="text" id="serverUrl" placeholder="pyfisecurity.com/devices" value="pyfisecurity.com/devices">
           </label>
           <div class="form-actions">
             <button type="submit">Save Server</button>
@@ -426,6 +470,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=7"></script>
+  <script src="script.js?v=8"></script>
 </body>
 </html>

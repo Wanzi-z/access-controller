@@ -21,6 +21,10 @@ static const char* STORE_TAG = "storage.c";
 #define USER_FILE_PATH_FORMAT "/spiffs/user_%05lu.json"
 #define USER_FILE_MAX_PATH 64
 #define MAX_USER_COUNT 400
+#define DEFAULT_SERVER_URL "pyfisecurity.com/devices"
+#define DEFAULT_SERVER_HOST "pyfisecurity.com"
+#define DEFAULT_SERVER_PORT "80"
+#define SERVER_URL_MAX_LEN 160
 
 static bool spiffs_mounted = false;
 
@@ -354,23 +358,154 @@ void load_wifi_credentials_from_flash(char *ssid, char *password) {
     free(password_str);
 }
 
+static void trim_copy(const char *input, char *output, size_t output_size) {
+    if (!output || output_size == 0) {
+        return;
+    }
+    output[0] = '\0';
+    if (!input) {
+        return;
+    }
+
+    while (*input == ' ' || *input == '\t' || *input == '\n' || *input == '\r') {
+        input++;
+    }
+
+    size_t len = strlen(input);
+    while (len > 0) {
+        char c = input[len - 1];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+            break;
+        }
+        len--;
+    }
+
+    if (len >= output_size) {
+        len = output_size - 1;
+    }
+    memcpy(output, input, len);
+    output[len] = '\0';
+}
+
+static bool is_port_digits(const char *port) {
+    if (!port || port[0] == '\0') {
+        return false;
+    }
+    for (const char *p = port; *p != '\0'; p++) {
+        if (*p < '0' || *p > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void parse_server_url(const char *server_url,
+                             char *host,
+                             size_t host_size,
+                             char *port,
+                             size_t port_size) {
+    if (host && host_size > 0) {
+        host[0] = '\0';
+    }
+    if (port && port_size > 0) {
+        port[0] = '\0';
+    }
+    if (!host || host_size == 0 || !port || port_size == 0) {
+        return;
+    }
+
+    char normalized[SERVER_URL_MAX_LEN];
+    trim_copy(server_url, normalized, sizeof(normalized));
+    if (normalized[0] == '\0') {
+        snprintf(normalized, sizeof(normalized), "%s", DEFAULT_SERVER_URL);
+    }
+
+    const char *cursor = normalized;
+    const char *default_port = DEFAULT_SERVER_PORT;
+    if (strncmp(cursor, "http://", 7) == 0) {
+        cursor += 7;
+        default_port = "80";
+    } else if (strncmp(cursor, "https://", 8) == 0) {
+        cursor += 8;
+        default_port = "443";
+    }
+
+    const char *host_start = cursor;
+    while (*cursor != '\0' && *cursor != ':' && *cursor != '/' && *cursor != '?' && *cursor != '#') {
+        cursor++;
+    }
+
+    size_t host_len = (size_t)(cursor - host_start);
+    if (host_len == 0) {
+        snprintf(host, host_size, "%s", DEFAULT_SERVER_HOST);
+    } else {
+        if (host_len >= host_size) {
+            host_len = host_size - 1;
+        }
+        memcpy(host, host_start, host_len);
+        host[host_len] = '\0';
+    }
+
+    if (*cursor == ':') {
+        cursor++;
+        const char *port_start = cursor;
+        while (*cursor >= '0' && *cursor <= '9') {
+            cursor++;
+        }
+        size_t port_len = (size_t)(cursor - port_start);
+        if (port_len > 0 && port_len < port_size) {
+            memcpy(port, port_start, port_len);
+            port[port_len] = '\0';
+        }
+    }
+
+    if (!is_port_digits(port)) {
+        snprintf(port, port_size, "%s", default_port);
+    }
+}
+
+void load_server_url_from_flash(char *server_url, size_t size) {
+    if (!server_url || size == 0) {
+        return;
+    }
+    server_url[0] = '\0';
+
+    char *url_str = get_char("server_url");
+    if (url_str && url_str[0] != '\0') {
+        trim_copy(url_str, server_url, size);
+        free(url_str);
+        return;
+    }
+    free(url_str);
+
+    char *ip_str = get_char("server_ip");
+    char *port_str = get_char("server_port");
+    if (ip_str && ip_str[0] != '\0') {
+        if (port_str && port_str[0] != '\0' && strcmp(port_str, DEFAULT_SERVER_PORT) != 0) {
+            snprintf(server_url, size, "%s:%s", ip_str, port_str);
+        } else {
+            snprintf(server_url, size, "%s", ip_str);
+        }
+    } else {
+        snprintf(server_url, size, "%s", DEFAULT_SERVER_URL);
+    }
+    free(ip_str);
+    free(port_str);
+}
+
 void load_server_info_from_flash(char *server_ip, char *server_port) {
     ESP_LOGI(STORE_TAG, "Loading Server info from flash");
     char *ip_str = get_char("server_ip");
     char *port_str = get_char("server_port");
 
-    if (strcmp(ip_str, "")==0) {
-        ESP_LOGI(STORE_TAG, "No server IP found in flash, setting to default.");
-        strcpy(server_ip, "192.168.1.43");
+    if (strcmp(ip_str, "") != 0 && strcmp(port_str, "") != 0) {
+        snprintf(server_ip, 32, "%s", ip_str);
+        snprintf(server_port, 8, "%s", port_str);
     } else {
-        strcpy(server_ip, ip_str);
-    }
-    
-    if (strcmp(port_str, "")==0) {
-        ESP_LOGI(STORE_TAG, "No server port found in flash, setting to default.");
-        strcpy(server_port, "9000");
-    } else {
-        strcpy(server_port, port_str);
+        char server_url[SERVER_URL_MAX_LEN];
+        ESP_LOGI(STORE_TAG, "No legacy server host/port found in flash, using server URL.");
+        load_server_url_from_flash(server_url, sizeof(server_url));
+        parse_server_url(server_url, server_ip, 32, server_port, 8);
     }
     
     free(ip_str);
@@ -674,6 +809,15 @@ void delete_user_from_flash(const char *uuid_to_delete) {
 esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_port) {
     esp_err_t err_ip = store_char("server_ip", server_ip);
     esp_err_t err_port = store_char("server_port", server_port);
+    if (server_ip && server_ip[0] != '\0' && server_port && server_port[0] != '\0') {
+        char server_url[SERVER_URL_MAX_LEN];
+        if (strcmp(server_port, DEFAULT_SERVER_PORT) == 0) {
+            snprintf(server_url, sizeof(server_url), "%s", server_ip);
+        } else {
+            snprintf(server_url, sizeof(server_url), "%s:%s", server_ip, server_port);
+        }
+        store_char("server_url", server_url);
+    }
 
     /* Keep tunnel host/port in sync with server settings */
     if (err_ip == ESP_OK) {
@@ -699,6 +843,35 @@ esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_p
     ESP_LOGE(STORE_TAG, "Failed to store server port: %s", esp_err_to_name(err_port));
     automation_record_log("Failed to update server port in NVS");
     return err_port;
+}
+
+esp_err_t store_server_url_to_flash(const char *server_url) {
+    char normalized[SERVER_URL_MAX_LEN];
+    char server_host[32];
+    char server_port[8];
+
+    trim_copy(server_url, normalized, sizeof(normalized));
+    if (normalized[0] == '\0') {
+        snprintf(normalized, sizeof(normalized), "%s", DEFAULT_SERVER_URL);
+    }
+
+    parse_server_url(normalized, server_host, sizeof(server_host), server_port, sizeof(server_port));
+
+    esp_err_t err_info = store_server_info_to_flash(server_host, server_port);
+    esp_err_t err_url = store_char("server_url", normalized);
+    if (err_url == ESP_OK && err_info == ESP_OK) {
+        char log_msg[LOG_STORE_MESSAGE_MAX];
+        snprintf(log_msg, sizeof(log_msg), "Server URL updated (%.72s)", normalized);
+        automation_record_log(log_msg);
+        return ESP_OK;
+    }
+
+    if (err_url != ESP_OK) {
+        ESP_LOGE(STORE_TAG, "Failed to store server URL: %s", esp_err_to_name(err_url));
+        automation_record_log("Failed to update server URL in NVS");
+        return err_url;
+    }
+    return err_info;
 }
 esp_err_t store_wifi_credentials_to_flash(const char *ssid, const char *password) {
     esp_err_t err_ssid = store_char("wifi_ssid", ssid);

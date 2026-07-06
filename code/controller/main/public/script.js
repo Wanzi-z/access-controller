@@ -52,7 +52,15 @@ const fetchJSON = async (path, options = {}) => {
     return null;
   }
 
-  return response.json();
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    return text;
+  }
 };
 
 const escapeHtml = (value) => {
@@ -145,6 +153,36 @@ const applyDeviceInfo = (device = {}) => {
   const uuidEl = document.getElementById('uuid');
   if (uuidEl) {
     uuidEl.textContent = device.uuid || '—';
+  }
+
+  const network = device.network || {};
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value || '—';
+  };
+
+  setText('wifiStaIp', network.wifi_sta_ip);
+  setText('wifiApIp', network.wifi_ap_ip);
+  setText('ethIp', network.eth_ip);
+  setText('wifiStaMac', network.wifi_sta_mac);
+  setText('wifiApMac', network.wifi_ap_mac);
+  setText('ethMac', network.eth_mac);
+  setText('headerStaIp', network.wifi_sta_ip);
+  setText('headerApIp', network.wifi_ap_ip);
+};
+
+const applyServerInfo = (server = {}) => {
+  const serverUrl = server.url || 'pyfisecurity.com/devices';
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value || '—';
+  };
+  setText('systemServerUrl', serverUrl);
+  setText('headerServerUrl', serverUrl);
+
+  const input = document.getElementById('serverUrl');
+  if (input && document.activeElement !== input) {
+    input.value = serverUrl;
   }
 };
 
@@ -514,6 +552,7 @@ const renderRf = (rf = {}) => {
 
 const renderState = (state = {}) => {
   applyDeviceInfo(state.device || {});
+  applyServerInfo(state.server || {});
   applyLockState(state.locks || []);
   applyExitState(state.exits || []);
   applyFobState(state.fobs || []);
@@ -539,6 +578,7 @@ let consecutiveStateFailures = 0;
 let nextStateToastAt = 0;
 const DEVICE_STATE_TOAST_BACKOFF_MS = 120000;
 let wifiNetworksCache = null;
+let wifiScanCache = null;
 
 const loadState = async () => {
   if (stateInFlight) return stateInFlight;
@@ -552,6 +592,10 @@ const loadState = async () => {
     if (wifiNetworksCache) {
       App.data.wifi = App.data.wifi || {};
       App.data.wifi.networks = wifiNetworksCache;
+    }
+    if (wifiScanCache) {
+      App.data.wifi = App.data.wifi || {};
+      App.data.wifi.scanned = wifiScanCache;
     }
     renderState(data);
     if (App.elements.toast && !App.elements.toast.hidden) {
@@ -581,13 +625,24 @@ const loadWifiList = async () => {
   if (wifiListInFlight) return wifiListInFlight;
   wifiListInFlight = (async () => {
     try {
-      const networks = await fetchJSON(`api/wifi/list?t=${Date.now()}`);
-      wifiNetworksCache = Array.isArray(networks) ? networks : [];
+      const [savedResult, scanResult] = await Promise.allSettled([
+        fetchJSON(`api/wifi/list?t=${Date.now()}`),
+        fetchJSON(`api/wifi/scan?t=${Date.now()}`),
+      ]);
+      const networks = savedResult.status === 'fulfilled' && Array.isArray(savedResult.value)
+        ? savedResult.value
+        : [];
+      const scanned = scanResult.status === 'fulfilled' && Array.isArray(scanResult.value)
+        ? scanResult.value
+        : [];
+      wifiNetworksCache = networks;
+      wifiScanCache = scanned;
       const wifi = (App.data && App.data.wifi) ? App.data.wifi : {};
-      renderWifi({ ...wifi, networks: wifiNetworksCache });
+      renderWifi({ ...wifi, networks: wifiNetworksCache, scanned: wifiScanCache });
       if (App.data) {
         App.data.wifi = App.data.wifi || {};
         App.data.wifi.networks = wifiNetworksCache;
+        App.data.wifi.scanned = wifiScanCache;
       }
     } catch (error) {
       console.warn('Failed to load Wi-Fi list', error);
@@ -834,6 +889,8 @@ const setupForms = () => {
   const wifiForm = document.getElementById('wifiForm');
   const serverForm = document.getElementById('serverForm');
   const wifiList = document.getElementById('wifiNetworks');
+  const wifiAvailableList = document.getElementById('wifiAvailableNetworks');
+  const wifiScanBtn = document.getElementById('wifiScanBtn');
 
   if (wifiForm) {
     wifiForm.addEventListener('submit', async (event) => {
@@ -891,16 +948,41 @@ const setupForms = () => {
     });
   }
 
+  if (wifiScanBtn) {
+    wifiScanBtn.addEventListener('click', async () => {
+      wifiScanBtn.disabled = true;
+      try {
+        await loadWifiList();
+        showToast('Wi-Fi scan refreshed.');
+      } catch (error) {
+        handleError(error, 'Failed to scan Wi-Fi networks');
+      } finally {
+        wifiScanBtn.disabled = false;
+      }
+    });
+  }
+
+  if (wifiAvailableList) {
+    wifiAvailableList.addEventListener('click', (event) => {
+      const networkBtn = event.target.closest('button[data-action="wifi-select"]');
+      if (!networkBtn) return;
+      const ssid = networkBtn.getAttribute('data-ssid') || '';
+      const ssidInput = document.getElementById('wifiName');
+      const passwordInput = document.getElementById('wifiPassword');
+      if (ssidInput) ssidInput.value = ssid;
+      if (passwordInput) passwordInput.focus();
+    });
+  }
+
   if (serverForm) {
     serverForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const serverIp = document.getElementById('ipAddress')?.value || '';
-      const serverPort = document.getElementById('port')?.value || '';
+      const serverUrl = (document.getElementById('serverUrl')?.value || 'pyfisecurity.com/devices').trim() || 'pyfisecurity.com/devices';
 
       try {
         await fetchJSON('api/server', {
           method: 'POST',
-          body: JSON.stringify({ serverIp, serverPort }),
+          body: JSON.stringify({ serverUrl }),
         });
         showToast('Server information updated. Device will reboot to apply changes.');
       } catch (error) {
@@ -1196,13 +1278,38 @@ const renderKeypadUsers = (users = []) => {
 
 const renderWifi = (wifi = {}) => {
   const list = document.getElementById('wifiNetworks');
+  const availableList = document.getElementById('wifiAvailableNetworks');
   const activeEl = document.getElementById('wifiActive');
   if (!list) return;
   const networks = wifi.networks || [];
+  const scanned = wifi.scanned || [];
   const active = wifi.active_ssid || '';
+  const savedSsids = new Set(networks.map((network) => network.ssid).filter(Boolean));
   if (activeEl) {
     activeEl.textContent = active || '—';
   }
+
+  if (availableList) {
+    if (!scanned.length) {
+      availableList.innerHTML = '<p class="empty-state muted">No nearby networks found yet.</p>';
+    } else {
+      availableList.innerHTML = scanned
+        .map((network) => {
+          const ssid = network.ssid || '';
+          const saved = savedSsids.has(ssid);
+          const strength = Math.max(0, Math.min(100, Math.round(((network.rssi || -90) + 90) * 2)));
+          return `
+            <button type="button" class="wifi-network-card" data-action="wifi-select" data-ssid="${escapeHtml(ssid)}">
+              <span class="wifi-network-name">${escapeHtml(ssid)}</span>
+              <span class="wifi-network-meta">${escapeHtml(network.auth || (network.secure ? 'Secured' : 'Open'))}${saved ? ' · Saved' : ''}</span>
+              <span class="wifi-strength" aria-hidden="true"><span style="width:${strength}%"></span></span>
+            </button>
+          `;
+        })
+        .join('');
+    }
+  }
+
   if (!networks.length) {
     list.innerHTML = '<p class="empty-state muted">No saved Wi‑Fi networks.</p>';
     return;

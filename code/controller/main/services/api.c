@@ -4,7 +4,10 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_mac.h"
+#include "esp_netif.h"
 #include "esp_random.h"
+#include "esp_wifi.h"
 #include "cJSON.h"
 #include "freertos/semphr.h"
 
@@ -47,6 +50,157 @@ extern void modify_user_from_flash(const char *uuid, const char *newName, const 
 // Forward declaration
 static cJSON *keypad_users_snapshot(void);
 
+static void mac_to_string(const uint8_t mac[6], char *buf, size_t size) {
+    if (!buf || size == 0) {
+        return;
+    }
+    snprintf(buf, size, MACSTR, MAC2STR(mac));
+}
+
+static void add_netif_ip(cJSON *object, const char *field, const char *if_key) {
+    if (!object || !field || !if_key) {
+        return;
+    }
+
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey(if_key);
+    if (!netif) {
+        cJSON_AddNullToObject(object, field);
+        return;
+    }
+
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0) {
+        cJSON_AddNullToObject(object, field);
+        return;
+    }
+
+    char ip[16];
+    snprintf(ip, sizeof(ip), IPSTR, IP2STR(&ip_info.ip));
+    cJSON_AddStringToObject(object, field, ip);
+}
+
+static cJSON *network_state_snapshot(void) {
+    cJSON *network = cJSON_CreateObject();
+    if (!network) {
+        return NULL;
+    }
+
+    add_netif_ip(network, "wifi_sta_ip", "WIFI_STA_DEF");
+    add_netif_ip(network, "wifi_ap_ip", "WIFI_AP_DEF");
+    add_netif_ip(network, "eth_ip", "ETH_DEF");
+
+    uint8_t mac[6] = {0};
+    char mac_str[18];
+    if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
+        mac_to_string(mac, mac_str, sizeof(mac_str));
+        cJSON_AddStringToObject(network, "wifi_sta_mac", mac_str);
+    } else {
+        cJSON_AddNullToObject(network, "wifi_sta_mac");
+    }
+
+    if (esp_wifi_get_mac(WIFI_IF_AP, mac) == ESP_OK) {
+        mac_to_string(mac, mac_str, sizeof(mac_str));
+        cJSON_AddStringToObject(network, "wifi_ap_mac", mac_str);
+    } else {
+        cJSON_AddNullToObject(network, "wifi_ap_mac");
+    }
+
+    if (esp_read_mac(mac, ESP_MAC_ETH) == ESP_OK) {
+        mac_to_string(mac, mac_str, sizeof(mac_str));
+        cJSON_AddStringToObject(network, "eth_mac", mac_str);
+    } else {
+        cJSON_AddNullToObject(network, "eth_mac");
+    }
+
+    return network;
+}
+
+static const char *wifi_auth_mode_name(wifi_auth_mode_t authmode) {
+    switch (authmode) {
+        case WIFI_AUTH_OPEN: return "Open";
+        case WIFI_AUTH_WEP: return "WEP";
+        case WIFI_AUTH_WPA_PSK: return "WPA";
+        case WIFI_AUTH_WPA2_PSK: return "WPA2";
+        case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2";
+        case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2 Enterprise";
+        case WIFI_AUTH_WPA3_PSK: return "WPA3";
+        case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+        default: return "Secured";
+    }
+}
+
+static cJSON *wifi_scan_snapshot(void) {
+    cJSON *array = cJSON_CreateArray();
+    if (!array) {
+        return NULL;
+    }
+
+    wifi_mode_t original_mode = WIFI_MODE_NULL;
+    esp_err_t err = esp_wifi_get_mode(&original_mode);
+    if (err != ESP_OK || original_mode == WIFI_MODE_NULL) {
+        ESP_LOGW(API_TAG, "Wi-Fi scan unavailable (%s)", esp_err_to_name(err));
+        return array;
+    }
+
+    bool restore_ap_mode = false;
+    if (original_mode == WIFI_MODE_AP) {
+        err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+        if (err != ESP_OK) {
+            ESP_LOGW(API_TAG, "Failed to enable APSTA for scan (%s)", esp_err_to_name(err));
+            return array;
+        }
+        restore_ap_mode = true;
+    }
+
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = true,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+    };
+
+    err = esp_wifi_scan_start(&scan_config, true);
+    if (err == ESP_OK) {
+        uint16_t ap_count = 0;
+        esp_wifi_scan_get_ap_num(&ap_count);
+        uint16_t record_count = ap_count > 20 ? 20 : ap_count;
+        wifi_ap_record_t records[20];
+        memset(records, 0, sizeof(records));
+        err = esp_wifi_scan_get_ap_records(&record_count, records);
+        if (err == ESP_OK) {
+            for (uint16_t i = 0; i < record_count; i++) {
+                if (records[i].ssid[0] == '\0') {
+                    continue;
+                }
+                cJSON *item = cJSON_CreateObject();
+                if (!item) {
+                    continue;
+                }
+                cJSON_AddStringToObject(item, "ssid", (const char *)records[i].ssid);
+                cJSON_AddNumberToObject(item, "rssi", records[i].rssi);
+                cJSON_AddNumberToObject(item, "channel", records[i].primary);
+                cJSON_AddStringToObject(item, "auth", wifi_auth_mode_name(records[i].authmode));
+                cJSON_AddBoolToObject(item, "secure", records[i].authmode != WIFI_AUTH_OPEN);
+                cJSON_AddItemToArray(array, item);
+            }
+        }
+    }
+
+    if (err != ESP_OK) {
+        ESP_LOGW(API_TAG, "Wi-Fi scan failed (%s)", esp_err_to_name(err));
+    }
+
+    if (restore_ap_mode) {
+        esp_err_t restore_err = esp_wifi_set_mode(original_mode);
+        if (restore_err != ESP_OK) {
+            ESP_LOGW(API_TAG, "Failed to restore Wi-Fi mode after scan (%s)", esp_err_to_name(restore_err));
+        }
+    }
+
+    return array;
+}
+
 static cJSON *build_state_snapshot(void) {
     cJSON *root = cJSON_CreateObject();
     if (!root) {
@@ -56,7 +210,24 @@ static cJSON *build_state_snapshot(void) {
     cJSON *device = cJSON_CreateObject();
     if (device) {
         cJSON_AddStringToObject(device, "uuid", device_id);
+        cJSON *network = network_state_snapshot();
+        if (network) {
+            cJSON_AddItemToObject(device, "network", network);
+        }
         cJSON_AddItemToObject(root, "device", device);
+    }
+
+    cJSON *server = cJSON_CreateObject();
+    if (server) {
+        char server_url[160] = {0};
+        char server_host[32] = {0};
+        char server_port[8] = {0};
+        load_server_url_from_flash(server_url, sizeof(server_url));
+        load_server_info_from_flash(server_host, server_port);
+        cJSON_AddStringToObject(server, "url", server_url);
+        cJSON_AddStringToObject(server, "host", server_host);
+        cJSON_AddStringToObject(server, "port", server_port);
+        cJSON_AddItemToObject(root, "server", server);
     }
 
     cJSON *locks = lock_state_snapshot();
@@ -450,6 +621,10 @@ static esp_err_t api_wifi_get_handler(httpd_req_t *req) {
 
 static esp_err_t api_wifi_list_get_handler(httpd_req_t *req) {
     return send_json_response(req, wifi_list_snapshot());
+}
+
+static esp_err_t api_wifi_scan_get_handler(httpd_req_t *req) {
+    return send_json_response(req, wifi_scan_snapshot());
 }
 
 static esp_err_t api_wifi_add_post_handler(httpd_req_t *req) {
@@ -958,6 +1133,13 @@ void register_api_routes(httpd_handle_t server) {
     };
     httpd_register_uri_handler(server, &wifi_list_get);
 
+    httpd_uri_t wifi_scan_get = {
+        .uri = "/api/wifi/scan",
+        .method = HTTP_GET,
+        .handler = api_wifi_scan_get_handler,
+    };
+    httpd_register_uri_handler(server, &wifi_scan_get);
+
     httpd_uri_t wifi_add = {
         .uri = "/api/wifi/add",
         .method = HTTP_POST,
@@ -993,4 +1175,3 @@ void register_api_routes(httpd_handle_t server) {
     };
     httpd_register_uri_handler(server, &favicon);
 }
-

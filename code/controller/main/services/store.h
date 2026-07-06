@@ -19,6 +19,8 @@ esp_err_t store_wifi_credentials_to_flash(const char *ssid, const char *password
 void load_wifi_credentials_from_flash(char *ssid, char *password);
 esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_port);
 void load_server_info_from_flash(char *server_ip, char *server_port);
+esp_err_t store_server_url_to_flash(const char *server_url);
+void load_server_url_from_flash(char *server_url, size_t size);
 esp_err_t wifi_list_add(const char *ssid, const char *password);
 esp_err_t wifi_list_delete(const char *ssid);
 cJSON *wifi_list_snapshot(void);
@@ -29,4 +31,3 @@ int storeSetting(char *key, cJSON *payload);
 int restoreSetting(char *key);
 
 #endif // STORE_H
-

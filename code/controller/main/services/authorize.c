@@ -204,6 +204,20 @@ void handle_authorize_message(cJSON * payload) {
             }
         }
 
+    } else if (cJSON_GetObjectItem(payload,"serverUrl")) {
+        char serverUrl[160] = "";
+        const cJSON *server_url_item = cJSON_GetObjectItem(payload, "serverUrl");
+        if (cJSON_IsString(server_url_item) && server_url_item->valuestring) {
+            snprintf(serverUrl, sizeof(serverUrl), "%s", server_url_item->valuestring);
+            esp_err_t err = store_server_url_to_flash(serverUrl);
+            if (err == ESP_OK) {
+                vTaskDelay(100 / portTICK_PERIOD_MS);
+                esp_restart();
+            } else {
+                ESP_LOGE(TAG, "Failed to update server URL: %s", esp_err_to_name(err));
+            }
+        }
+
     } else if (cJSON_GetObjectItem(payload,"serverIp")) {
         char serverIp[32] = "";
         char serverPort[8] = "";
