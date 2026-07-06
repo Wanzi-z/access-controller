@@ -447,7 +447,7 @@ esp_err_t start_file_server(const char *base_path)
             sizeof(server_data->base_path));
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 40; // allow plenty for API + static routes
+    config.max_uri_handlers = 48; // allow API, websocket, upload, and embedded asset routes
     config.stack_size = 8192;
 
     /* Use the URI wildcard matching function in order to

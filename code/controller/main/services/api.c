@@ -43,6 +43,7 @@ extern void handle_authorize_message(cJSON *payload);
 
 extern char device_id[100];
 extern uint32_t get_u32(const char *key, uint32_t default_value);
+extern uint32_t get_user_count_from_flash(void);
 extern cJSON *load_user_from_flash(uint32_t user_id);
 extern void store_user_to_flash(char *uuid, char *name, char *pin);
 extern esp_err_t delete_user_from_flash(const char *uuid);
@@ -709,7 +710,7 @@ static cJSON *keypad_users_snapshot(void) {
     cJSON *array = cJSON_CreateArray();
     if (!array) return NULL;
 
-    uint32_t user_count = get_u32("auth_user_count", 0);
+    uint32_t user_count = get_user_count_from_flash();
     for (uint32_t i = 0; i < user_count; i++) {
         cJSON *user = load_user_from_flash(i + 1);
         if (user) {
@@ -759,8 +760,7 @@ static esp_err_t api_keypad_user_post_handler(httpd_req_t *req) {
     store_user_to_flash(uuid, (char *)name, (char *)(pin ? pin : ""));
     cJSON_Delete(payload);
 
-    cJSON *users = keypad_users_snapshot();
-    return send_json_response(req, users);
+    return send_json_response(req, cJSON_CreateArray());
 }
 
 // DELETE /api/keypad/user - Delete PIN user by UUID
@@ -796,9 +796,15 @@ static esp_err_t api_keypad_user_delete_handler(httpd_req_t *req) {
 
 // POST /api/keypad/users/delete-all - Remove all PIN users
 static esp_err_t api_keypad_users_delete_all_post_handler(httpd_req_t *req) {
-    (void)req;
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    cJSON_Delete(payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
     ESP_LOGI(API_TAG, "Deleting all keypad users");
-    esp_err_t err = delete_all_users_from_flash();
+    err = delete_all_users_from_flash();
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete users");
     }
@@ -863,9 +869,15 @@ static esp_err_t api_wiegand_delete_post_handler(httpd_req_t *req) {
 
 // POST /api/wiegand/delete-all - Remove all Wiegand users
 static esp_err_t api_wiegand_delete_all_post_handler(httpd_req_t *req) {
-    (void)req;
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    cJSON_Delete(payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
     ESP_LOGI(API_TAG, "Deleting all Wiegand users");
-    esp_err_t err = wiegand_registry_clear();
+    err = wiegand_registry_clear();
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete Wiegand users");
     }
@@ -883,9 +895,15 @@ static esp_err_t api_rf_get_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_rf_delete_all_post_handler(httpd_req_t *req) {
-    (void)req;
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    cJSON_Delete(payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
     ESP_LOGI(API_TAG, "Deleting all RF codes");
-    esp_err_t err = rf_registry_clear();
+    err = rf_registry_clear();
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete RF codes");
     }

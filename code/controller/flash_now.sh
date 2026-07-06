@@ -16,9 +16,9 @@ echo "========================================="
 echo ""
 echo "Port: $PORT"
 echo ""
-echo "This script builds first, then gives a countdown before flashing."
-echo "Hold PROG/BOOT during the countdown and keep holding until"
-echo "'Chip is ESP32-S3' appears. The Connecting dots are real esptool retries."
+echo "This script builds first, then enters download mode with the CP2102N"
+echo "DTR/RTS sequence used by this controller board. No PROG/BOOT press"
+echo "should be needed. The Connecting dots are real esptool retries."
 echo ""
 
 if [ ! -e "$PORT" ]; then
@@ -37,17 +37,55 @@ echo "Building firmware..."
 idf.py build
 
 echo ""
-echo "Get ready to hold PROG/BOOT."
-for seconds in 5 4 3 2 1; do
-    echo "Starting flash in $seconds..."
-    sleep 1
-done
+echo "Entering ESP32-S3 download mode without button press..."
+python - "$PORT" <<'PY'
+import serial
+import sys
+import time
 
-echo ""
-echo "Hold PROG/BOOT now."
+port = sys.argv[1]
+ser = serial.Serial(port, 115200, timeout=0.1, dsrdtr=False, rtscts=False)
+
+# This board's CP2102N reset wiring is inverted relative to esptool's
+# default sequence. These states were verified on the target hardware:
+# DTR=False and RTS=True/False enters download mode on this board.
+ser.dtr = True
+ser.rts = True
+time.sleep(0.1)
+ser.dtr = False
+ser.rts = False
+time.sleep(0.25)
+ser.rts = True
+time.sleep(0.5)
+ser.close()
+PY
+
 echo "Flashing firmware..."
 echo ""
-idf.py -p "$PORT" flash
+(
+    cd build
+    python -m esptool --chip esp32s3 -p "$PORT" -b 460800 \
+        --before no_reset --after no_reset \
+        write_flash "@flash_args"
+)
+
+echo ""
+echo "Resetting into app mode..."
+python - "$PORT" <<'PY'
+import serial
+import sys
+import time
+
+port = sys.argv[1]
+ser = serial.Serial(port, 115200, timeout=0.1, dsrdtr=False, rtscts=False)
+# App boot pulse verified on the target hardware.
+ser.dtr = False
+ser.rts = True
+time.sleep(0.25)
+ser.rts = False
+time.sleep(0.2)
+ser.close()
+PY
 
 echo ""
 echo "========================================="

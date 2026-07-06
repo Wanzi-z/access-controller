@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <dirent.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -647,7 +648,7 @@ cJSON* load_user_from_flash(uint32_t user_id) {
 
     FILE *file = fopen(file_path, "r");
     if (!file) {
-        ESP_LOGW(STORE_TAG, "User file %s not found", file_path);
+        ESP_LOGD(STORE_TAG, "User file %s not found", file_path);
         return NULL;
     }
 
@@ -740,10 +741,20 @@ void store_user_to_flash(char *uuid, char *name, char *pin) {
     cJSON_Delete(user);
 }
 
+uint32_t get_user_count_from_flash(void) {
+    uint32_t user_count = get_u32("auth_user_count", 0);
+    if (user_count > MAX_USER_COUNT) {
+        ESP_LOGW(STORE_TAG, "auth_user_count=%" PRIu32 " exceeds max %d; resetting", user_count, MAX_USER_COUNT);
+        store_u32("auth_user_count", 0);
+        return 0;
+    }
+    return user_count;
+}
+
 char* find_pin_in_flash(const char* pin) {
     if (!pin) return NULL;
 
-    uint32_t user_count = get_u32("auth_user_count", 0);
+    uint32_t user_count = get_user_count_from_flash();
     ESP_LOGI(STORE_TAG, "Total User Count: %" PRIu32, user_count);
 
     for (uint32_t i = 0; i < user_count; i++) {
@@ -781,7 +792,7 @@ char* find_pin_in_flash(const char* pin) {
 void modify_user_from_flash(const char *uuid, const char *newName, const char *newPin) {
     if (!uuid) return;
 
-    uint32_t user_count = get_u32("auth_user_count", 0);
+    uint32_t user_count = get_user_count_from_flash();
     for (uint32_t i = 0; i < user_count; i++) {
         cJSON *user = load_user_from_flash(i + 1);
         if (!user) continue;
@@ -816,7 +827,7 @@ esp_err_t delete_user_from_flash(const char *uuid_to_delete) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint32_t user_count = get_u32("auth_user_count", 0);
+    uint32_t user_count = get_user_count_from_flash();
     for (uint32_t i = 0; i < user_count; i++) {
         cJSON *user = load_user_from_flash(i + 1);
         if (!user) continue;
@@ -856,18 +867,43 @@ esp_err_t delete_user_from_flash(const char *uuid_to_delete) {
 }
 
 esp_err_t delete_all_users_from_flash(void) {
-    uint32_t user_count = get_u32("auth_user_count", 0);
+    uint32_t user_count = get_user_count_from_flash();
+    uint32_t removed = 0;
+    DIR *dir = opendir("/spiffs");
 
-    for (uint32_t i = 0; i < MAX_USER_COUNT; i++) {
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strncmp(entry->d_name, "user_", 5) != 0 || !strstr(entry->d_name, ".json")) {
+                continue;
+            }
+
+            char path[USER_FILE_MAX_PATH];
+            strlcpy(path, "/spiffs/", sizeof(path));
+            strlcat(path, entry->d_name, sizeof(path));
+            if (remove(path) == 0) {
+                removed++;
+            } else if (errno != ENOENT) {
+                ESP_LOGW(STORE_TAG, "Failed to remove user file %s: errno=%d", path, errno);
+            }
+        }
+        closedir(dir);
+    } else {
+        ESP_LOGW(STORE_TAG, "Failed to open SPIFFS directory while deleting users; falling back to indexed cleanup");
+    }
+
+    for (uint32_t i = 0; !dir && i < user_count; i++) {
         char path[USER_FILE_MAX_PATH];
         get_user_file_path(i, path, sizeof(path));
         if (remove(path) != 0 && errno != ENOENT) {
             ESP_LOGW(STORE_TAG, "Failed to remove user file %s: errno=%d", path, errno);
+        } else {
+            removed++;
         }
     }
 
     store_u32("auth_user_count", 0);
-    ESP_LOGI(STORE_TAG, "Deleted all %" PRIu32 " users", user_count);
+    ESP_LOGI(STORE_TAG, "Deleted all users (count=%" PRIu32 ", files_removed=%" PRIu32 ")", user_count, removed);
     return ESP_OK;
 }
 
@@ -879,7 +915,7 @@ esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint32_t user_count = get_u32("auth_user_count", 0);
+    uint32_t user_count = get_user_count_from_flash();
     for (uint32_t i = 0; i < user_count; i++) {
         cJSON *user = load_user_from_flash(i + 1);
         if (!user) continue;

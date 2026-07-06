@@ -30,6 +30,34 @@ async function clickRemoveAll(page, selector) {
   await page.click(selector);
 }
 
+async function gotoWithRetry(page, url, attempts = 4) {
+  let lastError;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
+      return;
+    } catch (err) {
+      lastError = err;
+      await wait(750);
+    }
+  }
+  throw lastError;
+}
+
+async function reloadWithRetry(page, attempts = 4) {
+  let lastError;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await page.reload({ waitUntil: 'networkidle', timeout: 15000 });
+      return;
+    } catch (err) {
+      lastError = err;
+      await wait(750);
+    }
+  }
+  throw lastError;
+}
+
 export default async function run(api, report) {
   report.startSuite(
     'Bulk Remove UI',
@@ -44,7 +72,7 @@ export default async function run(api, report) {
     browser = await chromium.launch({ headless: true });
     page = await browser.newPage();
     page.setDefaultTimeout(10000);
-    await page.goto(DEVICE_URL, { waitUntil: 'networkidle', timeout: 15000 });
+    await gotoWithRetry(page, DEVICE_URL);
   } catch (err) {
     report.fail('Open live UI', err.message);
     if (browser) await browser.close();
@@ -53,29 +81,35 @@ export default async function run(api, report) {
   }
 
   try {
+    const setupStart = Date.now();
+    await api.deleteAllKeypadUsers();
+    await api.deleteAllWiegand();
+    await api.deleteAllRf();
+    await waitUntilEmpty('Initial keypad users', () => api.getKeypadUsers(), users => Array.isArray(users) ? users : []);
+    await waitUntilEmpty('Initial RFID cards', () => api.getWiegand(), state => Array.isArray(state?.users) ? state.users : []);
+    await waitUntilEmpty('Initial remote FOBs', () => api.getRf(), state => Array.isArray(state?.users) ? state.users : []);
+    report.pass('Initial credential stores cleared', '', Date.now() - setupStart);
+
     const suffix = String(Date.now()).slice(-6);
-    const created = [];
+    const createdNames = [];
     const t0 = Date.now();
 
     for (let i = 0; i < 3; i++) {
       const name = `Bulk Remove Test ${suffix}-${i + 1}`;
       const pin = String(730000 + i);
-      const users = await api.addKeypadUser(name, pin);
-      const user = Array.isArray(users) ? users.find(u => u.name === name) : null;
-      if (user?.uuid) {
-        created.push(user.uuid);
-      }
+      await api.addKeypadUser(name, pin);
+      createdNames.push(name);
     }
 
     const beforeUsers = await api.getKeypadUsers();
-    const createdCount = beforeUsers.filter(u => created.includes(u.uuid)).length;
+    const createdCount = beforeUsers.filter(u => createdNames.includes(u.name)).length;
     if (createdCount === 3) {
       report.pass('Added keypad users for remove-all test', `Total before clear: ${beforeUsers.length}`, Date.now() - t0);
     } else {
       report.fail('Added keypad users for remove-all test', `Expected 3 created users, found ${createdCount}`, Date.now() - t0);
     }
 
-    await page.reload({ waitUntil: 'networkidle' });
+    await reloadWithRetry(page);
     await page.waitForSelector('#keypadRemoveAllBtn');
     const keypadDisabled = await page.locator('#keypadRemoveAllBtn').isDisabled();
     if (keypadDisabled) {
@@ -87,7 +121,7 @@ export default async function run(api, report) {
     const clearUsersStart = Date.now();
     await clickRemoveAll(page, '#keypadRemoveAllBtn');
     await waitUntilEmpty('Keypad users', () => api.getKeypadUsers(), users => Array.isArray(users) ? users : []);
-    await page.reload({ waitUntil: 'networkidle' });
+    await reloadWithRetry(page);
     await page.waitForFunction(() => {
       const list = document.querySelector('#keypadUserList');
       const button = document.querySelector('#keypadRemoveAllBtn');
@@ -116,13 +150,13 @@ export default async function run(api, report) {
       const start = Date.now();
       const before = await section.read();
       const users = section.extract(before);
-      await page.reload({ waitUntil: 'networkidle' });
+      await reloadWithRetry(page);
       await page.waitForSelector(section.selector);
 
       if (users.length > 0) {
         await clickRemoveAll(page, section.selector);
         await waitUntilEmpty(section.label, section.read, section.extract);
-        await page.reload({ waitUntil: 'networkidle' });
+        await reloadWithRetry(page);
         const disabled = await page.locator(section.selector).isDisabled();
         if (disabled) {
           report.pass(`${section.label} Remove All clears UI and persisted entries`, '', Date.now() - start);
