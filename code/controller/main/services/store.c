@@ -718,6 +718,13 @@ void store_user_to_flash(char *uuid, char *name, char *pin) {
     cJSON_AddStringToObject(user, "uuid", uuid);
     cJSON_AddStringToObject(user, "name", name);
     cJSON_AddStringToObject(user, "pin", pin);
+    cJSON *pins = cJSON_CreateArray();
+    if (pins) {
+        if (pin[0] != '\0') {
+            cJSON_AddItemToArray(pins, cJSON_CreateString(pin));
+        }
+        cJSON_AddItemToObject(user, "pins", pins);
+    }
 
     if (write_user_to_file(user_index, user) == ESP_OK) {
         store_u32("auth_user_count", user_index + 1);
@@ -737,7 +744,19 @@ char* find_pin_in_flash(const char* pin) {
         if (!user) continue;
 
         cJSON *pin_json = cJSON_GetObjectItemCaseSensitive(user, "pin");
-        if (cJSON_IsString(pin_json) && strcmp(pin_json->valuestring, pin) == 0) {
+        cJSON *pins_json = cJSON_GetObjectItemCaseSensitive(user, "pins");
+        bool matched = cJSON_IsString(pin_json) && pin_json->valuestring && strcmp(pin_json->valuestring, pin) == 0;
+        if (!matched && cJSON_IsArray(pins_json)) {
+            int pin_count = cJSON_GetArraySize(pins_json);
+            for (int p = 0; p < pin_count; p++) {
+                cJSON *pin_item = cJSON_GetArrayItem(pins_json, p);
+                if (cJSON_IsString(pin_item) && pin_item->valuestring && strcmp(pin_item->valuestring, pin) == 0) {
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if (matched) {
             cJSON *name_json = cJSON_GetObjectItemCaseSensitive(user, "name");
             char *name = NULL;
             if (cJSON_IsString(name_json) && name_json->valuestring) {
@@ -766,7 +785,16 @@ void modify_user_from_flash(const char *uuid, const char *newName, const char *n
                 cJSON_ReplaceItemInObject(user, "name", cJSON_CreateString(newName));
             }
             if (newPin) {
-                cJSON_ReplaceItemInObject(user, "pin", cJSON_CreateString(newPin));
+                cJSON_DeleteItemFromObject(user, "pin");
+                cJSON_AddStringToObject(user, "pin", newPin);
+                cJSON *pins = cJSON_CreateArray();
+                if (pins && newPin[0] != '\0') {
+                    cJSON_AddItemToArray(pins, cJSON_CreateString(newPin));
+                }
+                if (pins) {
+                    cJSON_DeleteItemFromObject(user, "pins");
+                    cJSON_AddItemToObject(user, "pins", pins);
+                }
             }
             write_user_to_file(i, user);
             cJSON_Delete(user);
@@ -805,6 +833,66 @@ void delete_user_from_flash(const char *uuid_to_delete) {
         ESP_LOGI(STORE_TAG, "Deleted user %s", uuid_to_delete);
         return;
     }
+}
+
+esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_added) {
+    if (out_added) {
+        *out_added = false;
+    }
+    if (!uuid || uuid[0] == '\0' || !pin || pin[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint32_t user_count = get_u32("auth_user_count", 0);
+    for (uint32_t i = 0; i < user_count; i++) {
+        cJSON *user = load_user_from_flash(i + 1);
+        if (!user) continue;
+
+        cJSON *uuid_json = cJSON_GetObjectItemCaseSensitive(user, "uuid");
+        bool match = cJSON_IsString(uuid_json) && uuid_json->valuestring && strcmp(uuid_json->valuestring, uuid) == 0;
+        if (!match) {
+            cJSON_Delete(user);
+            continue;
+        }
+
+        cJSON *legacy_pin = cJSON_GetObjectItemCaseSensitive(user, "pin");
+        cJSON *pins = cJSON_GetObjectItemCaseSensitive(user, "pins");
+        if (!cJSON_IsArray(pins)) {
+            cJSON_DeleteItemFromObject(user, "pins");
+            pins = cJSON_CreateArray();
+            if (pins) {
+                cJSON_AddItemToObject(user, "pins", pins);
+            }
+        }
+        if (!pins) {
+            cJSON_Delete(user);
+            return ESP_ERR_NO_MEM;
+        }
+
+        bool exists = cJSON_IsString(legacy_pin) && legacy_pin->valuestring && strcmp(legacy_pin->valuestring, pin) == 0;
+        int pin_count = cJSON_GetArraySize(pins);
+        for (int p = 0; !exists && p < pin_count; p++) {
+            cJSON *pin_item = cJSON_GetArrayItem(pins, p);
+            exists = cJSON_IsString(pin_item) && pin_item->valuestring && strcmp(pin_item->valuestring, pin) == 0;
+        }
+
+        if (!exists) {
+            cJSON_AddItemToArray(pins, cJSON_CreateString(pin));
+            if (!cJSON_IsString(legacy_pin) || !legacy_pin->valuestring || legacy_pin->valuestring[0] == '\0') {
+                cJSON_DeleteItemFromObject(user, "pin");
+                cJSON_AddStringToObject(user, "pin", pin);
+            }
+            if (out_added) {
+                *out_added = true;
+            }
+        }
+
+        esp_err_t err = write_user_to_file(i, user);
+        cJSON_Delete(user);
+        return err;
+    }
+
+    return ESP_ERR_NOT_FOUND;
 }
 esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_port) {
     esp_err_t err_ip = store_char("server_ip", server_ip);

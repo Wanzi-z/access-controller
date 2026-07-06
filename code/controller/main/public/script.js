@@ -1359,13 +1359,17 @@ const renderLogs = (logs = []) => {
 const buildKeypadUserRow = (user, index, existingValue) => {
   // Use existing input value if user was editing, otherwise use stored name
   const name = escapeHtml(existingValue !== undefined ? existingValue : (user.name || `User ${index + 1}`));
-  const pin = escapeHtml(user.pin || '****');
+  const pinCount = Array.isArray(user.pins)
+    ? user.pins.length
+    : (user.pin ? 1 : 0);
+  const pinLabel = pinCount === 1 ? '1 PIN' : `${pinCount} PINs`;
   
   return `
     <div class="user-row" data-uuid="${escapeHtml(user.uuid || '')}">
-      <span class="user-code">${pin}</span>
+      <span class="user-code">${pinLabel}</span>
       <div class="user-info">
         <input type="text" class="user-name-input" value="${name}" placeholder="Enter name...">
+        <span class="user-channel">Use enrollment to add RFID cards, PINs, or remotes.</span>
       </div>
       <div class="user-actions">
         <button type="button" class="secondary" data-action="save-pin" data-uuid="${escapeHtml(user.uuid || '')}">Save</button>

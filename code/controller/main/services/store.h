@@ -1,6 +1,7 @@
 #ifndef STORE_H
 #define STORE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 #include "cJSON.h"
@@ -10,6 +11,7 @@ void store_user_to_flash(char *uuid, char *name, char *pin);
 cJSON *load_user_from_flash(uint32_t user_id);
 void delete_user_from_flash(const char *uuid_to_delete);
 void modify_user_from_flash(const char *uuid, const char *newName, const char *newPin);
+esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_added);
 esp_err_t store_char(const char *key, const char *value);
 char *get_char(const char *key);
 uint32_t get_u32(const char *key, uint32_t default_value);

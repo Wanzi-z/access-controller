@@ -236,11 +236,19 @@ bool enrollment_on_pin(const char *pin, int channel) {
     strlcpy(user_uuid, s_enrollment.user_uuid, sizeof(user_uuid));
     xSemaphoreGive(s_enrollment_mutex);
 
-    modify_user_from_flash(user_uuid, NULL, pin);
+    bool added = false;
+    esp_err_t err = append_user_pin_to_flash(user_uuid, pin, &added);
 
     xSemaphoreTake(s_enrollment_mutex, portMAX_DELAY);
-    s_enrollment.pin_count++;
-    enrollment_set_last_locked("pin", "****", "saved");
+    if (err == ESP_OK && added) {
+        s_enrollment.pin_count++;
+        enrollment_set_last_locked("pin", "****", "added");
+    } else if (err == ESP_OK) {
+        enrollment_set_last_locked("pin", "****", "duplicate");
+    } else {
+        enrollment_set_last_locked("pin", "****", "failed");
+        ESP_LOGW(ENROLLMENT_TAG, "Failed to save PIN credential (%s)", esp_err_to_name(err));
+    }
     xSemaphoreGive(s_enrollment_mutex);
     ESP_LOGI(ENROLLMENT_TAG, "PIN credential saved for user %s", user_uuid);
     return true;
