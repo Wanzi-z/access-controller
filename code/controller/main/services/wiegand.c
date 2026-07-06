@@ -15,6 +15,7 @@
 #include "wiegand_registry.h"
 #include "wiegand.h"
 #include "automation.h"
+#include "enrollment.h"
 
 /* Forward declarations */
 struct wiegand;
@@ -241,6 +242,11 @@ static void wiegand_process_code(struct wiegand *wg_entry, const char *bit_strin
 
     size_t bit_len = strlen(bit_string);
     (void)bit_len;  // Used below in registration
+
+    if (enrollment_on_wiegand(bit_string, wg_entry->channel)) {
+        ESP_LOGI(LOG_TAG_WIEGAND, "Captured Wiegand code for unified enrollment on channel %d", wg_entry->channel);
+        return;
+    }
 
     uint8_t configured_channel = 0;
     size_t pending = 0;
@@ -491,7 +497,10 @@ static bool handleKeyCode(struct wiegand *ctx) {
     } else if (keyIndex == 11) {
         // Only attempt authorization if PIN is not empty
         if (strlen(ctx->code) > 0) {
-            if (is_pin_authorized(ctx->code)) {
+            if (enrollment_on_pin(ctx->code, ctx->channel)) {
+                beep_keypad(1, ctx->channel);
+                ESP_LOGI(LOG_TAG_WIEGAND, "PIN captured for unified enrollment on channel %d", ctx->channel);
+            } else if (is_pin_authorized(ctx->code)) {
                 lock_set_action_source("wg_pin");
                 arm_lock(ctx->channel, false, ctx->alert);
                 start_wiegand_timer(ctx, true);
@@ -805,4 +814,3 @@ cJSON *wiegand_state_snapshot(void) {
     cJSON_AddItemToObject(root, "users", users);
     return root;
 }
-

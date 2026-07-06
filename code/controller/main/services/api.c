@@ -12,6 +12,7 @@
 #include "freertos/semphr.h"
 
 #include "automation.h"
+#include "enrollment.h"
 #include "wiegand.h"
 #include "wiegand_registry.h"
 #include "rf_registry.h"
@@ -271,6 +272,12 @@ static cJSON *build_state_snapshot(void) {
         rf = cJSON_CreateObject();
     }
     cJSON_AddItemToObject(root, "rf", rf);
+
+    cJSON *enrollment = enrollment_state_snapshot();
+    if (!enrollment) {
+        enrollment = cJSON_CreateObject();
+    }
+    cJSON_AddItemToObject(root, "enrollment", enrollment);
 
     /* Wi-Fi state */
     cJSON *wifi = cJSON_CreateObject();
@@ -734,16 +741,21 @@ static esp_err_t api_keypad_user_post_handler(httpd_req_t *req) {
     const char *name = cJSON_IsString(name_item) ? name_item->valuestring : NULL;
     const char *pin = cJSON_IsString(pin_item) ? pin_item->valuestring : NULL;
 
-    if (!name || !pin || strlen(pin) < 4 || strlen(pin) > 8) {
+    if (!name || name[0] == '\0') {
         cJSON_Delete(payload);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Name and PIN (4-8 digits) required");
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Name required");
+    }
+
+    if (pin && pin[0] != '\0' && (strlen(pin) < 4 || strlen(pin) > 8)) {
+        cJSON_Delete(payload);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "PIN must be 4-8 digits");
     }
 
     char uuid[33];
     generate_uuid(uuid, sizeof(uuid));
 
     ESP_LOGI(API_TAG, "Adding keypad user: name=%s, pin=****", name);
-    store_user_to_flash(uuid, (char *)name, (char *)pin);
+    store_user_to_flash(uuid, (char *)name, (char *)(pin ? pin : ""));
     cJSON_Delete(payload);
 
     cJSON *users = keypad_users_snapshot();
@@ -957,6 +969,46 @@ static esp_err_t api_rf_config_post_handler(httpd_req_t *req) {
     return send_rf_state_response(req);
 }
 
+static esp_err_t api_enrollment_get_handler(httpd_req_t *req) {
+    return send_json_response(req, enrollment_state_snapshot());
+}
+
+static esp_err_t api_enrollment_start_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *uuid_item = cJSON_GetObjectItemCaseSensitive(payload, "userUuid");
+    const char *user_uuid = cJSON_IsString(uuid_item) ? uuid_item->valuestring : NULL;
+    err = enrollment_start(user_uuid);
+    cJSON_Delete(payload);
+
+    if (err == ESP_ERR_NOT_FOUND) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "User not found");
+    }
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to start enrollment");
+    }
+    return send_json_response(req, build_state_snapshot());
+}
+
+static esp_err_t api_enrollment_stop_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    cJSON_Delete(payload);
+
+    err = enrollment_stop();
+    if (err == ESP_ERR_INVALID_STATE) {
+        return send_json_response(req, build_state_snapshot());
+    }
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to stop enrollment");
+    }
+    return send_json_response(req, build_state_snapshot());
+}
+
 void register_api_routes(httpd_handle_t server) {
     httpd_uri_t state = {
         .uri = "/api/state",
@@ -964,6 +1016,27 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_state_get_handler,
     };
     httpd_register_uri_handler(server, &state);
+
+    httpd_uri_t enrollment_get = {
+        .uri = "/api/enrollment",
+        .method = HTTP_GET,
+        .handler = api_enrollment_get_handler,
+    };
+    httpd_register_uri_handler(server, &enrollment_get);
+
+    httpd_uri_t enrollment_start_post = {
+        .uri = "/api/enrollment/start",
+        .method = HTTP_POST,
+        .handler = api_enrollment_start_post_handler,
+    };
+    httpd_register_uri_handler(server, &enrollment_start_post);
+
+    httpd_uri_t enrollment_stop_post = {
+        .uri = "/api/enrollment/stop",
+        .method = HTTP_POST,
+        .handler = api_enrollment_stop_post_handler,
+    };
+    httpd_register_uri_handler(server, &enrollment_stop_post);
 
     httpd_uri_t wiegand_get = {
         .uri = "/api/wiegand",

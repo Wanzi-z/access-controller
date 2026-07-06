@@ -31,6 +31,7 @@ typedef struct {
     char id[37];
     char code[9]; /* 6 hex chars + null, but keep a bit more */
     char name[RF_NAME_MAX];
+    char user_uuid[40];
     uint32_t sequence;
     uint64_t created_ms;
     uint64_t updated_ms;
@@ -113,6 +114,7 @@ static void rf_persist_locked(void) {
         cJSON_AddStringToObject(obj, "id", u->id);
         cJSON_AddStringToObject(obj, "code", u->code);
         cJSON_AddStringToObject(obj, "name", u->name);
+        cJSON_AddStringToObject(obj, "userUuid", u->user_uuid);
         cJSON_AddNumberToObject(obj, "sequence", (double)u->sequence);
         cJSON_AddNumberToObject(obj, "created_ms", (double)u->created_ms);
         cJSON_AddNumberToObject(obj, "updated_ms", (double)u->updated_ms);
@@ -156,6 +158,7 @@ static void load_from_nvs_locked(void) {
         const cJSON *id = cJSON_GetObjectItemCaseSensitive(obj, "id");
         const cJSON *code = cJSON_GetObjectItemCaseSensitive(obj, "code");
         const cJSON *name = cJSON_GetObjectItemCaseSensitive(obj, "name");
+        const cJSON *user_uuid = cJSON_GetObjectItemCaseSensitive(obj, "userUuid");
         const cJSON *seq = cJSON_GetObjectItemCaseSensitive(obj, "sequence");
         const cJSON *created = cJSON_GetObjectItemCaseSensitive(obj, "created_ms");
         const cJSON *updated = cJSON_GetObjectItemCaseSensitive(obj, "updated_ms");
@@ -170,6 +173,9 @@ static void load_from_nvs_locked(void) {
         strlcpy(tmp.code, code->valuestring, sizeof(tmp.code));
         if (cJSON_IsString(name) && name->valuestring) {
             strlcpy(tmp.name, name->valuestring, sizeof(tmp.name));
+        }
+        if (cJSON_IsString(user_uuid) && user_uuid->valuestring) {
+            strlcpy(tmp.user_uuid, user_uuid->valuestring, sizeof(tmp.user_uuid));
         }
         tmp.sequence = cJSON_IsNumber(seq) ? (uint32_t)seq->valuedouble : (uint32_t)(i + 1);
         tmp.created_ms = cJSON_IsNumber(created) ? (uint64_t)created->valuedouble : now_ms();
@@ -248,8 +254,7 @@ static rf_user_t *find_by_id_locked(const char *id) {
     return NULL;
 }
 
-void rf_registry_on_code(uint32_t code, size_t pulse_count) {
-    if (!rf_registration_active) return;
+esp_err_t rf_registry_add_for_user(uint32_t code, size_t pulse_count, const char *user_uuid, const char *name) {
     char code_hex[9] = {0};
     to_hex_code(code, code_hex, sizeof(code_hex));
 
@@ -259,20 +264,27 @@ void rf_registry_on_code(uint32_t code, size_t pulse_count) {
     if (code_exists_locked(code_hex)) {
         strlcpy(rf_last_duplicate, code_hex, sizeof(rf_last_duplicate));
         xSemaphoreGive(rf_mutex);
-        return;
+        return ESP_ERR_INVALID_STATE;
     }
 
     if (!rf_ensure_capacity_locked(rf_user_count + 1)) {
         xSemaphoreGive(rf_mutex);
         ESP_LOGW(RF_REGISTRY_TAG, "Registry full, cannot add code %s", code_hex);
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
     rf_user_t *u = &rf_users[rf_user_count++];
     memset(u, 0, sizeof(*u));
     rf_generate_id(u->id, sizeof(u->id));
     strlcpy(u->code, code_hex, sizeof(u->code));
-    snprintf(u->name, sizeof(u->name), "Remote Fob %lu", (unsigned long)(rf_user_count));
+    if (name && name[0] != '\0') {
+        strlcpy(u->name, name, sizeof(u->name));
+    } else {
+        snprintf(u->name, sizeof(u->name), "Remote Fob %lu", (unsigned long)(rf_user_count));
+    }
+    if (user_uuid) {
+        strlcpy(u->user_uuid, user_uuid, sizeof(u->user_uuid));
+    }
     u->sequence = rf_user_count;
     u->created_ms = now_ms();
     u->updated_ms = u->created_ms;
@@ -281,10 +293,21 @@ void rf_registry_on_code(uint32_t code, size_t pulse_count) {
     u->channel_mask = 0x1;   /* default channel 1 */
     u->exit_seconds = 4;
     u->alert = true;
-    rf_pending++;
+    if (rf_registration_active) {
+        rf_pending++;
+    }
 
     rf_persist_locked();
     xSemaphoreGive(rf_mutex);
+    return ESP_OK;
+}
+
+void rf_registry_on_code(uint32_t code, size_t pulse_count) {
+    if (!rf_registration_active) return;
+    esp_err_t err = rf_registry_add_for_user(code, pulse_count, NULL, NULL);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(RF_REGISTRY_TAG, "Failed to add RF code during registration (%s)", esp_err_to_name(err));
+    }
 }
 
 esp_err_t rf_registry_update_name(const char *id, const char *name) {
@@ -345,6 +368,7 @@ static cJSON *serialize_state_locked(void) {
             cJSON_AddStringToObject(uobj, "id", u->id);
             cJSON_AddStringToObject(uobj, "code", u->code);
             cJSON_AddStringToObject(uobj, "name", u->name);
+            cJSON_AddStringToObject(uobj, "userUuid", u->user_uuid);
             cJSON_AddNumberToObject(uobj, "sequence", (double)u->sequence);
             cJSON_AddNumberToObject(uobj, "created_at_ms", (double)u->created_ms);
             cJSON_AddNumberToObject(uobj, "updated_at_ms", (double)u->updated_ms);

@@ -246,36 +246,66 @@
         </div>
       </div>
 
+      <div class="card" id="enrollment-card">
+        <div class="card-header">
+          <div>
+            <h2>Credential Enrollment</h2>
+            <p class="subtitle">One user, one listening session, any credential source.</p>
+          </div>
+        </div>
+        <div class="enrollment-layout">
+          <div class="enrollment-controls">
+            <label class="form-field">
+              <span>User</span>
+              <select id="enrollUserSelect" aria-label="Enrollment user"></select>
+            </label>
+            <div class="input-group enrollment-new-user">
+              <input type="text" id="enrollNewUserName" placeholder="New user name">
+              <button type="button" class="secondary" id="enrollAddUserBtn">Add User</button>
+            </div>
+            <div class="form-actions enrollment-actions">
+              <button type="button" id="enrollStartBtn">Start Listening</button>
+              <button type="button" class="secondary" id="enrollStopBtn">Stop</button>
+            </div>
+          </div>
+          <div class="enrollment-status" id="enrollmentStatusPanel">
+            <div class="status-bar" id="enrollmentStatusBar">
+              <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span id="enrollmentStatus">Idle</span>
+              </div>
+              <div class="status-meta">
+                <span class="label">User:</span>
+                <span id="enrollmentUser" class="value muted">—</span>
+              </div>
+            </div>
+            <div class="enrollment-metrics">
+              <div class="metric-tile">
+                <span class="label">RFID</span>
+                <span id="enrollRfidCount" class="value">0</span>
+              </div>
+              <div class="metric-tile">
+                <span class="label">PIN</span>
+                <span id="enrollPinCount" class="value">0</span>
+              </div>
+              <div class="metric-tile">
+                <span class="label">Remote</span>
+                <span id="enrollRemoteCount" class="value">0</span>
+              </div>
+              <div class="metric-tile wide">
+                <span class="label">Last input</span>
+                <span id="enrollmentLastInput" class="value muted">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="card" id="wiegand-card">
         <div class="card-header">
           <div>
             <h2>RFID Cards</h2>
-            <p class="subtitle">Manage registered RFID tags and fobs.</p>
-          </div>
-          <div class="card-actions">
-            <select id="wiegandChannelSelect" aria-label="Wiegand channel">
-              <option value="0">All channels</option>
-              <option value="1">Channel 1</option>
-              <option value="2">Channel 2</option>
-            </select>
-            <button id="wiegandRegisterBtn" type="button">
-              <span class="btn-icon">+</span> Register
-            </button>
-            <button id="wiegandStopBtn" type="button" class="secondary">Stop</button>
-          </div>
-        </div>
-        <div class="status-bar" id="wiegandStatusBar">
-          <div class="status-indicator" id="wiegandStatusIndicator">
-            <span class="status-dot"></span>
-            <span id="wiegandStatus">Idle</span>
-          </div>
-          <div class="status-meta">
-            <span class="label">Pending:</span>
-            <span id="wiegandPending" class="value">0</span>
-          </div>
-          <div class="status-meta" id="wiegandDuplicateWrap">
-            <span class="label">Duplicate:</span>
-            <span id="wiegandDuplicate" class="value muted">—</span>
+            <p class="subtitle">Registered RFID credentials.</p>
           </div>
         </div>
         <div id="wiegandUserList" class="user-list"></div>
@@ -284,13 +314,8 @@
       <div class="card" id="keypad-card">
         <div class="card-header">
           <div>
-            <h2>Keypad PIN Codes</h2>
-            <p class="subtitle">Manage PIN codes for keypad access.</p>
-          </div>
-          <div class="card-actions">
-            <button id="keypadAddBtn" type="button">
-              <span class="btn-icon">+</span> Add PIN
-            </button>
+            <h2>Users and PIN Codes</h2>
+            <p class="subtitle">Users available for enrollment.</p>
           </div>
         </div>
         <div id="keypadUserList" class="user-list">
@@ -318,27 +343,7 @@
         <div class="card-header">
           <div>
             <h2>Remote FOBs</h2>
-            <p class="subtitle">Learn 433MHz remotes and manage their names.</p>
-          </div>
-          <div class="card-actions">
-            <button id="rfRegisterBtn" type="button">
-              <span class="btn-icon">+</span> Register
-            </button>
-            <button id="rfStopBtn" type="button" class="secondary">Stop</button>
-          </div>
-        </div>
-        <div class="status-bar" id="rfStatusBar">
-          <div class="status-indicator" id="rfStatusIndicator">
-            <span class="status-dot"></span>
-            <span id="rfStatus">Idle</span>
-          </div>
-          <div class="status-meta">
-            <span class="label">Pending:</span>
-            <span id="rfPending" class="value">0</span>
-          </div>
-          <div class="status-meta" id="rfDuplicateWrap">
-            <span class="label">Duplicate:</span>
-            <span id="rfDuplicate" class="value muted">—</span>
+            <p class="subtitle">Registered 433MHz remotes.</p>
           </div>
         </div>
         <div id="rfUserList" class="user-list"></div>

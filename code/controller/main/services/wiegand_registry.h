@@ -21,6 +21,7 @@ typedef struct {
     char id[WIEGAND_USER_ID_MAX];
     char code[WIEGAND_USER_CODE_MAX];
     char name[WIEGAND_USER_NAME_MAX];
+    char user_uuid[WIEGAND_USER_ID_MAX];
     uint8_t channel;
     wiegand_user_status_t status;
     uint32_t sequence;
@@ -35,6 +36,7 @@ const wiegand_user_t *wiegand_registry_get(size_t index);
 const wiegand_user_t *wiegand_registry_find_by_code(const char *code);
 const wiegand_user_t *wiegand_registry_find_by_id(const char *id);
 esp_err_t wiegand_registry_add(const char *code, uint8_t channel, wiegand_user_t *out_user);
+esp_err_t wiegand_registry_add_for_user(const char *code, uint8_t channel, const char *user_uuid, const char *name, bool active, wiegand_user_t *out_user);
 esp_err_t wiegand_registry_update_name(const char *id, const char *name);
 esp_err_t wiegand_registry_update_status(const char *id, wiegand_user_status_t status);
 esp_err_t wiegand_registry_remove(const char *id);
@@ -46,4 +48,3 @@ cJSON *wiegand_registry_snapshot(void);
 esp_err_t wiegand_registry_promote_all_pending(size_t *out_promoted);
 
 #endif // WIEGAND_REGISTRY_H
-

@@ -1028,6 +1028,53 @@ button.secondary.danger {
   gap: 12px;
 }
 
+.enrollment-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.82fr) minmax(360px, 1.18fr);
+  gap: 14px;
+}
+
+.enrollment-controls,
+.enrollment-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.enrollment-new-user {
+  align-items: stretch;
+}
+
+.enrollment-actions {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.enrollment-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metric-tile {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel);
+}
+
+.metric-tile.wide {
+  grid-column: 1 / -1;
+}
+
+.metric-tile .value {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
 .list-heading {
   display: flex;
   justify-content: space-between;
@@ -1133,6 +1180,8 @@ button.secondary.danger {
   .channel-grid,
   .channel-card,
   .info-list,
+  .enrollment-layout,
+  .enrollment-metrics,
   .wifi-network-grid {
     grid-template-columns: 1fr;
   }

@@ -24,6 +24,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "enrollment.h"
 #include "rf_registry.h"
 
 /* GPIO pin for RF DATA input */
@@ -275,7 +276,9 @@ static void rf_process_task(void *pvParameter)
                             rf_last_code_time_us = now_us;
                             
                             /* Registration path vs live action */
-                            if (rf_registry_is_active()) {
+                            if (enrollment_on_rf(code, count)) {
+                                ESP_LOGI(RF_TAG, "RF code captured for unified enrollment");
+                            } else if (rf_registry_is_active()) {
                                 rf_registry_on_code(code, count);
                             } else {
                                 rf_registry_handle_code(code);

@@ -2,6 +2,7 @@ const App = {
   data: null,
   stateTimer: null,
   logsTimer: null,
+  enrollmentPollTimer: null,
   wiegandPollTimer: null,
   rfPollTimer: null,
   toastTimer: null,
@@ -330,6 +331,18 @@ const stopWiegandPolling = () => {
   }
 };
 
+const startEnrollmentPolling = () => {
+  if (App.enrollmentPollTimer) return;
+  App.enrollmentPollTimer = setInterval(loadState, 1800);
+};
+
+const stopEnrollmentPolling = () => {
+  if (App.enrollmentPollTimer) {
+    clearInterval(App.enrollmentPollTimer);
+    App.enrollmentPollTimer = null;
+  }
+};
+
 const renderWiegand = (wiegand = {}) => {
   const {
     registrationActive = false,
@@ -550,6 +563,37 @@ const renderRf = (rf = {}) => {
   }
 };
 
+const renderEnrollment = (enrollment = {}) => {
+  const active = !!enrollment.active;
+  const statusBar = App.elements.enrollmentStatusBar;
+  const statusEl = App.elements.enrollmentStatus;
+  const userEl = App.elements.enrollmentUser;
+  const lastEl = App.elements.enrollmentLastInput;
+  const startBtn = App.elements.enrollStartBtn;
+  const stopBtn = App.elements.enrollStopBtn;
+  const selectEl = App.elements.enrollUserSelect;
+
+  if (statusBar) statusBar.classList.toggle('registering', active);
+  if (statusEl) statusEl.textContent = active ? 'Listening' : 'Idle';
+  if (userEl) userEl.textContent = enrollment.userName || '—';
+  if (App.elements.enrollRfidCount) App.elements.enrollRfidCount.textContent = enrollment.rfidCount || 0;
+  if (App.elements.enrollPinCount) App.elements.enrollPinCount.textContent = enrollment.pinCount || 0;
+  if (App.elements.enrollRemoteCount) App.elements.enrollRemoteCount.textContent = enrollment.remoteCount || 0;
+  if (lastEl) {
+    const parts = [enrollment.lastSource, enrollment.lastStatus].filter(Boolean);
+    lastEl.textContent = parts.length ? parts.join(' · ') : '—';
+  }
+  if (startBtn) startBtn.disabled = active;
+  if (stopBtn) stopBtn.disabled = !active;
+  if (selectEl) selectEl.disabled = active;
+
+  if (active) {
+    startEnrollmentPolling();
+  } else {
+    stopEnrollmentPolling();
+  }
+};
+
 const renderState = (state = {}) => {
   applyDeviceInfo(state.device || {});
   applyServerInfo(state.server || {});
@@ -560,6 +604,7 @@ const renderState = (state = {}) => {
   applyMotionState(state.motions || []);
   renderWiegand(state.wiegand || {});
   renderRf(state.rf || {});
+  renderEnrollment(state.enrollment || {});
   // Keypad users and logs are heavy; loaded via dedicated endpoints so state polling
   // can't fragment heap on the ESP32 or wipe UI lists when omitted from /api/state.
   if (Array.isArray(state.keypadUsers)) {
@@ -883,6 +928,95 @@ const setupMotionHandlers = () => {
       });
     }
   });
+};
+
+const setupEnrollmentHandlers = () => {
+  const addUserBtn = document.getElementById('enrollAddUserBtn');
+  const newUserName = document.getElementById('enrollNewUserName');
+  const userSelect = document.getElementById('enrollUserSelect');
+  const startBtn = document.getElementById('enrollStartBtn');
+  const stopBtn = document.getElementById('enrollStopBtn');
+
+  const addUser = async () => {
+    const name = (newUserName?.value || '').trim();
+    if (!name) {
+      showToast('Enter a user name.');
+      return null;
+    }
+
+    if (addUserBtn) addUserBtn.disabled = true;
+    try {
+      const users = await fetchJSON('api/keypad/user', {
+        method: 'POST',
+        body: JSON.stringify({ name, pin: '' }),
+      });
+      const list = Array.isArray(users) ? users : [];
+      const created = list.find((user) => user.name === name) || list[list.length - 1];
+      if (App.data) App.data.keypadUsers = list;
+      renderKeypadUsers(list);
+      if (created?.uuid && userSelect) userSelect.value = created.uuid;
+      if (newUserName) newUserName.value = '';
+      showToast('User added.');
+      return created?.uuid || null;
+    } catch (error) {
+      handleError(error, 'Failed to add user');
+      return null;
+    } finally {
+      if (addUserBtn) addUserBtn.disabled = false;
+    }
+  };
+
+  if (addUserBtn) {
+    addUserBtn.addEventListener('click', addUser);
+  }
+
+  if (startBtn) {
+    startBtn.addEventListener('click', async () => {
+      let userUuid = userSelect?.value || '';
+      if (!userUuid && (newUserName?.value || '').trim()) {
+        userUuid = await addUser() || '';
+      }
+
+      startBtn.disabled = true;
+      try {
+        const state = await fetchJSON('api/enrollment/start', {
+          method: 'POST',
+          body: JSON.stringify({ userUuid }),
+        });
+        if (state) {
+          App.data = state;
+          renderState(state);
+        }
+        showToast('Listening for credentials.');
+      } catch (error) {
+        handleError(error, 'Failed to start enrollment');
+      } finally {
+        startBtn.disabled = false;
+      }
+    });
+  }
+
+  if (stopBtn) {
+    stopBtn.addEventListener('click', async () => {
+      stopBtn.disabled = true;
+      try {
+        const state = await fetchJSON('api/enrollment/stop', {
+          method: 'POST',
+          body: JSON.stringify({}),
+        });
+        if (state) {
+          App.data = state;
+          renderState(state);
+        }
+        await Promise.allSettled([loadKeypadUsers(), loadState()]);
+        showToast('Enrollment stopped.');
+      } catch (error) {
+        handleError(error, 'Failed to stop enrollment');
+      } finally {
+        stopBtn.disabled = false;
+      }
+    });
+  }
 };
 
 const setupForms = () => {
@@ -1243,6 +1377,7 @@ const buildKeypadUserRow = (user, index, existingValue) => {
 
 const renderKeypadUsers = (users = []) => {
   const listEl = App.elements.keypadUserList;
+  renderEnrollmentUserOptions(users);
   if (!listEl) return;
 
   if (!users || users.length === 0) {
@@ -1273,6 +1408,29 @@ const renderKeypadUsers = (users = []) => {
         }
       }
     });
+  }
+};
+
+const renderEnrollmentUserOptions = (users = []) => {
+  const select = App.elements.enrollUserSelect;
+  if (!select) return;
+
+  const previous = select.value;
+  if (!users.length) {
+    select.innerHTML = '<option value="">Default User</option>';
+    return;
+  }
+
+  select.innerHTML = users
+    .map((user, index) => {
+      const uuid = escapeHtml(user.uuid || '');
+      const name = escapeHtml(user.name || `User ${index + 1}`);
+      return `<option value="${uuid}">${name}</option>`;
+    })
+    .join('');
+
+  if (previous && users.some((user) => user.uuid === previous)) {
+    select.value = previous;
   }
 };
 
@@ -1503,6 +1661,16 @@ document.addEventListener('DOMContentLoaded', () => {
     rfUserList: document.getElementById('rfUserList'),
     rfRegisterBtn: document.getElementById('rfRegisterBtn'),
     rfStopBtn: document.getElementById('rfStopBtn'),
+    enrollmentStatus: document.getElementById('enrollmentStatus'),
+    enrollmentStatusBar: document.getElementById('enrollmentStatusBar'),
+    enrollmentUser: document.getElementById('enrollmentUser'),
+    enrollmentLastInput: document.getElementById('enrollmentLastInput'),
+    enrollRfidCount: document.getElementById('enrollRfidCount'),
+    enrollPinCount: document.getElementById('enrollPinCount'),
+    enrollRemoteCount: document.getElementById('enrollRemoteCount'),
+    enrollUserSelect: document.getElementById('enrollUserSelect'),
+    enrollStartBtn: document.getElementById('enrollStartBtn'),
+    enrollStopBtn: document.getElementById('enrollStopBtn'),
     keypadUserList: document.getElementById('keypadUserList'),
     keypadAddBtn: document.getElementById('keypadAddBtn'),
     keypadAddForm: document.getElementById('keypadAddForm'),
@@ -1519,6 +1687,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupExitHandlers();
   setupFobHandlers();
   setupKeypadHandlers();
+  setupEnrollmentHandlers();
   setupForms();
   setupWiegandHandlers();
   setupRfHandlers();
@@ -1544,6 +1713,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       stopStatePolling();
+      stopEnrollmentPolling();
     } else {
       loadState();
       startStatePolling();

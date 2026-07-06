@@ -90,6 +90,7 @@ static cJSON *serialize_user(const wiegand_user_t *user) {
     cJSON_AddStringToObject(obj, "id", user->id);
     cJSON_AddStringToObject(obj, "code", user->code);
     cJSON_AddStringToObject(obj, "name", user->name);
+    cJSON_AddStringToObject(obj, "userUuid", user->user_uuid);
     cJSON_AddNumberToObject(obj, "channel", user->channel);
     cJSON_AddNumberToObject(obj, "status", user->status);
     cJSON_AddNumberToObject(obj, "sequence", user->sequence);
@@ -123,6 +124,7 @@ static bool deserialize_user(const cJSON *obj, wiegand_user_t *out_user) {
         return false;
     }
     parse_string_field(obj, "name", out_user->name, sizeof(out_user->name));
+    parse_string_field(obj, "userUuid", out_user->user_uuid, sizeof(out_user->user_uuid));
 
     const cJSON *channel = cJSON_GetObjectItemCaseSensitive(obj, "channel");
     const cJSON *status = cJSON_GetObjectItemCaseSensitive(obj, "status");
@@ -347,7 +349,12 @@ static void generate_id(char *buffer, size_t len) {
     buffer[len - 1] = '\0';
 }
 
-esp_err_t wiegand_registry_add(const char *code, uint8_t channel, wiegand_user_t *out_user) {
+esp_err_t wiegand_registry_add_for_user(const char *code,
+                                        uint8_t channel,
+                                        const char *user_uuid,
+                                        const char *name,
+                                        bool active,
+                                        wiegand_user_t *out_user) {
     if (!code || code[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
@@ -384,13 +391,19 @@ esp_err_t wiegand_registry_add(const char *code, uint8_t channel, wiegand_user_t
 
     wiegand_user_t user = {
         .channel = channel,
-        .status = WIEGAND_USER_STATUS_PENDING,
+        .status = active ? WIEGAND_USER_STATUS_ACTIVE : WIEGAND_USER_STATUS_PENDING,
         .sequence = next_sequence(),
         .created_at_ms = current_time_ms(),
         .updated_at_ms = current_time_ms(),
     };
     strlcpy(user.code, code, sizeof(user.code));
     generate_id(user.id, sizeof(user.id));
+    if (user_uuid) {
+        strlcpy(user.user_uuid, user_uuid, sizeof(user.user_uuid));
+    }
+    if (name && name[0] != '\0') {
+        strlcpy(user.name, name, sizeof(user.name));
+    }
     assign_defaults(&user);
 
     s_users[s_user_count++] = user;
@@ -402,6 +415,10 @@ esp_err_t wiegand_registry_add(const char *code, uint8_t channel, wiegand_user_t
         *out_user = user;
     }
     return ESP_OK;
+}
+
+esp_err_t wiegand_registry_add(const char *code, uint8_t channel, wiegand_user_t *out_user) {
+    return wiegand_registry_add_for_user(code, channel, NULL, NULL, false, out_user);
 }
 
 static esp_err_t update_user_locked(size_t idx, const wiegand_user_t *replacement) {

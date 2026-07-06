@@ -10,6 +10,7 @@
 #include "services/gpio.c"
 #include "services/store.c"
 #include "services/wiegand_registry.c"
+#include "services/enrollment.c"
 #include "services/authorize.c"
 #include "services/buzzer.c"
 #include "services/lock.c"
