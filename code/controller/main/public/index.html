@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <header class="app-bar">
@@ -307,6 +307,9 @@
             <h2>RFID Cards</h2>
             <p class="subtitle">Registered RFID credentials.</p>
           </div>
+          <div class="card-actions">
+            <button type="button" class="secondary danger" id="wiegandRemoveAllBtn">Remove All Cards</button>
+          </div>
         </div>
         <div id="wiegandUserList" class="user-list"></div>
       </div>
@@ -316,6 +319,9 @@
           <div>
             <h2>Users and PIN Codes</h2>
             <p class="subtitle">Users available for enrollment.</p>
+          </div>
+          <div class="card-actions">
+            <button type="button" class="secondary danger" id="keypadRemoveAllBtn">Remove All Users</button>
           </div>
         </div>
         <div id="keypadUserList" class="user-list">
@@ -344,6 +350,9 @@
           <div>
             <h2>Remote FOBs</h2>
             <p class="subtitle">Registered 433MHz remotes.</p>
+          </div>
+          <div class="card-actions">
+            <button type="button" class="secondary danger" id="rfRemoveAllBtn">Remove All Remotes</button>
           </div>
         </div>
         <div id="rfUserList" class="user-list"></div>
@@ -475,6 +484,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=8"></script>
+  <script src="script.js?v=9"></script>
 </body>
 </html>

@@ -343,6 +343,19 @@ const stopEnrollmentPolling = () => {
   }
 };
 
+const deleteItemsSequentially = async (items, endpoint, payloadKey) => {
+  let latest = null;
+  for (const item of items) {
+    const id = typeof item === 'string' ? item : item?.[payloadKey];
+    if (!id) continue;
+    latest = await fetchJSON(endpoint, {
+      method: endpoint.includes('keypad') ? 'DELETE' : 'POST',
+      body: JSON.stringify({ [payloadKey]: id }),
+    });
+  }
+  return latest;
+};
+
 const renderWiegand = (wiegand = {}) => {
   const {
     registrationActive = false,
@@ -397,6 +410,9 @@ const renderWiegand = (wiegand = {}) => {
   }
   if (stopBtn) {
     stopBtn.disabled = !registrationActive;
+  }
+  if (App.elements.wiegandRemoveAllBtn) {
+    App.elements.wiegandRemoveAllBtn.disabled = registrationActive || !users.length;
   }
 
   if (listEl) {
@@ -526,6 +542,9 @@ const renderRf = (rf = {}) => {
   }
   if (registerBtn) registerBtn.disabled = registrationActive;
   if (stopBtn) stopBtn.disabled = !registrationActive;
+  if (App.elements.rfRemoveAllBtn) {
+    App.elements.rfRemoveAllBtn.disabled = registrationActive || !users.length;
+  }
 
   if (listEl && !listEl.contains(document.activeElement)) {
     if (!users || users.length === 0) {
@@ -1129,6 +1148,7 @@ const setupWiegandHandlers = () => {
   const stopBtn = App.elements.wiegandStopBtn;
   const channelSelect = App.elements.wiegandChannelSelect;
   const listEl = App.elements.wiegandUserList;
+  const removeAllBtn = App.elements.wiegandRemoveAllBtn;
 
   if (registerBtn && channelSelect) {
     registerBtn.addEventListener('click', async () => {
@@ -1157,6 +1177,30 @@ const setupWiegandHandlers = () => {
         showToast('Registration stopped. New tags activated.');
       } catch (error) {
         handleError(error, error.message || 'Failed to stop registration');
+      }
+    });
+  }
+
+  if (removeAllBtn) {
+    removeAllBtn.addEventListener('click', async () => {
+      const users = App.data?.wiegand?.users || [];
+      if (!users.length) {
+        showToast('No RFID cards to remove.');
+        return;
+      }
+
+      if (!confirm(`Remove all ${users.length} RFID card${users.length === 1 ? '' : 's'}?`)) return;
+
+      removeAllBtn.disabled = true;
+      try {
+        const wiegand = await deleteItemsSequentially(users, 'api/wiegand/delete', 'id');
+        renderWiegand(wiegand || { users: [] });
+        await loadState();
+        showToast(`Removed ${users.length} RFID card${users.length === 1 ? '' : 's'}.`);
+      } catch (error) {
+        handleError(error, error.message || 'Failed to remove RFID cards');
+      } finally {
+        removeAllBtn.disabled = false;
       }
     });
   }
@@ -1223,6 +1267,7 @@ const setupRfHandlers = () => {
   const registerBtn = App.elements.rfRegisterBtn;
   const stopBtn = App.elements.rfStopBtn;
   const listEl = App.elements.rfUserList;
+  const removeAllBtn = App.elements.rfRemoveAllBtn;
 
   if (registerBtn) {
     registerBtn.addEventListener('click', async () => {
@@ -1244,6 +1289,30 @@ const setupRfHandlers = () => {
         showToast('RF registration stopped.');
       } catch (error) {
         handleError(error, error.message || 'Failed to stop RF registration');
+      }
+    });
+  }
+
+  if (removeAllBtn) {
+    removeAllBtn.addEventListener('click', async () => {
+      const users = App.data?.rf?.users || [];
+      if (!users.length) {
+        showToast('No remotes to remove.');
+        return;
+      }
+
+      if (!confirm(`Remove all ${users.length} remote FOB${users.length === 1 ? '' : 's'}?`)) return;
+
+      removeAllBtn.disabled = true;
+      try {
+        const rf = await deleteItemsSequentially(users, 'api/rf/delete', 'id');
+        renderRf(rf || { users: [] });
+        await loadState();
+        showToast(`Removed ${users.length} remote FOB${users.length === 1 ? '' : 's'}.`);
+      } catch (error) {
+        handleError(error, error.message || 'Failed to remove remotes');
+      } finally {
+        removeAllBtn.disabled = false;
       }
     });
   }
@@ -1380,6 +1449,9 @@ const buildKeypadUserRow = (user, index, existingValue) => {
 const renderKeypadUsers = (users = []) => {
   const listEl = App.elements.keypadUserList;
   renderEnrollmentUserOptions(users);
+  if (App.elements.keypadRemoveAllBtn) {
+    App.elements.keypadRemoveAllBtn.disabled = !users.length;
+  }
   if (!listEl) return;
 
   if (!users || users.length === 0) {
@@ -1498,6 +1570,7 @@ const setupKeypadPinHandlers = () => {
   const cancelBtn = App.elements.keypadCancelBtn;
   const saveNewBtn = App.elements.keypadSaveNewBtn;
   const listEl = App.elements.keypadUserList;
+  const removeAllBtn = App.elements.keypadRemoveAllBtn;
 
   if (addBtn && addForm) {
     addBtn.addEventListener('click', () => {
@@ -1553,6 +1626,33 @@ const setupKeypadPinHandlers = () => {
         handleError(error, 'Failed to add PIN code');
       } finally {
         saveNewBtn.disabled = false;
+      }
+    });
+  }
+
+  if (removeAllBtn) {
+    removeAllBtn.addEventListener('click', async () => {
+      const users = App.data?.keypadUsers || [];
+      if (!users.length) {
+        showToast('No users to remove.');
+        return;
+      }
+
+      if (!confirm(`Remove all ${users.length} user${users.length === 1 ? '' : 's'} and their PINs?`)) return;
+
+      removeAllBtn.disabled = true;
+      try {
+        const latest = await deleteItemsSequentially(users, 'api/keypad/user', 'uuid');
+        const list = Array.isArray(latest) ? latest : [];
+        renderKeypadUsers(list);
+        if (App.data) App.data.keypadUsers = list;
+        await loadKeypadUsers();
+        await loadState();
+        showToast(`Removed ${users.length} user${users.length === 1 ? '' : 's'}.`);
+      } catch (error) {
+        handleError(error, 'Failed to remove users');
+      } finally {
+        removeAllBtn.disabled = false;
       }
     });
   }
@@ -1656,6 +1756,7 @@ document.addEventListener('DOMContentLoaded', () => {
     wiegandRegisterBtn: document.getElementById('wiegandRegisterBtn'),
     wiegandStopBtn: document.getElementById('wiegandStopBtn'),
     wiegandChannelSelect: document.getElementById('wiegandChannelSelect'),
+    wiegandRemoveAllBtn: document.getElementById('wiegandRemoveAllBtn'),
     rfStatus: document.getElementById('rfStatus'),
     rfStatusBar: document.getElementById('rfStatusBar'),
     rfPending: document.getElementById('rfPending'),
@@ -1663,6 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rfUserList: document.getElementById('rfUserList'),
     rfRegisterBtn: document.getElementById('rfRegisterBtn'),
     rfStopBtn: document.getElementById('rfStopBtn'),
+    rfRemoveAllBtn: document.getElementById('rfRemoveAllBtn'),
     enrollmentStatus: document.getElementById('enrollmentStatus'),
     enrollmentStatusBar: document.getElementById('enrollmentStatusBar'),
     enrollmentUser: document.getElementById('enrollmentUser'),
@@ -1678,6 +1780,7 @@ document.addEventListener('DOMContentLoaded', () => {
     keypadAddForm: document.getElementById('keypadAddForm'),
     keypadCancelBtn: document.getElementById('keypadCancelBtn'),
     keypadSaveNewBtn: document.getElementById('keypadSaveNewBtn'),
+    keypadRemoveAllBtn: document.getElementById('keypadRemoveAllBtn'),
     logItems: document.getElementById('logItems'),
     logEmptyState: document.getElementById('logEmptyState'),
     wifiNetworks: document.getElementById('wifiNetworks'),
