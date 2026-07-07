@@ -206,7 +206,7 @@ const applyDeviceInfo = (device = {}) => {
 };
 
 const applyServerInfo = (server = {}) => {
-  const serverUrl = server.url || 'pyfisecurity.com/devices';
+  const serverUrl = server.url || 'https://open-automation.org/devices';
   const setText = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = value || '—';
@@ -1220,7 +1220,7 @@ const setupForms = () => {
   if (serverForm) {
     serverForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      const serverUrl = (document.getElementById('serverUrl')?.value || 'pyfisecurity.com/devices').trim() || 'pyfisecurity.com/devices';
+      const serverUrl = (document.getElementById('serverUrl')?.value || 'https://open-automation.org/devices').trim() || 'https://open-automation.org/devices';
 
       try {
         await fetchJSON('api/server', {

@@ -22,9 +22,12 @@ static const char* STORE_TAG = "storage.c";
 #define USER_FILE_PATH_FORMAT "/spiffs/user_%05lu.json"
 #define USER_FILE_MAX_PATH 64
 #define MAX_USER_COUNT 400
-#define DEFAULT_SERVER_URL "pyfisecurity.com/devices"
-#define DEFAULT_SERVER_HOST "pyfisecurity.com"
-#define DEFAULT_SERVER_PORT "80"
+#define DEFAULT_SERVER_URL "https://open-automation.org/devices"
+#define DEFAULT_SERVER_HOST "open-automation.org"
+#define DEFAULT_SERVER_PORT "443"
+#define OLD_DEFAULT_SERVER_URL "pyfisecurity.com/devices"
+#define OLD_DEFAULT_SERVER_HOST "pyfisecurity.com"
+#define OLD_DEFAULT_SERVER_PORT "80"
 #define SERVER_URL_MAX_LEN 160
 
 static bool spiffs_mounted = false;
@@ -481,6 +484,10 @@ void load_server_url_from_flash(char *server_url, size_t size) {
     char *url_str = get_char("server_url");
     if (url_str && url_str[0] != '\0') {
         trim_copy(url_str, server_url, size);
+        if (strcmp(server_url, OLD_DEFAULT_SERVER_URL) == 0 ||
+            strcmp(server_url, "http://" OLD_DEFAULT_SERVER_URL) == 0) {
+            snprintf(server_url, size, "%s", DEFAULT_SERVER_URL);
+        }
         free(url_str);
         return;
     }
@@ -506,7 +513,11 @@ void load_server_info_from_flash(char *server_ip, char *server_port) {
     char *ip_str = get_char("server_ip");
     char *port_str = get_char("server_port");
 
-    if (strcmp(ip_str, "") != 0 && strcmp(port_str, "") != 0) {
+    if (strcmp(ip_str, OLD_DEFAULT_SERVER_HOST) == 0 &&
+        (strcmp(port_str, "") == 0 || strcmp(port_str, OLD_DEFAULT_SERVER_PORT) == 0)) {
+        ESP_LOGI(STORE_TAG, "Legacy default server host found in flash, using new default server URL.");
+        parse_server_url(DEFAULT_SERVER_URL, server_ip, 32, server_port, 8);
+    } else if (strcmp(ip_str, "") != 0 && strcmp(port_str, "") != 0) {
         snprintf(server_ip, 32, "%s", ip_str);
         snprintf(server_port, 8, "%s", port_str);
     } else {
