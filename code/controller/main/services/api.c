@@ -507,6 +507,70 @@ static esp_err_t api_state_get_handler(httpd_req_t *req) {
     return send_json_response(req, build_state_snapshot());
 }
 
+static esp_err_t api_discovery_get_handler(httpd_req_t *req) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to build discovery response");
+    }
+
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddStringToObject(root, "service", "access-controller");
+    cJSON_AddStringToObject(root, "deviceKind", "access_controller");
+    cJSON_AddStringToObject(root, "name", "Access Controller");
+
+    cJSON *device = cJSON_CreateObject();
+    if (device) {
+        cJSON_AddStringToObject(device, "uuid", device_id);
+        cJSON *network = network_state_snapshot();
+        if (network) {
+            cJSON_AddItemToObject(device, "network", network);
+        }
+        cJSON_AddItemToObject(root, "device", device);
+    }
+
+    cJSON *capabilities = cJSON_CreateArray();
+    if (capabilities) {
+        const char *items[] = {
+            "access-control",
+            "esp32",
+            "ota-upload",
+            "rollback",
+            "wifi-config",
+            "wiegand",
+            "rf",
+            "keypad",
+            "motion",
+            "logs",
+            "websocket",
+            "web-ui",
+        };
+        for (size_t i = 0; i < sizeof(items) / sizeof(items[0]); i++) {
+            cJSON_AddItemToArray(capabilities, cJSON_CreateString(items[i]));
+        }
+        cJSON_AddItemToObject(root, "capabilities", capabilities);
+    }
+
+    cJSON *api = cJSON_CreateObject();
+    if (api) {
+        cJSON_AddStringToObject(api, "state", "/api/state");
+        cJSON_AddStringToObject(api, "otaUpload", "/api/ota/upload");
+        cJSON_AddStringToObject(api, "logs", "/api/logs");
+        cJSON_AddStringToObject(api, "wifiScan", "/api/wifi/scan");
+        cJSON_AddStringToObject(api, "wifiList", "/api/wifi/list");
+        cJSON_AddStringToObject(api, "websocket", "/ws");
+        cJSON_AddItemToObject(root, "api", api);
+    }
+
+    cJSON *system = cJSON_CreateObject();
+    if (system) {
+        cJSON_AddNumberToObject(system, "uptimeSeconds", (double)(esp_timer_get_time() / 1000000ULL));
+        add_firmware_info(system);
+        cJSON_AddItemToObject(root, "system", system);
+    }
+
+    return send_json_response(req, root);
+}
+
 static esp_err_t api_keypad_users_get_handler(httpd_req_t *req) {
     return send_json_response(req, keypad_users_snapshot());
 }
@@ -1324,6 +1388,20 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_state_get_handler,
     };
     httpd_register_uri_handler(server, &state);
+
+    httpd_uri_t discovery = {
+        .uri = "/api/discovery",
+        .method = HTTP_GET,
+        .handler = api_discovery_get_handler,
+    };
+    httpd_register_uri_handler(server, &discovery);
+
+    httpd_uri_t well_known_discovery = {
+        .uri = "/.well-known/access-controller.json",
+        .method = HTTP_GET,
+        .handler = api_discovery_get_handler,
+    };
+    httpd_register_uri_handler(server, &well_known_discovery);
 
     httpd_uri_t enrollment_get = {
         .uri = "/api/enrollment",

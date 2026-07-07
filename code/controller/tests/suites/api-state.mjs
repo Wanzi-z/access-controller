@@ -246,6 +246,31 @@ export default async function run(api, report) {
     }
   }
 
+  // 2. GET /api/discovery — manager/client capability document
+  {
+    const t0 = Date.now();
+    try {
+      const discovery = await api.getDiscovery();
+      const capabilities = discovery?.capabilities || [];
+      const hasRequiredShape =
+        discovery?.service === 'access-controller' &&
+        discovery?.deviceKind === 'access_controller' &&
+        discovery?.device?.uuid === systemInfo.uuid &&
+        discovery?.api?.state === '/api/state' &&
+        discovery?.api?.otaUpload === '/api/ota/upload' &&
+        capabilities.includes('ota-upload') &&
+        capabilities.includes('access-control');
+
+      if (hasRequiredShape) {
+        report.pass('Discovery document advertises access-controller capabilities', '', Date.now() - t0);
+      } else {
+        report.fail('GET /api/discovery shape', JSON.stringify(discovery), Date.now() - t0);
+      }
+    } catch (err) {
+      report.fail('GET /api/discovery', err.message, Date.now() - t0);
+    }
+  }
+
   // 7. HTTP caching headers
   {
     const t0 = Date.now();

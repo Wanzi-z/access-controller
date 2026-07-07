@@ -48,6 +48,7 @@ class ApiClient {
 
   // State
   async getState() { return this.get('/api/state'); }
+  async getDiscovery() { return this.get('/api/discovery'); }
   async getLogs() { return this.get('/api/logs'); }
 
   // Locks
