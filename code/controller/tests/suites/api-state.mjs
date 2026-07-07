@@ -39,6 +39,13 @@ export default async function run(api, report) {
         else report.fail(`UUID format invalid: ${uuid}`, '', dur);
       }
 
+      if (typeof state?.system?.uptimeSeconds === 'number' && state.system.uptimeSeconds >= 0) {
+        systemInfo.uptimeSeconds = Math.floor(state.system.uptimeSeconds);
+        report.pass(`System uptime: ${systemInfo.uptimeSeconds}s`, '', 0);
+      } else {
+        report.fail('State has system.uptimeSeconds', JSON.stringify(state?.system), 0);
+      }
+
       // Locks
       const locks = state?.locks;
       if (!Array.isArray(locks) || locks.length < 2) {

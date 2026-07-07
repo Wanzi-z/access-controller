@@ -7,6 +7,7 @@
 #include "esp_mac.h"
 #include "esp_netif.h"
 #include "esp_random.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "cJSON.h"
 #include "freertos/semphr.h"
@@ -231,6 +232,12 @@ static cJSON *build_state_snapshot(void) {
         cJSON_AddStringToObject(server, "host", server_host);
         cJSON_AddStringToObject(server, "port", server_port);
         cJSON_AddItemToObject(root, "server", server);
+    }
+
+    cJSON *system = cJSON_CreateObject();
+    if (system) {
+        cJSON_AddNumberToObject(system, "uptimeSeconds", (double)(esp_timer_get_time() / 1000000ULL));
+        cJSON_AddItemToObject(root, "system", system);
     }
 
     cJSON *locks = lock_state_snapshot();

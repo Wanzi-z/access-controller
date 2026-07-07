@@ -98,6 +98,22 @@ const handleError = (error, fallbackMessage) => {
 
 const formatChannelLabel = (channel) => (channel ? `Channel ${channel}` : 'All channels');
 
+const formatUptime = (value) => {
+  const totalSeconds = Math.max(0, Math.floor(Number(value) || 0));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const parts = [];
+
+  if (days) parts.push(`${days}d`);
+  if (hours || parts.length) parts.push(`${hours}h`);
+  if (minutes || parts.length) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+
+  return parts.join(' ');
+};
+
 const setActivePage = (targetId) => {
   App.elements.pages.forEach((section) => {
     section.classList.toggle('active', section.id === `page-${targetId}`);
@@ -184,6 +200,13 @@ const applyServerInfo = (server = {}) => {
   const input = document.getElementById('serverUrl');
   if (input && document.activeElement !== input) {
     input.value = serverUrl;
+  }
+};
+
+const applySystemInfo = (system = {}) => {
+  const uptimeEl = document.getElementById('systemUptime');
+  if (uptimeEl) {
+    uptimeEl.textContent = formatUptime(system.uptimeSeconds);
   }
 };
 
@@ -623,6 +646,7 @@ const renderEnrollment = (enrollment = {}) => {
 const renderState = (state = {}) => {
   applyDeviceInfo(state.device || {});
   applyServerInfo(state.server || {});
+  applySystemInfo(state.system || {});
   applyLockState(state.locks || []);
   applyExitState(state.exits || []);
   applyFobState(state.fobs || []);

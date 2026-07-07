@@ -272,16 +272,24 @@ export default async function run(api, report) {
   {
     const t0 = Date.now();
     try {
+      const tabs = await page.$$eval('.nav-item', (items) => items.map((item) => item.textContent.trim()).join('|'));
+      if (tabs === 'Device|Settings|System') {
+        report.pass('UI: Navigation order is Device, Settings, System', '', 0);
+      } else {
+        report.fail('UI: Navigation order', tabs, 0);
+      }
+
       // Click System tab
       await page.click('.nav-item[data-target="system"]');
       await page.waitForTimeout(1000);
 
+      const uptime = await page.textContent('#systemUptime');
       const logItems = await page.$('#logItems');
       const logEmpty = await page.$('#logEmptyState');
-      if (logItems || logEmpty) {
+      if ((logItems || logEmpty) && uptime && /\d+s$/.test(uptime.trim())) {
         report.pass('UI: System tab loads logs', '', Date.now() - t0);
       } else {
-        report.fail('UI: System tab', 'Log elements not found', Date.now() - t0);
+        report.fail('UI: System tab', `Log elements: ${!!(logItems || logEmpty)}, uptime: ${uptime}`, Date.now() - t0);
       }
     } catch (err) {
       report.fail('UI: System tab', err.message, Date.now() - t0);

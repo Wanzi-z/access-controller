@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
   <header class="app-bar">
@@ -30,8 +30,8 @@
 
   <nav class="nav-tabs" aria-label="Primary navigation">
     <button class="nav-item active" data-target="device" type="button">Device</button>
-    <button class="nav-item" data-target="system" type="button">System</button>
     <button class="nav-item" data-target="settings" type="button">Settings</button>
+    <button class="nav-item" data-target="system" type="button">System</button>
   </nav>
 
   <main class="page-container">
@@ -447,6 +447,10 @@
             <span class="value" id="systemServerUrl">pyfisecurity.com/devices</span>
           </div>
           <div class="info-row">
+            <span class="label">Uptime since reboot</span>
+            <span class="value" id="systemUptime">—</span>
+          </div>
+          <div class="info-row">
             <span class="label">Wi-Fi STA IP</span>
             <span class="value" id="wifiStaIp">—</span>
           </div>
@@ -554,6 +558,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=11"></script>
+  <script src="script.js?v=12"></script>
 </body>
 </html>
