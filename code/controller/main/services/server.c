@@ -10,11 +10,13 @@
 
 #define SERVER_TAG "SERVER"
 
-void server_main()
+esp_err_t server_main(void)
 {
 	ESP_LOGI(SERVER_TAG, "Starting HTTP Server");
     /* Start the file server which will in turn start the ws server */
     if (start_file_server("/spiffs") != ESP_OK) {
         ESP_LOGE(SERVER_TAG, "Failed to start file server!");
+        return ESP_FAIL;
     }
+    return ESP_OK;
 }

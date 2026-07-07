@@ -114,6 +114,23 @@ const formatUptime = (value) => {
   return parts.join(' ');
 };
 
+const formatBytes = (value) => {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+};
+
+const formatPartition = (partition = {}) => {
+  if (!partition || !partition.label) return '—';
+  const address = typeof partition.address === 'number'
+    ? `0x${partition.address.toString(16)}`
+    : '';
+  return [partition.label, address].filter(Boolean).join(' · ');
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const setActivePage = (targetId) => {
   App.elements.pages.forEach((section) => {
     section.classList.toggle('active', section.id === `page-${targetId}`);
@@ -208,6 +225,24 @@ const applySystemInfo = (system = {}) => {
   if (uptimeEl) {
     uptimeEl.textContent = formatUptime(system.uptimeSeconds);
   }
+
+  const firmware = system.firmware || {};
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value || '—';
+  };
+
+  setText('firmwareBranch', firmware.gitBranch);
+  setText('firmwareCommit', firmware.gitCommit ? `${firmware.gitCommit}${firmware.gitDirty ? ' · dirty' : ''}` : '');
+  setText('firmwareVersion', firmware.projectVersion);
+  setText('firmwareSlot', `${formatPartition(firmware.runningPartition)} · ${firmware.otaState || 'unknown'}`);
+  setText('firmwareNextSlot', formatPartition(firmware.nextUpdatePartition));
+  setText(
+    'firmwareRollback',
+    firmware.rollbackEnabled
+      ? `Enabled${firmware.rollbackPossible ? ' · ready' : ''}`
+      : 'Disabled'
+  );
 };
 
 const applySignalDot = (elementId, value, activeText = 'Signal active', inactiveText = 'Signal inactive') => {
@@ -1781,6 +1816,130 @@ const setupKeypadPinHandlers = () => {
   }
 };
 
+const setOtaProgress = (percent) => {
+  const bar = App.elements.otaProgressBar;
+  if (bar) {
+    bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  }
+};
+
+const setOtaStatus = (message) => {
+  if (App.elements.otaStatus) {
+    App.elements.otaStatus.textContent = message;
+  }
+};
+
+const waitForDeviceAfterOta = async () => {
+  await sleep(3500);
+  for (let attempt = 0; attempt < 45; attempt++) {
+    try {
+      const state = await fetchJSON(`api/state?t=${Date.now()}`);
+      if (state?.system?.firmware) {
+        App.data = state;
+        renderState(state);
+        return true;
+      }
+    } catch (error) {
+      // Reboot drops requests briefly.
+    }
+    await sleep(2000);
+  }
+  return false;
+};
+
+const uploadOtaFile = (file) => new Promise((resolve, reject) => {
+  const href = window.location.href;
+  const baseHref = href.endsWith('/') ? href : `${href}/`;
+  const url = new URL('api/ota/upload', baseHref);
+  const xhr = new XMLHttpRequest();
+
+  xhr.open('POST', url.toString());
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.setRequestHeader('X-Firmware-Filename', file.name || 'firmware.bin');
+
+  xhr.upload.onprogress = (event) => {
+    if (event.lengthComputable) {
+      setOtaProgress((event.loaded / event.total) * 100);
+      setOtaStatus(`Uploading ${formatBytes(event.loaded)} of ${formatBytes(event.total)}`);
+    }
+  };
+
+  xhr.onload = () => {
+    const text = xhr.responseText || '';
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try {
+        resolve(text ? JSON.parse(text) : {});
+      } catch (error) {
+        resolve({});
+      }
+      return;
+    }
+    reject(new Error(text || `OTA upload failed: HTTP ${xhr.status}`));
+  };
+
+  xhr.onerror = () => reject(new Error('OTA upload connection failed'));
+  xhr.ontimeout = () => reject(new Error('OTA upload timed out'));
+  xhr.timeout = 120000;
+  xhr.send(file);
+});
+
+const setupOtaHandlers = () => {
+  const form = App.elements.otaForm;
+  const fileInput = App.elements.otaFile;
+  const uploadBtn = App.elements.otaUploadBtn;
+  const fileName = App.elements.otaFileName;
+  const fileSize = App.elements.otaFileSize;
+
+  if (!form || !fileInput || !uploadBtn) return;
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0] || null;
+    uploadBtn.disabled = !file;
+    if (fileName) fileName.textContent = file ? file.name : 'No file selected';
+    if (fileSize) fileSize.textContent = file ? formatBytes(file.size) : '—';
+    setOtaProgress(0);
+    setOtaStatus(file ? 'Ready' : 'Idle');
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const file = fileInput.files?.[0] || null;
+    if (!file) {
+      showToast('Select a firmware binary.');
+      return;
+    }
+
+    uploadBtn.disabled = true;
+    fileInput.disabled = true;
+    setOtaProgress(0);
+    setOtaStatus('Starting OTA upload');
+
+    try {
+      const result = await uploadOtaFile(file);
+      setOtaProgress(100);
+      setOtaStatus(`Installed ${formatBytes(result.bytes || file.size)} to ${result.partition || 'OTA slot'}. Rebooting.`);
+      showToast('Firmware uploaded. Rebooting.');
+      const online = await waitForDeviceAfterOta();
+      if (online) {
+        setOtaStatus('Back online');
+        showToast('Controller is back online.');
+        fileInput.value = '';
+        if (fileName) fileName.textContent = 'No file selected';
+        if (fileSize) fileSize.textContent = '—';
+        setOtaProgress(0);
+      } else {
+        setOtaStatus('Reboot is taking longer than expected');
+      }
+    } catch (error) {
+      setOtaStatus(error.message || 'OTA upload failed');
+      handleError(error, 'OTA upload failed');
+    } finally {
+      fileInput.disabled = false;
+      uploadBtn.disabled = !(fileInput.files && fileInput.files.length);
+    }
+  });
+};
+
 const setupEditableLabels = () => {
   const LABEL_STORAGE_KEY = 'ac_section_labels';
 
@@ -1851,6 +2010,13 @@ document.addEventListener('DOMContentLoaded', () => {
     logEmptyState: document.getElementById('logEmptyState'),
     wifiNetworks: document.getElementById('wifiNetworks'),
     wifiActive: document.getElementById('wifiActive'),
+    otaForm: document.getElementById('otaForm'),
+    otaFile: document.getElementById('otaFile'),
+    otaUploadBtn: document.getElementById('otaUploadBtn'),
+    otaFileName: document.getElementById('otaFileName'),
+    otaFileSize: document.getElementById('otaFileSize'),
+    otaProgressBar: document.getElementById('otaProgressBar'),
+    otaStatus: document.getElementById('otaStatus'),
   };
 
   bindNavigation();
@@ -1864,6 +2030,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupRfHandlers();
   setupKeypadPinHandlers();
   setupMotionHandlers();
+  setupOtaHandlers();
   setupEditableLabels();
 
   loadState();

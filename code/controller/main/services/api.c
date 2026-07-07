@@ -4,13 +4,17 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_app_desc.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_ota_ops.h"
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #include "automation.h"
 #include "enrollment.h"
@@ -23,8 +27,23 @@
 static const char *API_TAG = "api_server";
 
 #define STATE_RESPONSE_BUFFER_SIZE 24576
+#define OTA_UPLOAD_BUFFER_SIZE 4096
+#define OTA_REBOOT_DELAY_MS 1500
+
+#ifndef BUILD_GIT_COMMIT
+#define BUILD_GIT_COMMIT "unknown"
+#endif
+
+#ifndef BUILD_GIT_BRANCH
+#define BUILD_GIT_BRANCH "unknown"
+#endif
+
+#ifndef BUILD_GIT_DIRTY
+#define BUILD_GIT_DIRTY 0
+#endif
 
 static SemaphoreHandle_t s_response_mutex;
+static SemaphoreHandle_t s_ota_mutex;
 static char s_state_response_buffer[STATE_RESPONSE_BUFFER_SIZE];
 
 extern cJSON *lock_state_snapshot(void);
@@ -205,6 +224,96 @@ static cJSON *wifi_scan_snapshot(void) {
     return array;
 }
 
+static const char *ota_state_name(esp_ota_img_states_t state) {
+    switch (state) {
+        case ESP_OTA_IMG_NEW: return "new";
+        case ESP_OTA_IMG_PENDING_VERIFY: return "pending_verify";
+        case ESP_OTA_IMG_VALID: return "valid";
+        case ESP_OTA_IMG_INVALID: return "invalid";
+        case ESP_OTA_IMG_ABORTED: return "aborted";
+        case ESP_OTA_IMG_UNDEFINED:
+        default:
+            return "undefined";
+    }
+}
+
+static void add_partition_info(cJSON *parent, const char *field, const esp_partition_t *partition) {
+    if (!parent || !field) {
+        return;
+    }
+
+    cJSON *object = cJSON_CreateObject();
+    if (!object) {
+        return;
+    }
+
+    if (partition) {
+        cJSON_AddStringToObject(object, "label", partition->label);
+        cJSON_AddNumberToObject(object, "subtype", partition->subtype);
+        cJSON_AddNumberToObject(object, "address", partition->address);
+        cJSON_AddNumberToObject(object, "size", partition->size);
+    } else {
+        cJSON_AddNullToObject(object, "label");
+        cJSON_AddNullToObject(object, "subtype");
+        cJSON_AddNullToObject(object, "address");
+        cJSON_AddNullToObject(object, "size");
+    }
+
+    cJSON_AddItemToObject(parent, field, object);
+}
+
+static void add_firmware_info(cJSON *system) {
+    if (!system) {
+        return;
+    }
+
+    cJSON *firmware = cJSON_CreateObject();
+    if (!firmware) {
+        return;
+    }
+
+    const esp_app_desc_t *desc = esp_app_get_description();
+    if (desc) {
+        cJSON_AddStringToObject(firmware, "projectName", desc->project_name);
+        cJSON_AddStringToObject(firmware, "projectVersion", desc->version);
+        cJSON_AddStringToObject(firmware, "idfVersion", desc->idf_ver);
+        cJSON_AddStringToObject(firmware, "buildDate", desc->date);
+        cJSON_AddStringToObject(firmware, "buildTime", desc->time);
+    }
+    cJSON_AddStringToObject(firmware, "gitCommit", BUILD_GIT_COMMIT);
+    cJSON_AddStringToObject(firmware, "gitBranch", BUILD_GIT_BRANCH);
+    cJSON_AddBoolToObject(firmware, "gitDirty", BUILD_GIT_DIRTY != 0);
+
+    char elf_sha[65] = {0};
+    esp_app_get_elf_sha256(elf_sha, sizeof(elf_sha));
+    cJSON_AddStringToObject(firmware, "elfSha256", elf_sha);
+
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *boot = esp_ota_get_boot_partition();
+    const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
+    add_partition_info(firmware, "runningPartition", running);
+    add_partition_info(firmware, "bootPartition", boot);
+    add_partition_info(firmware, "nextUpdatePartition", next);
+
+    esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+    if (running && esp_ota_get_state_partition(running, &state) == ESP_OK) {
+        cJSON_AddStringToObject(firmware, "otaState", ota_state_name(state));
+    } else {
+        cJSON_AddStringToObject(firmware, "otaState", "undefined");
+    }
+
+    cJSON_AddNumberToObject(firmware, "otaPartitionCount", esp_ota_get_app_partition_count());
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    cJSON_AddBoolToObject(firmware, "rollbackEnabled", true);
+#else
+    cJSON_AddBoolToObject(firmware, "rollbackEnabled", false);
+#endif
+    cJSON_AddBoolToObject(firmware, "rollbackPossible", esp_ota_check_rollback_is_possible());
+    cJSON_AddNumberToObject(firmware, "maxUploadBytes", next ? next->size : 0);
+
+    cJSON_AddItemToObject(system, "firmware", firmware);
+}
+
 static cJSON *build_state_snapshot(void) {
     cJSON *root = cJSON_CreateObject();
     if (!root) {
@@ -237,6 +346,7 @@ static cJSON *build_state_snapshot(void) {
     cJSON *system = cJSON_CreateObject();
     if (system) {
         cJSON_AddNumberToObject(system, "uptimeSeconds", (double)(esp_timer_get_time() / 1000000ULL));
+        add_firmware_info(system);
         cJSON_AddItemToObject(root, "system", system);
     }
 
@@ -403,6 +513,137 @@ static esp_err_t api_keypad_users_get_handler(httpd_req_t *req) {
 
 static esp_err_t api_logs_get_handler(httpd_req_t *req) {
     return send_json_response(req, system_logs_snapshot());
+}
+
+static void ota_reboot_task(void *arg) {
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(OTA_REBOOT_DELAY_MS));
+    esp_restart();
+}
+
+static esp_err_t send_plain_error(httpd_req_t *req, const char *status, const char *message) {
+    if (status) {
+        httpd_resp_set_status(req, status);
+    }
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_sendstr(req, message ? message : "Request failed");
+}
+
+static esp_err_t api_ota_upload_post_handler(httpd_req_t *req) {
+    if (req->content_len <= 0) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Firmware binary is required");
+    }
+
+    const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
+    if (!update_partition) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No OTA update partition available");
+    }
+    if ((size_t)req->content_len > update_partition->size) {
+        return send_plain_error(req, "413 Payload Too Large", "Firmware binary exceeds OTA partition size");
+    }
+
+    if (!s_ota_mutex) {
+        s_ota_mutex = xSemaphoreCreateMutex();
+    }
+    if (!s_ota_mutex || xSemaphoreTake(s_ota_mutex, 0) != pdTRUE) {
+        return send_plain_error(req, "409 Conflict", "OTA update already in progress");
+    }
+
+    uint8_t *buffer = malloc(OTA_UPLOAD_BUFFER_SIZE);
+    if (!buffer) {
+        xSemaphoreGive(s_ota_mutex);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Unable to allocate OTA buffer");
+    }
+
+    esp_ota_handle_t update_handle = 0;
+    esp_err_t err = esp_ota_begin(update_partition, req->content_len, &update_handle);
+    if (err != ESP_OK) {
+        free(buffer);
+        xSemaphoreGive(s_ota_mutex);
+        ESP_LOGE(API_TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+        if (err == ESP_ERR_OTA_ROLLBACK_INVALID_STATE) {
+            return send_plain_error(req, "409 Conflict", "Current firmware is still pending rollback validation");
+        }
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to start OTA update");
+    }
+
+    int remaining = req->content_len;
+    size_t written = 0;
+    while (remaining > 0) {
+        int to_read = MIN(remaining, OTA_UPLOAD_BUFFER_SIZE);
+        int received = httpd_req_recv(req, (char *)buffer, to_read);
+        if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+            continue;
+        }
+        if (received <= 0) {
+            ESP_LOGE(API_TAG, "OTA receive failed after %zu bytes", written);
+            esp_ota_abort(update_handle);
+            free(buffer);
+            xSemaphoreGive(s_ota_mutex);
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive firmware binary");
+        }
+
+        err = esp_ota_write(update_handle, buffer, received);
+        if (err != ESP_OK) {
+            ESP_LOGE(API_TAG, "esp_ota_write failed after %zu bytes (%s)", written, esp_err_to_name(err));
+            esp_ota_abort(update_handle);
+            free(buffer);
+            xSemaphoreGive(s_ota_mutex);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Firmware binary is not a valid ESP32 app image");
+        }
+
+        written += (size_t)received;
+        remaining -= received;
+    }
+
+    free(buffer);
+
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(API_TAG, "esp_ota_end failed (%s)", esp_err_to_name(err));
+        xSemaphoreGive(s_ota_mutex);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Firmware image validation failed");
+    }
+
+    esp_app_desc_t uploaded_desc;
+    memset(&uploaded_desc, 0, sizeof(uploaded_desc));
+    esp_err_t desc_err = esp_ota_get_partition_description(update_partition, &uploaded_desc);
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(API_TAG, "esp_ota_set_boot_partition failed (%s)", esp_err_to_name(err));
+        xSemaphoreGive(s_ota_mutex);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to select uploaded firmware");
+    }
+
+    automation_record_log("OTA firmware uploaded; rebooting into new image");
+
+    cJSON *response = cJSON_CreateObject();
+    if (!response) {
+        xSemaphoreGive(s_ota_mutex);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Firmware installed but response allocation failed");
+    }
+
+    cJSON_AddBoolToObject(response, "ok", true);
+    cJSON_AddBoolToObject(response, "reboot", true);
+    cJSON_AddNumberToObject(response, "bytes", written);
+    cJSON_AddNumberToObject(response, "rebootDelayMs", OTA_REBOOT_DELAY_MS);
+    cJSON_AddStringToObject(response, "partition", update_partition->label);
+    if (desc_err == ESP_OK) {
+        cJSON_AddStringToObject(response, "projectName", uploaded_desc.project_name);
+        cJSON_AddStringToObject(response, "projectVersion", uploaded_desc.version);
+        cJSON_AddStringToObject(response, "buildDate", uploaded_desc.date);
+        cJSON_AddStringToObject(response, "buildTime", uploaded_desc.time);
+    }
+
+    if (xTaskCreate(ota_reboot_task, "ota_reboot", 2048, NULL, 5, NULL) != pdPASS) {
+        xSemaphoreGive(s_ota_mutex);
+        cJSON_Delete(response);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Firmware installed but reboot task failed");
+    }
+
+    xSemaphoreGive(s_ota_mutex);
+    return send_json_response(req, response);
 }
 
 static esp_err_t send_wiegand_state_response(httpd_req_t *req) {
@@ -1223,6 +1464,13 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_logs_get_handler,
     };
     httpd_register_uri_handler(server, &logs_get);
+
+    httpd_uri_t ota_upload_post = {
+        .uri = "/api/ota/upload",
+        .method = HTTP_POST,
+        .handler = api_ota_upload_post_handler,
+    };
+    httpd_register_uri_handler(server, &ota_upload_post);
 
     httpd_uri_t keypad_user_delete = {
         .uri = "/api/keypad/user",

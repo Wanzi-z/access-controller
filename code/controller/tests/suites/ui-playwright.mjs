@@ -284,12 +284,29 @@ export default async function run(api, report) {
       await page.waitForTimeout(1000);
 
       const uptime = await page.textContent('#systemUptime');
+      const branch = await page.textContent('#firmwareBranch');
+      const commit = await page.textContent('#firmwareCommit');
+      const rollback = await page.textContent('#firmwareRollback');
+      const otaFile = await page.$('#otaFile');
+      const otaUploadBtn = await page.$('#otaUploadBtn');
+      const otaStatus = await page.textContent('#otaStatus');
       const logItems = await page.$('#logItems');
       const logEmpty = await page.$('#logEmptyState');
-      if ((logItems || logEmpty) && uptime && /\d+s$/.test(uptime.trim())) {
+      if (
+        (logItems || logEmpty) &&
+        uptime && /\d+s$/.test(uptime.trim()) &&
+        branch && branch.trim() !== '—' &&
+        commit && commit.trim() !== '—' &&
+        rollback && /Enabled/.test(rollback) &&
+        otaFile && otaUploadBtn && otaStatus
+      ) {
         report.pass('UI: System tab loads logs', '', Date.now() - t0);
       } else {
-        report.fail('UI: System tab', `Log elements: ${!!(logItems || logEmpty)}, uptime: ${uptime}`, Date.now() - t0);
+        report.fail(
+          'UI: System tab',
+          `logs=${!!(logItems || logEmpty)} uptime=${uptime} branch=${branch} commit=${commit} rollback=${rollback} otaFile=${!!otaFile} otaButton=${!!otaUploadBtn} otaStatus=${otaStatus}`,
+          Date.now() - t0
+        );
       }
     } catch (err) {
       report.fail('UI: System tab', err.message, Date.now() - t0);

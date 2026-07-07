@@ -46,6 +46,31 @@ export default async function run(api, report) {
         report.fail('State has system.uptimeSeconds', JSON.stringify(state?.system), 0);
       }
 
+      const firmware = state?.system?.firmware;
+      if (firmware?.gitCommit && firmware?.gitBranch) {
+        systemInfo.gitCommit = firmware.gitCommit;
+        systemInfo.gitBranch = firmware.gitBranch;
+        report.pass(`Firmware build: ${firmware.gitBranch}@${firmware.gitCommit}`, '', 0);
+      } else {
+        report.fail('State has firmware git metadata', JSON.stringify(firmware), 0);
+      }
+
+      if (firmware?.rollbackEnabled === true && firmware?.otaPartitionCount >= 2) {
+        report.pass(`OTA rollback enabled with ${firmware.otaPartitionCount} app slots`, '', 0);
+      } else {
+        report.fail('OTA rollback/app slots configured', JSON.stringify(firmware), 0);
+      }
+
+      if (firmware?.runningPartition?.label && firmware?.nextUpdatePartition?.label && firmware?.maxUploadBytes > 0) {
+        report.pass(
+          `OTA slots: running=${firmware.runningPartition.label} next=${firmware.nextUpdatePartition.label}`,
+          '',
+          0
+        );
+      } else {
+        report.fail('OTA slot metadata present', JSON.stringify(firmware), 0);
+      }
+
       // Locks
       const locks = state?.locks;
       if (!Array.isArray(locks) || locks.length < 2) {

@@ -1,6 +1,7 @@
 // main.c
 
 #include "esp_https_ota.h"
+#include "esp_ota_ops.h"
 #include "esp_event.h"
 #include "automation.h"
 #include "automation.c"
@@ -50,6 +51,62 @@
 
 char stored_firmware_md5[33];
 bool need_to_update_firmware = true;
+
+#define OTA_STARTUP_VALIDATION_DELAY_MS 10000
+
+static bool running_app_pending_verify(void) {
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t ota_state;
+    return running &&
+           esp_ota_get_state_partition(running, &ota_state) == ESP_OK &&
+           ota_state == ESP_OTA_IMG_PENDING_VERIFY;
+#else
+    return false;
+#endif
+}
+
+static void mark_running_app_valid_task(void *arg) {
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(OTA_STARTUP_VALIDATION_DELAY_MS));
+
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    if (running_app_pending_verify()) {
+        esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "OTA image marked valid after successful startup");
+            automation_record_log("OTA image marked valid after successful startup");
+        } else {
+            ESP_LOGE(TAG, "Failed to mark OTA image valid (%s)", esp_err_to_name(err));
+        }
+    }
+#endif
+
+    vTaskDelete(NULL);
+}
+
+static void rollback_pending_app_and_reboot(const char *reason) {
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    if (running_app_pending_verify()) {
+        ESP_LOGE(TAG, "Startup validation failed: %s. Rolling back OTA image.", reason);
+        automation_record_log("Startup validation failed; rolling back OTA image");
+        esp_ota_mark_app_invalid_rollback_and_reboot();
+    }
+#else
+    (void)reason;
+#endif
+}
+
+static void schedule_running_app_validation(void) {
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    if (running_app_pending_verify()) {
+        ESP_LOGI(TAG, "OTA image pending verification; validating after %d ms", OTA_STARTUP_VALIDATION_DELAY_MS);
+        if (xTaskCreate(mark_running_app_valid_task, "ota_valid", 3072, NULL, 5, NULL) != pdPASS) {
+            rollback_pending_app_and_reboot("failed to start validation task");
+        }
+    }
+#endif
+}
 
 static void generate_uuid_v4(char *uuid, size_t size) {
     if (!uuid || size < 37) {
@@ -292,10 +349,19 @@ void app_main(void) {
     rf_registry_init();
     rf_receiver_init();
     lock_main();
-    server_main();
+    esp_err_t server_result = server_main();
+    if (server_result != ESP_OK) {
+        rollback_pending_app_and_reboot("web server failed");
+    }
 
-    if (initialize_spiffs() == ESP_OK) {
+    esp_err_t spiffs_result = initialize_spiffs();
+    if (spiffs_result == ESP_OK) {
         ESP_LOGI(TAG, "SPIFFS Initialized successfully");
+    } else {
+        rollback_pending_app_and_reboot("SPIFFS failed");
+    }
+    if (server_result == ESP_OK && spiffs_result == ESP_OK) {
+        schedule_running_app_validation();
     }
     send_user_count();
 
