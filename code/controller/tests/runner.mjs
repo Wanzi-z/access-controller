@@ -97,6 +97,7 @@ async function main() {
   const stressOnly = args.includes('--stress');
   const bulkRemoveOnly = args.includes('--bulk-remove');
   const serverRouteOnly = args.includes('--server-route-only');
+  const soakOnly = args.includes('--soak');
 
   console.log('╔══════════════════════════════════════════════════════════╗');
   console.log('║       Access Controller - Comprehensive Test Suite      ║');
@@ -140,6 +141,8 @@ async function main() {
     suiteFiles.push('stress-bulk');
   } else if (bulkRemoveOnly) {
     suiteFiles.push('bulk-remove');
+  } else if (soakOnly) {
+    suiteFiles.push('reliability-soak');
   } else if (uiOnly) {
     suiteFiles.push('ui-playwright');
   } else {

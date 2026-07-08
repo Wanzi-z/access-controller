@@ -7,6 +7,9 @@ const App = {
   rfPollTimer: null,
   signalPollTimer: null,
   rfTimestampTimer: null,
+  uptimeTimer: null,
+  systemUptimeBaseSeconds: 0,
+  systemUptimeBaseMs: 0,
   rfAutoSavedIds: new Set(),
   rfAutoSavingIds: new Set(),
   toastTimer: null,
@@ -365,8 +368,15 @@ const applyServerInfo = (server = {}) => {
 
 const applySystemInfo = (system = {}) => {
   const uptimeEl = document.getElementById('systemUptime');
+  const uptimeSeconds = Number(system.uptimeSeconds);
+  if (Number.isFinite(uptimeSeconds)) {
+    App.systemUptimeBaseSeconds = Math.max(0, Math.floor(uptimeSeconds));
+    App.systemUptimeBaseMs = Date.now();
+  }
   if (uptimeEl) {
-    uptimeEl.textContent = formatUptime(system.uptimeSeconds);
+    uptimeEl.textContent = formatUptime(
+      Number.isFinite(uptimeSeconds) ? uptimeSeconds : App.systemUptimeBaseSeconds
+    );
   }
 
   const firmware = system.firmware || {};
@@ -386,6 +396,26 @@ const applySystemInfo = (system = {}) => {
       ? `Enabled${firmware.rollbackPossible ? ' · ready' : ''}`
       : 'Disabled'
   );
+};
+
+const updateSystemUptimeClock = () => {
+  if (!App.systemUptimeBaseMs) return;
+  const uptimeEl = document.getElementById('systemUptime');
+  if (!uptimeEl) return;
+  const elapsedSeconds = Math.floor((Date.now() - App.systemUptimeBaseMs) / 1000);
+  uptimeEl.textContent = formatUptime(App.systemUptimeBaseSeconds + elapsedSeconds);
+};
+
+const startUptimeClock = () => {
+  if (App.uptimeTimer) return;
+  updateSystemUptimeClock();
+  App.uptimeTimer = setInterval(updateSystemUptimeClock, 1000);
+};
+
+const stopUptimeClock = () => {
+  if (!App.uptimeTimer) return;
+  clearInterval(App.uptimeTimer);
+  App.uptimeTimer = null;
 };
 
 const applySignalDot = (elementId, value, activeText = 'Signal active', inactiveText = 'Signal inactive') => {
@@ -2768,13 +2798,16 @@ document.addEventListener('DOMContentLoaded', () => {
       stopStatePolling();
       stopEnrollmentPolling();
       stopSignalPolling();
+      stopUptimeClock();
     } else {
       loadState();
       startStatePolling();
       startSignalPolling();
+      startUptimeClock();
     }
   });
 
   startStatePolling();
   startSignalPolling();
+  startUptimeClock();
 });
