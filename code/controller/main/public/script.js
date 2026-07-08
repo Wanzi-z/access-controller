@@ -425,12 +425,15 @@ const setCardEnabledState = (enableId, enabled) => {
   setEnableButtonState(button, !!enabled);
 };
 
-const modeFromLatch = (latch) => (latch ? 'latch' : 'momentary');
+const normalizeCardMode = (mode, latch) => {
+  if (mode === 'momentary' || mode === 'toggle' || mode === 'latch') return mode;
+  return latch ? 'latch' : 'momentary';
+};
 
-const setCardModeState = (modeId, latch) => {
+const setCardModeState = (modeId, mode, latch) => {
   const modeEl = document.getElementById(modeId);
   if (modeEl && document.activeElement !== modeEl) {
-    modeEl.value = modeFromLatch(latch);
+    modeEl.value = normalizeCardMode(mode, latch);
   }
 };
 
@@ -471,7 +474,7 @@ const applyExitState = (exits = []) => {
     setCardEnabledState(`enableExit_${ch}`, !!exit.enable);
     if (alertEl) alertEl.checked = !!exit.alert;
     if (latchEl) latchEl.checked = !!exit.latch;
-    setCardModeState(`modeExit_${ch}`, !!exit.latch);
+    setCardModeState(`modeExit_${ch}`, exit.mode, !!exit.latch);
     if (delayEl) delayEl.value = exit.delay ?? 0;
     applySignalDot(`exitSignal_${ch}`, exit.signal);
   });
@@ -489,7 +492,7 @@ const applyFobState = (fobs = []) => {
     setCardEnabledState(`enableFob_${ch}`, !!fob.enable);
     if (alertEl) alertEl.checked = !!fob.alert;
     if (latchEl) latchEl.checked = !!fob.latch;
-    setCardModeState(`modeFob_${ch}`, !!fob.latch);
+    setCardModeState(`modeFob_${ch}`, fob.mode, !!fob.latch);
     if (delayEl) delayEl.value = fob.delay ?? 4;
     applySignalDot(`fobSignal_${ch}`, fob.signal);
   });
@@ -507,7 +510,7 @@ const applyKeypadState = (keypads = []) => {
     setCardEnabledState(`enableKeypad_${ch}`, !!pad.enable);
     if (alertEl) alertEl.checked = !!pad.alert;
     if (latchEl) latchEl.checked = !!pad.latch;
-    setCardModeState(`modeKeypad_${ch}`, !!pad.latch);
+    setCardModeState(`modeKeypad_${ch}`, pad.mode, !!pad.latch);
     if (delayEl) delayEl.value = pad.delay ?? 0;
     applySignalDot(`keypadSignal_${ch}`, pad.signal);
   });
@@ -525,7 +528,7 @@ const applyMotionState = (motions = []) => {
     setCardEnabledState(`enableMotion_${ch}`, !!motion.enable);
     if (alertEl) alertEl.checked = !!motion.alert;
     if (latchEl) latchEl.checked = !!motion.latch;
-    setCardModeState(`modeMotion_${ch}`, !!motion.latch);
+    setCardModeState(`modeMotion_${ch}`, motion.mode, !!motion.latch);
     if (delayEl) delayEl.value = motion.delay ?? 4;
     applySignalDot(`motionSignal_${ch}`, motion.signal);
   });
@@ -1376,6 +1379,7 @@ const createCardModeSelect = (modeId, latchId) => {
     <span>Mode</span>
     <select id="${modeId}" data-latch-target="${latchId}">
       <option value="momentary">Momentary</option>
+      <option value="toggle">Toggle</option>
       <option value="latch">Latch</option>
     </select>
   `;
@@ -1420,11 +1424,12 @@ const setupControlCardChrome = () => {
       const modeSelect = modeWrap.querySelector('select');
       const latchEl = document.getElementById(config.latchId);
       if (modeSelect && latchEl) {
-        modeSelect.value = modeFromLatch(latchEl.checked);
+        modeSelect.value = normalizeCardMode(null, latchEl.checked);
         modeSelect.addEventListener('change', (event) => {
-          const latch = event.target.value === 'latch';
+          const mode = normalizeCardMode(event.target.value, latchEl.checked);
+          const latch = mode === 'latch';
           latchEl.checked = latch;
-          config.update(channel, { latch });
+          config.update(channel, { mode, latch });
         });
       }
       header.appendChild(modeWrap);
@@ -1492,7 +1497,7 @@ const setupExitHandlers = () => {
     }
     if (latchEl) {
       latchEl.addEventListener('change', (event) => {
-        updateExit(ch, { latch: event.target.checked });
+        updateExit(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
       });
     }
     if (saveBtn && delayEl) {
@@ -1524,7 +1529,7 @@ const setupFobHandlers = () => {
     }
     if (latchEl) {
       latchEl.addEventListener('change', (event) => {
-        updateFob(ch, { latch: event.target.checked });
+        updateFob(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
       });
     }
     if (delayEl && saveBtn) {
@@ -1556,7 +1561,7 @@ const setupKeypadHandlers = () => {
     }
     if (latchEl) {
       latchEl.addEventListener('change', (event) => {
-        updateKeypad(ch, { latch: event.target.checked });
+        updateKeypad(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
       });
     }
     if (delayEl && saveBtn) {
@@ -1588,7 +1593,7 @@ const setupMotionHandlers = () => {
     }
     if (latchEl) {
       latchEl.addEventListener('change', (event) => {
-        updateMotion(ch, { latch: event.target.checked });
+        updateMotion(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
       });
     }
     if (delayEl && saveBtn) {

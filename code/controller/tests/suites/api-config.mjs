@@ -31,6 +31,33 @@ export default async function run(api, report) {
     }
   }
 
+  async function modeAndVerify(label, readFn, writeFn, channel, value) {
+    const t0 = Date.now();
+    try {
+      const before = await readFn();
+      const itemBefore = Array.isArray(before) ? before.find(i => i.channel === channel) : null;
+      const originalMode = itemBefore?.mode || (itemBefore?.latch ? 'latch' : 'momentary');
+      const originalLatch = !!itemBefore?.latch;
+
+      await writeFn(channel, { mode: value, latch: value === 'latch' });
+
+      const after = await readFn();
+      const itemAfter = Array.isArray(after) ? after.find(i => i.channel === channel) : null;
+      const changedMode = itemAfter?.mode;
+      const changedLatch = itemAfter?.latch;
+
+      await writeFn(channel, { mode: originalMode, latch: originalLatch });
+
+      if (changedMode === value && changedLatch === (value === 'latch')) {
+        report.pass(label, `CH${channel} mode: ${originalMode} → ${value}`, Date.now() - t0);
+      } else {
+        report.fail(label, `Expected mode=${value}, latch=${value === 'latch'}; got mode=${changedMode}, latch=${changedLatch}`, Date.now() - t0);
+      }
+    } catch (err) {
+      report.fail(label, err.message, Date.now() - t0);
+    }
+  }
+
   // ─── LOCK CONFIGURATION ───
   for (const ch of [1, 2]) {
     const readLocks = async () => (await api.getState()).locks;
@@ -56,6 +83,9 @@ export default async function run(api, report) {
     );
     await toggleAndVerify(
       `Exit CH${ch} alert toggle`, readExits, api.updateExit.bind(api), ch, 'alert', true
+    );
+    await modeAndVerify(
+      `Exit CH${ch} mode toggle`, readExits, api.updateExit.bind(api), ch, 'toggle'
     );
     // Delay value test
     const t0 = Date.now();
@@ -93,6 +123,9 @@ export default async function run(api, report) {
     await toggleAndVerify(
       `Fob CH${ch} latch toggle`, readFobs, api.updateFob.bind(api), ch, 'latch', true
     );
+    await modeAndVerify(
+      `Fob CH${ch} mode toggle`, readFobs, api.updateFob.bind(api), ch, 'toggle'
+    );
   }
 
   // ─── KEYPAD CONFIGURATION ───
@@ -103,6 +136,17 @@ export default async function run(api, report) {
     );
     await toggleAndVerify(
       `Keypad CH${ch} alert toggle`, readKeypads, api.updateKeypad.bind(api), ch, 'alert', false
+    );
+    await modeAndVerify(
+      `Keypad CH${ch} mode toggle`, readKeypads, api.updateKeypad.bind(api), ch, 'toggle'
+    );
+  }
+
+  // ─── MOTION CONFIGURATION ───
+  for (const ch of [1, 2]) {
+    const readMotions = async () => (await api.getState()).motions;
+    await modeAndVerify(
+      `Motion CH${ch} mode toggle`, readMotions, api.updateMotion.bind(api), ch, 'toggle'
     );
   }
 

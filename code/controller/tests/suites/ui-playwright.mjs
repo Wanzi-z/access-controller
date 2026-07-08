@@ -20,7 +20,8 @@ export default async function run(api, report) {
   // Helper: navigate and verify
   async function navigateToDevice() {
     try {
-      await page.goto(DEVICE_URL, { waitUntil: 'networkidle', timeout: 15000 });
+      await page.goto(DEVICE_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.waitForSelector('.nav-item[data-target="device"]', { timeout: 10000 });
       return true;
     } catch {
       return false;
@@ -44,9 +45,26 @@ export default async function run(api, report) {
         return;
       }
 
-      // Click to toggle
       const wasChecked = await checkbox.isChecked();
-      await checkbox.click();
+      const visible = await checkbox.isVisible();
+      if (!visible && field === 'enable') {
+        const button = await page.$(`[data-enable-target="${checkboxId}"]`);
+        if (!button) {
+          report.skip(label, `Visible enable button for #${checkboxId} not found`, Date.now() - t0);
+          return;
+        }
+        await button.click();
+      } else if (!visible && field === 'latch') {
+        const modeSelectId = checkboxId.replace(/^latch/, 'mode');
+        const modeSelect = await page.$(`#${modeSelectId}`);
+        if (!modeSelect) {
+          report.skip(label, `Mode select #${modeSelectId} not found`, Date.now() - t0);
+          return;
+        }
+        await modeSelect.selectOption(wasChecked ? 'momentary' : 'latch');
+      } else {
+        await checkbox.click();
+      }
 
       // Verify via API
       await page.waitForTimeout(500);
@@ -56,13 +74,52 @@ export default async function run(api, report) {
       const newValue = itemAfter?.[field];
 
       // Restore
-      await checkbox.click();
+      if (!visible && field === 'enable') {
+        const button = await page.$(`[data-enable-target="${checkboxId}"]`);
+        await button?.click();
+      } else if (!visible && field === 'latch') {
+        const modeSelectId = checkboxId.replace(/^latch/, 'mode');
+        const modeSelect = await page.$(`#${modeSelectId}`);
+        await modeSelect?.selectOption(wasChecked ? 'latch' : 'momentary');
+      } else {
+        await checkbox.click();
+      }
       await page.waitForTimeout(300);
 
       if (newValue === !wasChecked) {
         report.pass(label, '', Date.now() - t0);
       } else {
         report.fail(label, `Expected ${!wasChecked}, got ${newValue}`, Date.now() - t0);
+      }
+    } catch (err) {
+      report.fail(label, err.message, Date.now() - t0);
+    }
+  }
+
+  async function uiModeSelectTest(label, selectId, apiReadFn, channel, value) {
+    const t0 = Date.now();
+    try {
+      const before = await apiReadFn();
+      const itemBefore = before?.find?.(i => i.channel === channel);
+      const originalMode = itemBefore?.mode || (itemBefore?.latch ? 'latch' : 'momentary');
+      const select = await page.$(`#${selectId}`);
+      if (!select) {
+        report.skip(label, `Select #${selectId} not found`, Date.now() - t0);
+        return;
+      }
+
+      await select.selectOption(value);
+      await page.waitForTimeout(500);
+      const after = await apiReadFn();
+      const itemAfter = after?.find?.(i => i.channel === channel);
+
+      await select.selectOption(originalMode);
+      await page.waitForTimeout(300);
+
+      if (itemAfter?.mode === value) {
+        report.pass(label, '', Date.now() - t0);
+      } else {
+        report.fail(label, `Expected ${value}, got ${itemAfter?.mode}`, Date.now() - t0);
       }
     } catch (err) {
       report.fail(label, err.message, Date.now() - t0);
@@ -135,9 +192,11 @@ export default async function run(api, report) {
     await uiToggleTest('UI: Exit CH1 enable toggle', 'enableExit_1', getState, 1, 'enable');
     await uiToggleTest('UI: Exit CH1 alert toggle', 'alertExit_1', getState, 1, 'alert');
     await uiToggleTest('UI: Exit CH1 latch toggle', 'latchExit_1', getState, 1, 'latch');
+    await uiModeSelectTest('UI: Exit CH1 mode select toggle', 'modeExit_1', getState, 1, 'toggle');
     await uiToggleTest('UI: Exit CH2 enable toggle', 'enableExit_2', getState, 2, 'enable');
     await uiToggleTest('UI: Exit CH2 alert toggle', 'alertExit_2', getState, 2, 'alert');
     await uiToggleTest('UI: Exit CH2 latch toggle', 'latchExit_2', getState, 2, 'latch');
+    await uiModeSelectTest('UI: Exit CH2 mode select toggle', 'modeExit_2', getState, 2, 'toggle');
   }
 
   // 7. Exit delay (CH1)
@@ -175,9 +234,11 @@ export default async function run(api, report) {
     await uiToggleTest('UI: Fob CH1 enable toggle', 'enableFob_1', getState, 1, 'enable');
     await uiToggleTest('UI: Fob CH1 alert toggle', 'alertFob_1', getState, 1, 'alert');
     await uiToggleTest('UI: Fob CH1 latch toggle', 'latchFob_1', getState, 1, 'latch');
+    await uiModeSelectTest('UI: Fob CH1 mode select toggle', 'modeFob_1', getState, 1, 'toggle');
     await uiToggleTest('UI: Fob CH2 enable toggle', 'enableFob_2', getState, 2, 'enable');
     await uiToggleTest('UI: Fob CH2 alert toggle', 'alertFob_2', getState, 2, 'alert');
     await uiToggleTest('UI: Fob CH2 latch toggle', 'latchFob_2', getState, 2, 'latch');
+    await uiModeSelectTest('UI: Fob CH2 mode select toggle', 'modeFob_2', getState, 2, 'toggle');
   }
 
   // 8b. Fob delay (CH1)
@@ -214,16 +275,20 @@ export default async function run(api, report) {
     await uiToggleTest('UI: Keypad CH1 enable toggle', 'enableKeypad_1', getState, 1, 'enable');
     await uiToggleTest('UI: Keypad CH1 alert toggle', 'alertKeypad_1', getState, 1, 'alert');
     await uiToggleTest('UI: Keypad CH1 latch toggle', 'latchKeypad_1', getState, 1, 'latch');
+    await uiModeSelectTest('UI: Keypad CH1 mode select toggle', 'modeKeypad_1', getState, 1, 'toggle');
     await uiToggleTest('UI: Keypad CH2 enable toggle', 'enableKeypad_2', getState, 2, 'enable');
     await uiToggleTest('UI: Keypad CH2 alert toggle', 'alertKeypad_2', getState, 2, 'alert');
     await uiToggleTest('UI: Keypad CH2 latch toggle', 'latchKeypad_2', getState, 2, 'latch');
+    await uiModeSelectTest('UI: Keypad CH2 mode select toggle', 'modeKeypad_2', getState, 2, 'toggle');
   }
 
   // 9b. Motion latch toggles
   {
     const getState = async () => (await api.getState()).motions;
     await uiToggleTest('UI: Motion CH1 latch toggle', 'latchMotion_1', getState, 1, 'latch');
+    await uiModeSelectTest('UI: Motion CH1 mode select toggle', 'modeMotion_1', getState, 1, 'toggle');
     await uiToggleTest('UI: Motion CH2 latch toggle', 'latchMotion_2', getState, 2, 'latch');
+    await uiModeSelectTest('UI: Motion CH2 mode select toggle', 'modeMotion_2', getState, 2, 'toggle');
   }
 
   // 10. Keypad user management (UI)

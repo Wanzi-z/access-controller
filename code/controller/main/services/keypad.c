@@ -21,8 +21,10 @@ struct keypadButton
 	bool expired;
 	bool enable;
 	bool latch;
+	bool toggleState;
 	int delay;
 	int channel;
+	char mode[12];
 	char settings[1000];
 	char key[50];
 	char type[40];
@@ -33,6 +35,47 @@ struct keypadButton keypads[NUM_OF_KEYPADS];
 
 void sendKeypadState(void);
 cJSON *keypad_state_snapshot(void);
+
+static bool keypad_json_bool(const cJSON *item)
+{
+	if (cJSON_IsBool(item)) return cJSON_IsTrue(item);
+	if (cJSON_IsNumber(item)) return item->valueint != 0;
+	if (cJSON_IsString(item) && item->valuestring) {
+		return strcmp(item->valuestring, "true") == 0 || strcmp(item->valuestring, "1") == 0;
+	}
+	return false;
+}
+
+static const char *keypad_mode_from_latch(bool latch)
+{
+	return latch ? "latch" : "momentary";
+}
+
+static bool keypad_mode_is_valid(const char *mode)
+{
+	return mode &&
+		(strcmp(mode, "momentary") == 0 ||
+		 strcmp(mode, "toggle") == 0 ||
+		 strcmp(mode, "latch") == 0);
+}
+
+static void keypad_set_mode(struct keypadButton *pad, const char *mode)
+{
+	const char *next = keypad_mode_is_valid(mode) ? mode : keypad_mode_from_latch(pad->latch);
+	if (strcmp(next, "toggle") != 0) {
+		pad->toggleState = false;
+	}
+	strlcpy(pad->mode, next, sizeof(pad->mode));
+	pad->latch = strcmp(pad->mode, "latch") == 0;
+}
+
+static const char *keypad_current_mode(struct keypadButton *pad)
+{
+	if (!keypad_mode_is_valid(pad->mode)) {
+		keypad_set_mode(pad, keypad_mode_from_latch(pad->latch));
+	}
+	return pad->mode;
+}
 
 void start_keypad_timer (struct keypadButton *pad, bool val)
 {
@@ -74,13 +117,14 @@ int storeKeypadSettings()
 		strcpy(type, keypads[i].type);
 		sprintf(keypads[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": \"%s\", \"alert\": \"%s\", \"delay\": %d, \"latch\": \"%s\"}}",
+			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s, \"mode\": \"%s\"}}",
 			type,
 			i+1,
 			(keypads[i].enable) ? "true" : "false",
 			(keypads[i].alert) ? "true" : "false",
 			keypads[i].delay,
-			(keypads[i].latch) ? "true" : "false");
+			(keypads[i].latch) ? "true" : "false",
+			keypad_current_mode(&keypads[i]));
 
 		sprintf(keypads[i].key, "%s%d", type, i);
 		storeSetting(keypads[i].key, cJSON_Parse(keypads[i].settings));
@@ -117,6 +161,7 @@ cJSON *keypad_state_snapshot(void) {
         cJSON_AddBoolToObject(entry, "alert", keypads[i].alert);
         cJSON_AddNumberToObject(entry, "delay", keypads[i].delay);
         cJSON_AddBoolToObject(entry, "latch", keypads[i].latch);
+        cJSON_AddStringToObject(entry, "mode", keypad_current_mode(&keypads[i]));
         cJSON_AddBoolToObject(entry, "signal", keypads[i].isPressed);
         cJSON_AddItemToArray(array, entry);
     }
@@ -182,7 +227,13 @@ void setKeypadArmDelay (int ch, int val)
 void latchKeypad (int ch, bool val)
 {
 	for (int i=0; i < NUM_OF_KEYPADS; i++)
-		if (keypads[i].channel == ch) keypads[i].latch = val;
+		if (keypads[i].channel == ch) keypad_set_mode(&keypads[i], keypad_mode_from_latch(val));
+}
+
+void modeKeypad (int ch, const char *mode)
+{
+	for (int i=0; i < NUM_OF_KEYPADS; i++)
+		if (keypads[i].channel == ch) keypad_set_mode(&keypads[i], mode);
 }
 
 void check_keypads (struct keypadButton *pad)
@@ -193,12 +244,19 @@ void check_keypads (struct keypadButton *pad)
 		return;
 	}
 
-	if (pad->latch && pad->isPressed != pad->prevPress) {
+	const char *mode = keypad_current_mode(pad);
+	if (strcmp(mode, "latch") == 0 && pad->isPressed != pad->prevPress) {
 		ESP_LOGI(TAG, "Keypad %d state changed to %s (latch mode)", pad->channel, pad->isPressed ? "active" : "inactive");
 		lock_set_action_source("kp_latch");
 		arm_lock(pad->channel, pad->isPressed, pad->alert);
 		start_keypad_timer(pad, false);
-	} else if (!pad->latch && pad->isPressed && !pad->prevPress) {
+	} else if (strcmp(mode, "toggle") == 0 && pad->isPressed && !pad->prevPress) {
+		pad->toggleState = !pad->toggleState;
+		ESP_LOGI(TAG, "Keypad %d toggled lock to %s", pad->channel, pad->toggleState ? "armed" : "disarmed");
+		lock_set_action_source("kp_toggle");
+		arm_lock(pad->channel, pad->toggleState, pad->alert);
+		start_keypad_timer(pad, false);
+	} else if (strcmp(mode, "momentary") == 0 && pad->isPressed && !pad->prevPress) {
 		ESP_LOGI(TAG, "Keypad %d pressed - disarming lock", pad->channel);
 		lock_set_action_source("kp_press");
 		arm_lock(pad->channel, false, pad->alert);
@@ -221,14 +279,18 @@ void handle_keypad_message(cJSON * payload)
 
 	if (cJSON_GetObjectItem(payload,"channel")) {
 		 ch = cJSON_GetObjectItem(payload,"channel")->valueint;
+		 if (ch < 1 || ch > NUM_OF_KEYPADS) {
+			 cJSON_Delete(payload);
+			 return;
+		 }
 
 		 if (cJSON_GetObjectItem(payload,"alert")) {
-			 tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"alert"));
+			 tmp = keypad_json_bool(cJSON_GetObjectItem(payload,"alert"));
 			 alertOnKeypad(ch, tmp);
 		 }
 
 		 if (cJSON_GetObjectItem(payload,"enable")) {
-			 tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"enable"));
+			 tmp = keypad_json_bool(cJSON_GetObjectItem(payload,"enable"));
 			 enableKeypad(ch, tmp);
 		 }
 
@@ -237,8 +299,13 @@ void handle_keypad_message(cJSON * payload)
 		 }
 
 		 if (cJSON_GetObjectItem(payload,"latch")) {
-			 tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"latch"));
+			 tmp = keypad_json_bool(cJSON_GetObjectItem(payload,"latch"));
 			 latchKeypad(ch, tmp);
+		 }
+
+		 cJSON *mode = cJSON_GetObjectItem(payload, "mode");
+		 if (cJSON_IsString(mode) && mode->valuestring) {
+			 modeKeypad(ch, mode->valuestring);
 		 }
 
 		 storeKeypadSettings();
@@ -271,6 +338,8 @@ void keypad_main()
 	keypads[0].alert = true;
 	keypads[0].enable = true;
 	keypads[0].latch = false;
+	keypads[0].toggleState = false;
+	keypad_set_mode(&keypads[0], "momentary");
 	strcpy(keypads[0].type, "keypad");
 
 	keypads[1].pin = USE_MCP23017 ? KEYPAD_MCP_IO_2 : KEYPAD_IO_2;
@@ -279,9 +348,11 @@ void keypad_main()
 	keypads[1].enable = true;
 	keypads[1].alert = true;
 	keypads[1].latch = false;
+	keypads[1].toggleState = false;
+	keypad_set_mode(&keypads[1], "momentary");
 	strcpy(keypads[1].type, "keypad");
 
-	storeKeypadSettings();
+	restoreKeypadSettings();
 
 	
 	if (USE_MCP23017) {
@@ -294,6 +365,4 @@ void keypad_main()
 
   xTaskCreate(keypad_timer, "keypad_timer", 4096, NULL, 10, NULL);
 	xTaskCreate(keypad_service, "keypad_service", 4096, NULL, 10, NULL);
-
-	// restoreKeypadSettings();
 }

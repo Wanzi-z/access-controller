@@ -8,11 +8,12 @@ export default async function run(api, report) {
       typeof item.alert === 'boolean' &&
       typeof item.delay === 'number' &&
       typeof item.latch === 'boolean' &&
+      ['momentary', 'toggle', 'latch'].includes(item.mode) &&
       typeof item.signal === 'boolean';
 
     if (hasFields) {
       report.pass(
-        `${label} CH${item.channel}: signal=${item.signal} enable=${item.enable} alert=${item.alert} latch=${item.latch} delay=${item.delay}`,
+        `${label} CH${item.channel}: signal=${item.signal} enable=${item.enable} alert=${item.alert} mode=${item.mode} latch=${item.latch} delay=${item.delay}`,
         '',
         0
       );

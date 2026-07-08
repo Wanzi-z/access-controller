@@ -21,8 +21,10 @@ struct motionButton
 	bool expired;
 	bool enable;
 	bool latch;
+	bool toggleState;
 	int delay;
 	int channel;
+	char mode[12];
 	char settings[1000];
 	char key[50];
 	char type[40];
@@ -31,6 +33,47 @@ struct motionButton
 
 struct motionButton motions[NUM_OF_MOTIONS];
 
+static bool motion_json_bool(const cJSON *item)
+{
+	if (cJSON_IsBool(item)) return cJSON_IsTrue(item);
+	if (cJSON_IsNumber(item)) return item->valueint != 0;
+	if (cJSON_IsString(item) && item->valuestring) {
+		return strcmp(item->valuestring, "true") == 0 || strcmp(item->valuestring, "1") == 0;
+	}
+	return false;
+}
+
+static const char *motion_mode_from_latch(bool latch)
+{
+	return latch ? "latch" : "momentary";
+}
+
+static bool motion_mode_is_valid(const char *mode)
+{
+	return mode &&
+		(strcmp(mode, "momentary") == 0 ||
+		 strcmp(mode, "toggle") == 0 ||
+		 strcmp(mode, "latch") == 0);
+}
+
+static void motion_set_mode(struct motionButton *mot, const char *mode)
+{
+	const char *next = motion_mode_is_valid(mode) ? mode : motion_mode_from_latch(mot->latch);
+	if (strcmp(next, "toggle") != 0) {
+		mot->toggleState = false;
+	}
+	strlcpy(mot->mode, next, sizeof(mot->mode));
+	mot->latch = strcmp(mot->mode, "latch") == 0;
+}
+
+static const char *motion_current_mode(struct motionButton *mot)
+{
+	if (!motion_mode_is_valid(mot->mode)) {
+		motion_set_mode(mot, motion_mode_from_latch(mot->latch));
+	}
+	return mot->mode;
+}
+
 int storeMotionSettings()
 {
 	for (uint8_t i=0; i < NUM_OF_MOTIONS; i++) {
@@ -38,13 +81,14 @@ int storeMotionSettings()
 		strcpy(type, motions[i].type);
 		sprintf(motions[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s}}",
+			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s, \"mode\": \"%s\"}}",
 			type,
 			i+1,
 			(motions[i].enable) ? "true" : "false",
 			(motions[i].alert) ? "true" : "false",
 			motions[i].delay,
-			(motions[i].latch) ? "true" : "false");
+			(motions[i].latch) ? "true" : "false",
+			motion_current_mode(&motions[i]));
 
 		sprintf(motions[i].key, "%s%d", type, i);
 		storeSetting(motions[i].key, cJSON_Parse(motions[i].settings));
@@ -114,7 +158,13 @@ void setMotionArmDelay (int ch, int val)
 void latchMotion (int ch, bool val)
 {
 	for (int i=0; i < NUM_OF_MOTIONS; i++)
-		if (motions[i].channel == ch) motions[i].latch = val;
+		if (motions[i].channel == ch) motion_set_mode(&motions[i], motion_mode_from_latch(val));
+}
+
+void modeMotion (int ch, const char *mode)
+{
+	for (int i=0; i < NUM_OF_MOTIONS; i++)
+		if (motions[i].channel == ch) motion_set_mode(&motions[i], mode);
 }
 
 void start_motion_timer (struct motionButton *mot, bool val)
@@ -135,12 +185,19 @@ void check_motion (struct motionButton *mot)
 		return;
 	}
 
-	if (mot->latch && mot->isPressed != mot->prevPress) {
+	const char *mode = motion_current_mode(mot);
+	if (strcmp(mode, "latch") == 0 && mot->isPressed != mot->prevPress) {
 		ESP_LOGI(TAG, "Motion channel %d state changed to %s (latch mode)", mot->channel, mot->isPressed ? "active" : "inactive");
         lock_set_action_source("motion_latch");
 		arm_lock(mot->channel, mot->isPressed, mot->alert);
 		start_motion_timer(mot, false);
-	} else if (!mot->latch && mot->isPressed && !mot->prevPress) {
+	} else if (strcmp(mode, "toggle") == 0 && mot->isPressed && !mot->prevPress) {
+		mot->toggleState = !mot->toggleState;
+		ESP_LOGI(TAG, "Motion channel %d toggled lock to %s", mot->channel, mot->toggleState ? "armed" : "disarmed");
+        lock_set_action_source("motion_toggle");
+		arm_lock(mot->channel, mot->toggleState, mot->alert);
+		start_motion_timer(mot, false);
+	} else if (strcmp(mode, "momentary") == 0 && mot->isPressed && !mot->prevPress) {
 		ESP_LOGI(TAG, "Motion detected on channel %d - disarming lock", mot->channel);
         lock_set_action_source("motion");
 		arm_lock(mot->channel, false, mot->alert);
@@ -154,7 +211,6 @@ void handle_motion_message(cJSON * payload)
 {
 	int ch=0;
 	bool tmp = 0;
-	char state[250];
 
 	if (payload == NULL) return;
 
@@ -165,14 +221,18 @@ void handle_motion_message(cJSON * payload)
 
 	if (cJSON_GetObjectItem(payload,"channel")) {
 		 ch = cJSON_GetObjectItem(payload,"channel")->valueint;
+		 if (ch < 1 || ch > NUM_OF_MOTIONS) {
+			 cJSON_Delete(payload);
+			 return;
+		 }
 
 		 if (cJSON_GetObjectItem(payload,"alert")) {
-	 		tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"alert"));
+			tmp = motion_json_bool(cJSON_GetObjectItem(payload,"alert"));
 	 		alertOnMotion(ch, tmp);
 	 	}
 
 	 	if (cJSON_GetObjectItem(payload,"enable")) {
-	 		tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"enable"));
+			tmp = motion_json_bool(cJSON_GetObjectItem(payload,"enable"));
 	 		enableMotion(ch, tmp);
 	 	}
 
@@ -181,9 +241,14 @@ void handle_motion_message(cJSON * payload)
 		}
 
 		if (cJSON_GetObjectItem(payload,"latch")) {
-			tmp = cJSON_IsTrue(cJSON_GetObjectItem(payload,"latch"));
+			tmp = motion_json_bool(cJSON_GetObjectItem(payload,"latch"));
 			latchMotion(ch, tmp);
 	 	}
+
+		cJSON *mode = cJSON_GetObjectItem(payload, "mode");
+		if (cJSON_IsString(mode) && mode->valuestring) {
+			modeMotion(ch, mode->valuestring);
+		}
 		storeMotionSettings();
 	}
 
@@ -239,6 +304,7 @@ cJSON *motion_state_snapshot(void)
 		cJSON_AddBoolToObject(item, "alert", motions[i].alert);
 		cJSON_AddNumberToObject(item, "delay", motions[i].delay);
 		cJSON_AddBoolToObject(item, "latch", motions[i].latch);
+		cJSON_AddStringToObject(item, "mode", motion_current_mode(&motions[i]));
 		cJSON_AddBoolToObject(item, "signal", motions[i].isPressed);
 		cJSON_AddItemToArray(array, item);
 	}
@@ -255,6 +321,8 @@ void motion_main()
 	motions[0].alert = true;
 	motions[0].enable = true;
 	motions[0].latch = false;
+	motions[0].toggleState = false;
+	motion_set_mode(&motions[0], "momentary");
 	strcpy(motions[0].type, "motion");
 
 	motions[1].pin = MOTION_MCP_IO_2;
@@ -263,6 +331,8 @@ void motion_main()
 	motions[1].alert = true;
 	motions[1].enable = true;
 	motions[1].latch = false;
+	motions[1].toggleState = false;
+	motion_set_mode(&motions[1], "momentary");
 	strcpy(motions[1].type, "motion");
 
 	restoreMotionSettings();
