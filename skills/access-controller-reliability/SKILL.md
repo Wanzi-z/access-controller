@@ -24,6 +24,65 @@ Use this skill before considering controller firmware/UI changes stable. It assu
   ls -l /dev/ttyUSB* /dev/ttyACM*
   ```
 
+## Complete Deploy And Test Loop
+
+For new boards, network changes, OTA work, UI changes, or install handoff, use
+the full runbook in `docs/CONTROLLER_DEPLOY_AND_TEST.md`. Do not stop at a
+local build or a direct-controller curl when the user asked for end-to-end
+proof.
+
+Minimum sequence:
+
+1. Build firmware with ESP-IDF.
+2. Program the controller over USB or OTA.
+3. Prove first-boot or fallback AP mode at `http://192.168.4.1/`.
+4. Provision Wi-Fi from AP mode.
+5. Save and test two station networks when available, normally `Echo42` and
+   `HelloWorld`; switch both directions and confirm the active SSID, IP, link
+   quality/RSSI, gateway, AP BSSID, channel, and security update in `/api/state`
+   and the Settings UI.
+6. Prove AP fallback by disabling the active Wi-Fi or using unreachable saved
+   credentials. Confirm `ac_<uuid-suffix>` appears, `192.168.4.1` responds, and
+   recovery returns to station mode when a valid saved network is restored.
+7. Verify public route policy:
+   ```bash
+   curl -sS -i -X POST https://open-automation.org/devices \
+     -H 'Content-Type: application/json' \
+     -d '{"id":"route-smoke","name":"Route Smoke","type":"access_controller"}'
+   curl -sS -i https://open-automation.org/devices/ | sed -n '1,12p'
+   ```
+   Expected: `POST /devices` returns `200`, while browser `GET /devices/`
+   returns `401 Basic realm="Device Manager"` without credentials.
+8. Verify local Device Manager and access-controller state:
+   ```bash
+   curl -sf http://192.168.1.40:8102/api/health
+   curl -sf 'http://192.168.1.40:8102/api/devices/<device-manager-id>/access-controller/state' \
+     | jq '{uuid:.state.device.uuid, ssid:.state.wifi.active_ssid, ip:.state.device.network.wifi_sta_ip, quality:.state.device.network.wifi_sta_quality, ota:.state.system.firmware.otaState}'
+   ```
+   If Device Manager hangs while health is stale or partial, restart it on
+   Sonic: `ssh sonic 'docker restart device-manager'`.
+9. Validate OTA through the user-facing path under test. For Device Manager OTA:
+   ```bash
+   curl -sS --max-time 180 -X POST \
+     "http://192.168.1.40:8102/api/devices/<device-manager-id>/access-controller/ota" \
+     -H 'Content-Type: application/octet-stream' \
+     -H 'X-Firmware-Filename: controller.bin' \
+     --data-binary @/home/andy/projects/access-controller/code/controller/build/controller.bin
+   ```
+   Confirm the running partition flips and `otaState` becomes `valid`.
+10. Run the full automated suite:
+    ```bash
+    cd ~/projects/access-controller/code/controller/tests
+    DEVICE_URL=http://<controller-ip> npm test
+    ```
+11. For UI/network changes, run a Playwright desktop/mobile smoke and inspect
+    screenshots. The active Wi-Fi card must show SSID, quality/RSSI, connected
+    age, STA IP, gateway, STA MAC, AP BSSID, channel, and security.
+
+Normal successful testing must be quiet. Keep controller quiet-test mode enabled
+for synthetic load/config traffic; beep only for unexpected failures or reboot
+alerts.
+
 ## One-Hour Soak With OTA
 
 Run the full load test with browser refreshes, settings churn, API traffic, uptime tick checks, and repeated OTA uploads:
@@ -91,14 +150,18 @@ Verify the public punch path without exposing the full UI:
 curl -sf -X POST https://open-automation.org/devices \
   -H 'Content-Type: application/json' \
   -d '{"uuid":"smoke-test","name":"codex-smoke","type":"access_controller"}'
+curl -sS -i https://open-automation.org/devices/ | sed -n '1,12p'
 ```
 
-Remove any temporary punch record after the test from `sonic:/home/andy/projects/device-manager/data/discovery/punched.json`.
+Expected: the POST returns `200`, and unauthenticated browser GET returns
+`401 Basic realm="Device Manager"`. Remove any temporary punch record after the
+test from `sonic:/home/andy/projects/device-manager/data/discovery/punched.json`
+using the Device Manager data-volume owner.
 
 Verify Device Manager LAN-backed state:
 
 ```bash
-ssh sonic 'curl -sf http://127.0.0.1:8102/api/devices/9f820690-f8e3-5a9c-84c1-f474f57c08a2/access-controller/state \
+ssh sonic 'curl -sf http://127.0.0.1:8102/api/devices/<device-manager-id>/access-controller/state \
   | jq "{ok, device_id, uuid:.state.device.uuid, ip:.state.device.network.wifi_sta_ip, running:.state.system.firmware.runningPartition.label, ota:.state.system.firmware.otaState}"'
 ```
 
@@ -107,7 +170,7 @@ Verify Device Manager OTA:
 ```bash
 scp ~/projects/access-controller/code/controller/build/controller.bin sonic:/tmp/access-controller-candidate.bin
 ssh sonic 'curl -sf --max-time 180 -X POST \
-  http://127.0.0.1:8102/api/devices/9f820690-f8e3-5a9c-84c1-f474f57c08a2/access-controller/ota \
+  http://127.0.0.1:8102/api/devices/<device-manager-id>/access-controller/ota \
   -H "Content-Type: application/octet-stream" \
   -H "X-Firmware-Filename: controller.bin" \
   --data-binary @/tmp/access-controller-candidate.bin | jq .'
@@ -180,6 +243,8 @@ To test fallback without erasing flash:
 - Uptime text changes every second in the UI.
 - No normal beeps during passing load traffic; audible alerts occur only for failure/reboot conditions.
 - Every scheduled OTA returns online, lands in the alternate app slot, and becomes `valid`.
-- Device Manager can fetch state and proxy OTA over LAN from `sonic`; public `open-automation.org/devices` remains punch-only unless an authenticated public control route is intentionally added.
+- Device Manager can fetch state and proxy OTA over LAN from `sonic`; public `POST /devices` accepts punch-in, and public browser `GET /devices/` is authenticated.
+- Active Wi-Fi metrics are visible through direct controller state, Device Manager state, and the Settings UI: quality/RSSI, STA IP, gateway, STA MAC, AP BSSID, channel, and security.
+- Two saved networks can be switched both directions when available, with active SSID/IP/link metrics changing to match the current AP.
 - Flash erase produces the same MAC-derived UUID, enters AP mode, and Wi-Fi reprovisioning returns to STA mode.
 - Reports and any fixes are committed with the exact verification commands in the final summary.

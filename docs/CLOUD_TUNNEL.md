@@ -84,25 +84,27 @@ ExecStart=/usr/bin/autossh -M 0 \
 
 ## URLs & Endpoints
 
-**Security note:** Only the punch-in endpoint and health check are exposed
-publicly. All other paths return `403 Forbidden`. The full device-manager
-dashboard is accessible only on the internal network at `http://192.168.1.40:8102/`.
+**Security note:** The unauthenticated public surface is intentionally narrow.
+Device punch-in is exposed publicly, while browser/UI access to `/devices/` is
+protected with Basic auth. The full device-manager dashboard remains available
+on the internal network at `http://192.168.1.40:8102/`.
 
 ### Exposed endpoints (public, HTTPS)
 
 | Method | URL | Description |
 |---|---|---|
 | `POST` | `/api/devices/punch` | **Device self-registration** — ESP32 / IoT devices punch in here |
+| `POST` | `/devices` | Alias for device self-registration; this is the URL the controller uses |
 | `GET` | `/api/health` | Health check — returns `{"ok":true,"service":"device-manager"}` |
 
-### Blocked paths (return 403)
+### Protected or blocked paths
 
-Everything else is blocked at the nginx level, including:
-- `/` — the full UI dashboard
-- `/api/devices` — device inventory
-- `/api/devices/{device_id}` — individual device details
-- `/api/agents`, `/api/agent/*` — agent management
-- All other API routes
+- `GET /devices/` returns `401 Basic realm="Device Manager"` unless credentials
+  are supplied.
+- `/` must not expose the full UI dashboard to unauthenticated public traffic.
+- Device inventory, individual details, agent management, OTA, and controller
+  proxy/control routes are private surfaces. Use the local Device Manager
+  (`http://192.168.1.40:8102/`) or authenticated public `/devices/` access.
 
 ### Internal endpoints (LAN only, not exposed)
 
@@ -117,15 +119,16 @@ These are available at `http://192.168.1.40:8102/` on the local network:
 | `GET` | `/api/agent/state` | Full device inventory + stats |
 | `POST` | `/api/devices/{device_id}/actions/{action_id}` | Execute a device action (lock, toggle, reboot, etc.) |
 
-### Device Punch-In (`POST /api/devices/punch`)
+### Device Punch-In (`POST /devices` or `POST /api/devices/punch`)
 
-This is the endpoint that IoT devices (including the Access Controller) hit to
-register their presence. When a device POSTs, it immediately appears in the
-Device Overview as a "recently seen" device.
+These are the endpoints that IoT devices, including the Access Controller, hit
+to register their presence. The controller firmware is configured for
+`https://open-automation.org/devices`. When a device POSTs, it immediately
+appears in Device Manager as a recently seen device.
 
 **Request:**
 ```http
-POST /api/devices/punch HTTP/1.1
+POST /devices HTTP/1.1
 Host: open-automation.org
 Content-Type: application/json
 
@@ -196,26 +199,32 @@ punched in for 24 hours are automatically pruned.
 curl -X POST https://open-automation.org/api/devices/punch \
   -H "Content-Type: application/json" \
   -d '{"name":"Access Controller","type":"access_controller","vendor":"ESP32"}'
+curl -X POST https://open-automation.org/devices \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Access Controller","type":"access_controller","vendor":"ESP32"}'
 ```
 
 ---
 
 ## How the Access Controller connects
 
-The Access Controller ESP32 firmware currently uses a **raw TCP tunnel**
-(`services/tunnel.c`) to communicate with a tunnel server. To integrate with
-Device Manager, the firmware should additionally POST to the punch endpoint
-periodically (e.g. every 60 seconds) to report its presence and telemetry.
+The Access Controller firmware punches into Device Manager with an HTTPS POST.
+Device Manager then controls the controller over the LAN-reachable STA IP or
+through its private proxy path. The ESP32-side raw TCP tunnel is experimental
+and should stay disabled for normal deploy/test work unless specifically being
+debugged.
 
-### Firmware changes needed
+### Firmware punch behavior
 
-In `services/tunnel.c` (or a new heartbeat module), add an HTTP POST to:
+The ESP32 firmware posts to:
 
 ```
-https://open-automation.org/api/devices/punch
+https://open-automation.org/devices
 ```
 
-The ESP32 HTTP client should send a JSON body with at minimum:
+The HTTPS client uses the ESP-IDF certificate bundle, so publicly signed
+certificates for `open-automation.org` are trusted without pinning a single
+leaf certificate. The JSON body should include at minimum:
 ```json
 {
   "name": "Access Controller",
@@ -243,8 +252,7 @@ the ESP32's TLS stack will verify the certificate normally.
 
 void punch_device_heartbeat(void) {
     char url[256];
-    char *server = get_char("server_ip");   // "open-automation.org"
-    snprintf(url, sizeof(url), "https://%s/api/devices/punch", server);
+    snprintf(url, sizeof(url), "https://open-automation.org/devices");
 
     cJSON *body = cJSON_CreateObject();
     cJSON_AddStringToObject(body, "name", "Access Controller");
@@ -272,20 +280,30 @@ void punch_device_heartbeat(void) {
 
 ---
 
-## SSL Certificate
+## Deploy and Test
 
-open-automation.org has a Let's Encrypt certificate installed on the
-open-automation server via certbot. It auto-renews with:
+For the full controller programming, Wi-Fi/AP recovery, Device Manager proxy,
+and OTA validation flow, see `docs/CONTROLLER_DEPLOY_AND_TEST.md`.
+
+Minimum live checks:
 
 ```bash
-sudo certbot renew
+curl -sS -i -X POST https://open-automation.org/devices \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"route-smoke","name":"Route Smoke","type":"access_controller"}'
+curl -sS -i https://open-automation.org/devices/ | sed -n '1,12p'
+curl -sf http://192.168.1.40:8102/api/health
 ```
 
-The certificate files are at:
-- `/etc/letsencrypt/live/open-automation.org/fullchain.pem`
-- `/etc/letsencrypt/live/open-automation.org/privkey.pem`
+Expected: public punch returns `200`, public UI returns `401` without auth, and
+local Device Manager health returns `{"ok":true}`.
 
-Expires: 2026-10-05 (auto-renewal configured).
+## SSL Certificate
+
+`open-automation.org` is behind Cloudflare and presents a publicly trusted TLS
+chain. The controller must rely on the ESP-IDF certificate bundle rather than a
+single pinned certificate so normal Cloudflare/Google Trust Services rotations
+continue to work.
 
 ---
 
@@ -327,17 +345,21 @@ sudo systemctl restart device-manager-tunnel
    ```bash
    cat /home/andy/projects/device-manager/data/discovery/punched.json
    ```
-2. Force a device list refresh:
+2. Force a device list refresh from the internal Device Manager network:
    ```bash
-   curl https://open-automation.org/api/devices | jq '.devices[] | select(.source | contains("punched"))'
+   curl http://192.168.1.40:8102/api/devices | jq '.devices[] | select(.source | contains("punched"))'
    ```
 3. Restart the device-manager container:
    ```bash
    docker restart device-manager
    ```
 
-### "certbot renewal failed"
-Standard renewal:
+### "certificate or TLS failed"
+
+The controller trusts the public chain through the ESP-IDF certificate bundle.
+If TLS fails, first verify the Cloudflare/public chain from a normal client and
+then confirm the firmware was built with the cert bundle enabled. If an origin
+certbot certificate is still in use on the VPS, standard renewal is:
 ```bash
 ssh open-automation
 sudo certbot renew --dry-run   # test first

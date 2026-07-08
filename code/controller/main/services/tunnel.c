@@ -6,6 +6,7 @@
 #include <errno.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "lwip/sockets.h"
@@ -14,25 +15,33 @@
 
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_ota_ops.h"
+#include "esp_app_format.h"
+#include "esp_system.h"
 #include "cJSON.h"
 #include "automation.h"
 
 extern char *get_char(const char *key);
+extern void automation_record_log(const char *message);
 extern cJSON *lock_state_snapshot(void);
 extern cJSON *exit_state_snapshot(void);
 extern cJSON *fob_state_snapshot(void);
 
 static const char *TUNNEL_TAG = "tunnel";
 
-#define TUNNEL_DEFAULT_HOST "192.168.1.43"
-#define TUNNEL_DEFAULT_PORT 9001
+#define TUNNEL_DEFAULT_HOST "142.93.57.114"
+#define TUNNEL_DEFAULT_PORT 9111
+#define TUNNEL_LEGACY_LAN_HOST "192.168.1.43"
+#define TUNNEL_LEGACY_LAN_PORT 9001
 #define PUBLIC_SERVER_HOST "open-automation.org"
 #define PUBLIC_SERVER_PORT 443
 #define TUNNEL_RECONNECT_DELAY_MS 60000
 #define TUNNEL_MAX_HEADER_BYTES (64 * 1024)
 #define TUNNEL_MAX_BODY_BYTES   (128 * 1024)
 #define LOCAL_HTTP_TIMEOUT_MS   8000
+#define LOCAL_HTTP_OTA_TIMEOUT_MS (240 * 1000)
 #define TUNNEL_TASK_STACK_BYTES  (8 * 1024)
+#define TUNNEL_OTA_REBOOT_DELAY_MS 1500
 
 #ifndef CONFIG_ACCESS_CONTROLLER_ENABLE_TUNNEL
 #define CONFIG_ACCESS_CONTROLLER_ENABLE_TUNNEL 0
@@ -70,6 +79,7 @@ typedef struct {
 
 static void add_header_to_json(cJSON *headers_obj, const char *key, const char *value);
 static void handle_abort_frame(tunnel_client_t *client, cJSON *header);
+static esp_err_t read_frame(int sock, cJSON **header_out, uint8_t **body_out, size_t *body_len_out);
 
 static const char *normalize_target(const char *target, char *buffer, size_t buffer_len) {
     if (!target) {
@@ -89,7 +99,19 @@ static const char *normalize_target(const char *target, char *buffer, size_t buf
     return target;
 }
 
+static bool is_ota_upload_target(const char *target) {
+    if (!target) {
+        return false;
+    }
+    char normalized_path[256];
+    const char *path = normalize_target(target, normalized_path, sizeof(normalized_path));
+    const char *query = strchr(path, '?');
+    size_t path_len = query ? (size_t)(query - path) : strlen(path);
+    return path_len == strlen("/api/ota/upload") && strncmp(path, "/api/ota/upload", path_len) == 0;
+}
+
 static bool tunnel_task_started = false;
+static SemaphoreHandle_t s_tunnel_ota_mutex = NULL;
 
 void tunnel_ws_broadcast(const char *message) {
     (void)message;
@@ -117,7 +139,8 @@ static void load_tunnel_config(tunnel_config_t *cfg) {
         cfg->port = TUNNEL_DEFAULT_PORT;
     }
 
-    if (strcmp(cfg->host, PUBLIC_SERVER_HOST) == 0 && cfg->port == PUBLIC_SERVER_PORT) {
+    if ((strcmp(cfg->host, PUBLIC_SERVER_HOST) == 0 && cfg->port == PUBLIC_SERVER_PORT) ||
+        (strcmp(cfg->host, TUNNEL_LEGACY_LAN_HOST) == 0 && cfg->port == TUNNEL_LEGACY_LAN_PORT)) {
         ESP_LOGW(TUNNEL_TAG,
                  "Ignoring stale tunnel endpoint %s:%d from server URL settings; using default %s:%d",
                  cfg->host,
@@ -266,6 +289,53 @@ static esp_err_t send_http_error(int sock, const char *request_id, const char *m
     esp_err_t err = send_frame(sock, root, NULL, 0);
     cJSON_Delete(root);
     return err;
+}
+
+static esp_err_t send_json_http_response(int sock, const char *request_id, int status_code, cJSON *payload) {
+    if (!request_id || !payload) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char *body = cJSON_PrintUnformatted(payload);
+    if (!body) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON *headers = cJSON_CreateObject();
+    cJSON *content_type = cJSON_CreateArray();
+    cJSON *content_length = cJSON_CreateArray();
+    if (!root || !headers || !content_type || !content_length) {
+        if (root) cJSON_Delete(root);
+        if (headers) cJSON_Delete(headers);
+        if (content_type) cJSON_Delete(content_type);
+        if (content_length) cJSON_Delete(content_length);
+        cJSON_free(body);
+        return ESP_ERR_NO_MEM;
+    }
+
+    char length_str[24];
+    snprintf(length_str, sizeof(length_str), "%u", (unsigned int)strlen(body));
+    cJSON_AddItemToArray(content_type, cJSON_CreateString("application/json; charset=utf-8"));
+    cJSON_AddItemToArray(content_length, cJSON_CreateString(length_str));
+    cJSON_AddItemToObject(headers, "content-type", content_type);
+    cJSON_AddItemToObject(headers, "content-length", content_length);
+
+    cJSON_AddStringToObject(root, "type", "httpResponse");
+    cJSON_AddStringToObject(root, "requestId", request_id);
+    cJSON_AddNumberToObject(root, "statusCode", status_code);
+    cJSON_AddItemToObject(root, "headers", headers);
+
+    esp_err_t err = send_frame(sock, root, (const uint8_t *)body, strlen(body));
+    cJSON_Delete(root);
+    cJSON_free(body);
+    return err;
+}
+
+static void tunnel_ota_reboot_task(void *arg) {
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(TUNNEL_OTA_REBOOT_DELAY_MS));
+    esp_restart();
 }
 
 static esp_err_t send_http_response_start(http_stream_context_t *ctx, esp_http_client_handle_t http_client) {
@@ -490,7 +560,7 @@ static esp_err_t forward_request_to_local_http(tunnel_client_t *client, const ch
     esp_http_client_config_t http_cfg = {
         .url = url,
         .method = http_method_from_string(method),
-        .timeout_ms = LOCAL_HTTP_TIMEOUT_MS,
+        .timeout_ms = is_ota_upload_target(target) ? LOCAL_HTTP_OTA_TIMEOUT_MS : LOCAL_HTTP_TIMEOUT_MS,
         .event_handler = http_stream_event_handler,
         .buffer_size = 1024,
         .buffer_size_tx = 1024,
@@ -562,6 +632,416 @@ static esp_err_t forward_request_to_local_http(tunnel_client_t *client, const ch
     esp_http_client_cleanup(http_client);
 
     if (err != ESP_OK || stream_ctx.error) {
+        if (!stream_ctx.start_sent) {
+            return send_http_error(client->sock, request_id, "Local HTTP request failed");
+        }
+        if (!stream_ctx.finished) {
+            send_http_response_end(&stream_ctx);
+        }
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+static bool request_id_matches(cJSON *header, const char *request_id) {
+    cJSON *request_id_item = cJSON_GetObjectItemCaseSensitive(header, "requestId");
+    return cJSON_IsString(request_id_item) &&
+           request_id_item->valuestring &&
+           strcmp(request_id_item->valuestring, request_id) == 0;
+}
+
+static esp_err_t http_client_write_all(esp_http_client_handle_t http_client, const uint8_t *body, size_t body_len) {
+    size_t written = 0;
+    while (written < body_len) {
+        int sent = esp_http_client_write(http_client, (const char *)body + written, (int)(body_len - written));
+        if (sent < 0) {
+            ESP_LOGE(TUNNEL_TAG, "Local HTTP request body write failed");
+            return ESP_FAIL;
+        }
+        if (sent == 0) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+        written += (size_t)sent;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t finish_streamed_local_response(http_stream_context_t *stream_ctx, esp_http_client_handle_t http_client) {
+    int64_t header_result = esp_http_client_fetch_headers(http_client);
+    if (header_result < 0) {
+        ESP_LOGW(TUNNEL_TAG, "Local HTTP response header fetch returned %lld", (long long)header_result);
+    }
+
+    esp_err_t err = send_http_response_start(stream_ctx, http_client);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    uint8_t buffer[1024];
+    while (1) {
+        int received = esp_http_client_read(http_client, (char *)buffer, sizeof(buffer));
+        if (received > 0) {
+            err = send_http_response_chunk(stream_ctx, buffer, (size_t)received);
+            if (err != ESP_OK) {
+                return err;
+            }
+            continue;
+        }
+        if (received == 0) {
+            if (esp_http_client_is_complete_data_received(http_client)) {
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+        ESP_LOGE(TUNNEL_TAG, "Local HTTP response read failed (%d)", received);
+        return ESP_FAIL;
+    }
+
+    return send_http_response_end(stream_ctx);
+}
+
+static esp_err_t read_expected_stream_frame(tunnel_client_t *client,
+                                            const char *request_id,
+                                            const char *expected_type,
+                                            cJSON **header_out,
+                                            uint8_t **body_out,
+                                            size_t *body_len_out) {
+    cJSON *header = NULL;
+    uint8_t *body = NULL;
+    size_t body_len = 0;
+    esp_err_t err = read_frame(client->sock, &header, &body, &body_len);
+    if (err != ESP_OK) {
+        if (body) free(body);
+        if (header) cJSON_Delete(header);
+        return err;
+    }
+
+    cJSON *type_item = cJSON_GetObjectItemCaseSensitive(header, "type");
+    const char *type = cJSON_IsString(type_item) ? type_item->valuestring : NULL;
+    if (!type || strcmp(type, expected_type) != 0 || !request_id_matches(header, request_id)) {
+        ESP_LOGE(TUNNEL_TAG, "Unexpected streamed request frame (expected %s)", expected_type);
+        if (body) free(body);
+        cJSON_Delete(header);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+
+    *header_out = header;
+    *body_out = body;
+    *body_len_out = body_len;
+    return ESP_OK;
+}
+
+static esp_err_t handle_streamed_ota_upload(tunnel_client_t *client, const char *request_id, size_t request_body_len) {
+    if (!client || !request_id || request_body_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
+    if (!update_partition) {
+        return send_http_error(client->sock, request_id, "No OTA update partition available");
+    }
+    if (request_body_len > update_partition->size) {
+        return send_http_error(client->sock, request_id, "Firmware binary exceeds OTA partition size");
+    }
+
+    if (!s_tunnel_ota_mutex) {
+        s_tunnel_ota_mutex = xSemaphoreCreateMutex();
+    }
+    if (!s_tunnel_ota_mutex || xSemaphoreTake(s_tunnel_ota_mutex, 0) != pdTRUE) {
+        return send_http_error(client->sock, request_id, "OTA update already in progress");
+    }
+
+    ESP_LOGI(TUNNEL_TAG,
+             "Starting streamed tunnel OTA to partition %s (%u bytes)",
+             update_partition->label,
+             (unsigned int)request_body_len);
+
+    esp_ota_handle_t update_handle = 0;
+    esp_err_t err = esp_ota_begin(update_partition, request_body_len, &update_handle);
+    if (err != ESP_OK) {
+        xSemaphoreGive(s_tunnel_ota_mutex);
+        ESP_LOGE(TUNNEL_TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+        return send_http_error(client->sock, request_id, "Failed to start OTA update");
+    }
+
+    size_t remaining = request_body_len;
+    size_t written = 0;
+    while (remaining > 0) {
+        cJSON *chunk_header = NULL;
+        uint8_t *chunk_body = NULL;
+        size_t chunk_len = 0;
+        err = read_expected_stream_frame(client, request_id, "httpRequestChunk", &chunk_header, &chunk_body, &chunk_len);
+        if (err != ESP_OK) {
+            ESP_LOGE(TUNNEL_TAG, "Failed to read OTA chunk (%s)", esp_err_to_name(err));
+            esp_ota_abort(update_handle);
+            xSemaphoreGive(s_tunnel_ota_mutex);
+            return err;
+        }
+        if (chunk_len == 0 || chunk_len > remaining) {
+            ESP_LOGE(TUNNEL_TAG, "Invalid OTA chunk length %u remaining %u",
+                     (unsigned int)chunk_len,
+                     (unsigned int)remaining);
+            if (chunk_body) free(chunk_body);
+            cJSON_Delete(chunk_header);
+            esp_ota_abort(update_handle);
+            xSemaphoreGive(s_tunnel_ota_mutex);
+            return send_http_error(client->sock, request_id, "Streamed OTA body length mismatch");
+        }
+
+        err = esp_ota_write(update_handle, chunk_body, chunk_len);
+        if (chunk_body) free(chunk_body);
+        cJSON_Delete(chunk_header);
+        if (err != ESP_OK) {
+            ESP_LOGE(TUNNEL_TAG, "esp_ota_write failed after %u bytes (%s)",
+                     (unsigned int)written,
+                     esp_err_to_name(err));
+            esp_ota_abort(update_handle);
+            xSemaphoreGive(s_tunnel_ota_mutex);
+            return send_http_error(client->sock, request_id, "Firmware binary is not a valid ESP32 app image");
+        }
+
+        written += chunk_len;
+        remaining -= chunk_len;
+    }
+
+    cJSON *end_header = NULL;
+    uint8_t *end_body = NULL;
+    size_t end_body_len = 0;
+    err = read_expected_stream_frame(client, request_id, "httpRequestEnd", &end_header, &end_body, &end_body_len);
+    if (end_body) free(end_body);
+    if (end_header) cJSON_Delete(end_header);
+    if (err != ESP_OK || end_body_len != 0) {
+        ESP_LOGE(TUNNEL_TAG, "Invalid streamed OTA end frame");
+        esp_ota_abort(update_handle);
+        xSemaphoreGive(s_tunnel_ota_mutex);
+        return send_http_error(client->sock, request_id, "Invalid streamed OTA end frame");
+    }
+
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TUNNEL_TAG, "esp_ota_end failed (%s)", esp_err_to_name(err));
+        xSemaphoreGive(s_tunnel_ota_mutex);
+        return send_http_error(client->sock, request_id, "Firmware image validation failed");
+    }
+
+    esp_app_desc_t uploaded_desc;
+    memset(&uploaded_desc, 0, sizeof(uploaded_desc));
+    esp_err_t desc_err = esp_ota_get_partition_description(update_partition, &uploaded_desc);
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(TUNNEL_TAG, "esp_ota_set_boot_partition failed (%s)", esp_err_to_name(err));
+        xSemaphoreGive(s_tunnel_ota_mutex);
+        return send_http_error(client->sock, request_id, "Failed to select uploaded firmware");
+    }
+
+    automation_record_log("OTA firmware uploaded through tunnel; rebooting into new image");
+
+    cJSON *response = cJSON_CreateObject();
+    if (!response) {
+        xSemaphoreGive(s_tunnel_ota_mutex);
+        return send_http_error(client->sock, request_id, "Firmware installed but response allocation failed");
+    }
+    cJSON_AddBoolToObject(response, "ok", true);
+    cJSON_AddBoolToObject(response, "reboot", true);
+    cJSON_AddNumberToObject(response, "bytes", written);
+    cJSON_AddNumberToObject(response, "rebootDelayMs", TUNNEL_OTA_REBOOT_DELAY_MS);
+    cJSON_AddStringToObject(response, "partition", update_partition->label);
+    if (desc_err == ESP_OK) {
+        cJSON_AddStringToObject(response, "projectName", uploaded_desc.project_name);
+        cJSON_AddStringToObject(response, "projectVersion", uploaded_desc.version);
+        cJSON_AddStringToObject(response, "buildDate", uploaded_desc.date);
+        cJSON_AddStringToObject(response, "buildTime", uploaded_desc.time);
+    }
+
+    err = send_json_http_response(client->sock, request_id, 200, response);
+    cJSON_Delete(response);
+    if (err != ESP_OK) {
+        ESP_LOGE(TUNNEL_TAG, "Failed to send streamed OTA response (%s)", esp_err_to_name(err));
+        xSemaphoreGive(s_tunnel_ota_mutex);
+        return err;
+    }
+
+    if (xTaskCreate(tunnel_ota_reboot_task, "tunnel_ota_reboot", 2048, NULL, 5, NULL) != pdPASS) {
+        xSemaphoreGive(s_tunnel_ota_mutex);
+        return send_http_error(client->sock, request_id, "Firmware installed but reboot task failed");
+    }
+
+    xSemaphoreGive(s_tunnel_ota_mutex);
+    return ESP_OK;
+}
+
+static esp_err_t forward_streamed_request_to_local_http(tunnel_client_t *client, cJSON *start_header) {
+    cJSON *request_id_item = cJSON_GetObjectItemCaseSensitive(start_header, "requestId");
+    cJSON *method_item = cJSON_GetObjectItemCaseSensitive(start_header, "method");
+    cJSON *target_item = cJSON_GetObjectItemCaseSensitive(start_header, "target");
+    cJSON *headers_item = cJSON_GetObjectItemCaseSensitive(start_header, "headers");
+    cJSON *body_len_item = cJSON_GetObjectItemCaseSensitive(start_header, "requestBodyLength");
+
+    if (!cJSON_IsString(request_id_item) ||
+        !cJSON_IsString(method_item) ||
+        !cJSON_IsString(target_item) ||
+        !cJSON_IsNumber(body_len_item) ||
+        body_len_item->valuedouble < 0) {
+        ESP_LOGE(TUNNEL_TAG, "Invalid streamed HTTP request start frame");
+        return send_http_error(client->sock, NULL, "Malformed streamed httpRequest frame");
+    }
+
+    const char *request_id = request_id_item->valuestring;
+    const char *method = method_item->valuestring;
+    const char *target = target_item->valuestring;
+    size_t request_body_len = (size_t)body_len_item->valuedouble;
+
+    if (strcasecmp(method, "POST") == 0 && is_ota_upload_target(target)) {
+        return handle_streamed_ota_upload(client, request_id, request_body_len);
+    }
+
+    char normalized_path[256];
+    const char *local_path = normalize_target(target, normalized_path, sizeof(normalized_path));
+
+    char url[256];
+    snprintf(url, sizeof(url), "http://127.0.0.1%s", (*local_path) ? local_path : "/");
+
+    ESP_LOGI(TUNNEL_TAG,
+             "Forwarding streamed HTTP request %s %s (%u bytes)",
+             method,
+             local_path,
+             (unsigned int)request_body_len);
+
+    esp_http_client_config_t http_cfg = {
+        .url = url,
+        .method = http_method_from_string(method),
+        .timeout_ms = is_ota_upload_target(target) ? LOCAL_HTTP_OTA_TIMEOUT_MS : LOCAL_HTTP_TIMEOUT_MS,
+        .buffer_size = 1024,
+        .buffer_size_tx = 1024,
+    };
+
+    esp_http_client_handle_t http_client = esp_http_client_init(&http_cfg);
+    if (!http_client) {
+        return send_http_error(client->sock, request_id, "Failed to init local HTTP client");
+    }
+
+    if (headers_item && cJSON_IsObject(headers_item)) {
+        cJSON *header = NULL;
+        cJSON_ArrayForEach(header, headers_item) {
+            const char *key = header->string;
+            if (!key || !cJSON_IsArray(header)) {
+                continue;
+            }
+            cJSON *value_item = cJSON_GetArrayItem(header, 0);
+            if (!value_item || !cJSON_IsString(value_item)) {
+                continue;
+            }
+            if (strcasecmp(key, "content-length") == 0) {
+                continue;
+            }
+            if (strcasecmp(key, "connection") == 0) {
+                continue;
+            }
+            esp_http_client_set_header(http_client, key, value_item->valuestring);
+        }
+    }
+    esp_http_client_set_header(http_client, "Connection", "close");
+
+    esp_err_t err = esp_http_client_open(http_client, (int)request_body_len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TUNNEL_TAG, "Local HTTP stream open failed: %s", esp_err_to_name(err));
+        esp_http_client_cleanup(http_client);
+        return send_http_error(client->sock, request_id, "Failed to open local HTTP request");
+    }
+
+    size_t remaining = request_body_len;
+    while (remaining > 0) {
+        cJSON *chunk_header = NULL;
+        uint8_t *chunk_body = NULL;
+        size_t chunk_len = 0;
+        err = read_frame(client->sock, &chunk_header, &chunk_body, &chunk_len);
+        if (err != ESP_OK) {
+            ESP_LOGE(TUNNEL_TAG, "Failed to read streamed request chunk: %s", esp_err_to_name(err));
+            if (chunk_body) free(chunk_body);
+            if (chunk_header) cJSON_Delete(chunk_header);
+            esp_http_client_close(http_client);
+            esp_http_client_cleanup(http_client);
+            return err;
+        }
+
+        cJSON *type_item = cJSON_GetObjectItemCaseSensitive(chunk_header, "type");
+        const char *type = cJSON_IsString(type_item) ? type_item->valuestring : NULL;
+        if (!type || strcmp(type, "httpRequestChunk") != 0 || !request_id_matches(chunk_header, request_id)) {
+            ESP_LOGE(TUNNEL_TAG, "Unexpected frame while reading streamed request body");
+            if (chunk_body) free(chunk_body);
+            cJSON_Delete(chunk_header);
+            esp_http_client_close(http_client);
+            esp_http_client_cleanup(http_client);
+            return send_http_error(client->sock, request_id, "Unexpected streamed request frame");
+        }
+        if (chunk_len > remaining) {
+            ESP_LOGE(TUNNEL_TAG, "Streamed request chunk exceeds remaining body length");
+            if (chunk_body) free(chunk_body);
+            cJSON_Delete(chunk_header);
+            esp_http_client_close(http_client);
+            esp_http_client_cleanup(http_client);
+            return send_http_error(client->sock, request_id, "Streamed request body length mismatch");
+        }
+
+        err = http_client_write_all(http_client, chunk_body, chunk_len);
+        if (chunk_body) free(chunk_body);
+        cJSON_Delete(chunk_header);
+        if (err != ESP_OK) {
+            esp_http_client_close(http_client);
+            esp_http_client_cleanup(http_client);
+            return send_http_error(client->sock, request_id, "Failed to write local HTTP request body");
+        }
+        remaining -= chunk_len;
+    }
+
+    cJSON *end_header = NULL;
+    uint8_t *end_body = NULL;
+    size_t end_body_len = 0;
+    err = read_frame(client->sock, &end_header, &end_body, &end_body_len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TUNNEL_TAG, "Failed to read streamed request end: %s", esp_err_to_name(err));
+        if (end_body) free(end_body);
+        if (end_header) cJSON_Delete(end_header);
+        esp_http_client_close(http_client);
+        esp_http_client_cleanup(http_client);
+        return err;
+    }
+
+    cJSON *end_type_item = cJSON_GetObjectItemCaseSensitive(end_header, "type");
+    const char *end_type = cJSON_IsString(end_type_item) ? end_type_item->valuestring : NULL;
+    bool valid_end = end_type &&
+                     strcmp(end_type, "httpRequestEnd") == 0 &&
+                     request_id_matches(end_header, request_id) &&
+                     end_body_len == 0;
+    if (end_body) free(end_body);
+    cJSON_Delete(end_header);
+    if (!valid_end) {
+        ESP_LOGE(TUNNEL_TAG, "Invalid streamed request end frame");
+        esp_http_client_close(http_client);
+        esp_http_client_cleanup(http_client);
+        return send_http_error(client->sock, request_id, "Invalid streamed request end frame");
+    }
+
+    http_stream_context_t stream_ctx = {
+        .client = client,
+        .header_count = 0,
+        .start_sent = false,
+        .finished = false,
+        .error = false,
+        .last_err = ESP_OK,
+    };
+    snprintf(stream_ctx.request_id, sizeof(stream_ctx.request_id), "%s", request_id);
+
+    err = finish_streamed_local_response(&stream_ctx, http_client);
+    esp_http_client_close(http_client);
+    esp_http_client_cleanup(http_client);
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TUNNEL_TAG, "Failed to forward streamed local response: %s", esp_err_to_name(err));
         if (!stream_ctx.start_sent) {
             return send_http_error(client->sock, request_id, "Local HTTP request failed");
         }
@@ -792,6 +1272,8 @@ static void tunnel_main_loop(tunnel_client_t *client) {
             send_simple_frame(client->sock, "pong");
         } else if (strcmp(type, "httpRequest") == 0) {
             handle_http_request_frame(client, header, body, body_len);
+        } else if (strcmp(type, "httpRequestStart") == 0) {
+            forward_streamed_request_to_local_http(client, header);
         } else if (strcmp(type, "abort") == 0) {
             handle_abort_frame(client, header);
         } else if (strcmp(type, "disconnect") == 0) {

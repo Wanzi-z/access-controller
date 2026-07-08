@@ -48,6 +48,8 @@ static SemaphoreHandle_t s_ota_mutex;
 static SemaphoreHandle_t s_state_snapshot_mutex;
 static char s_state_response_buffer[STATE_RESPONSE_BUFFER_SIZE];
 
+static const char *wifi_auth_mode_name(wifi_auth_mode_t authmode);
+
 extern cJSON *lock_state_snapshot(void);
 extern cJSON *exit_state_snapshot(void);
 extern cJSON *fob_state_snapshot(void);
@@ -123,6 +125,44 @@ static void add_netif_ip(cJSON *object, const char *field, const char *if_key) {
     cJSON_AddStringToObject(object, field, ip);
 }
 
+static void add_netif_ip_detail(cJSON *object, const char *prefix, const char *if_key) {
+    if (!object || !prefix || !if_key) {
+        return;
+    }
+
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey(if_key);
+    if (!netif) {
+        return;
+    }
+
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0) {
+        return;
+    }
+
+    char field[32];
+    char ip[16];
+
+    snprintf(field, sizeof(field), "%s_gateway", prefix);
+    snprintf(ip, sizeof(ip), IPSTR, IP2STR(&ip_info.gw));
+    cJSON_AddStringToObject(object, field, ip);
+
+    snprintf(field, sizeof(field), "%s_netmask", prefix);
+    snprintf(ip, sizeof(ip), IPSTR, IP2STR(&ip_info.netmask));
+    cJSON_AddStringToObject(object, field, ip);
+}
+
+static int wifi_quality_from_rssi(int rssi) {
+    int quality = ((rssi + 90) * 100) / 60;
+    if (quality < 0) {
+        return 0;
+    }
+    if (quality > 100) {
+        return 100;
+    }
+    return quality;
+}
+
 static cJSON *network_state_snapshot(void) {
     cJSON *network = cJSON_CreateObject();
     if (!network) {
@@ -132,6 +172,7 @@ static cJSON *network_state_snapshot(void) {
     add_netif_ip(network, "wifi_sta_ip", "WIFI_STA_DEF");
     add_netif_ip(network, "wifi_ap_ip", "WIFI_AP_DEF");
     add_netif_ip(network, "eth_ip", "ETH_DEF");
+    add_netif_ip_detail(network, "wifi_sta", "WIFI_STA_DEF");
 
     uint8_t mac[6] = {0};
     char mac_str[18];
@@ -154,6 +195,25 @@ static cJSON *network_state_snapshot(void) {
         cJSON_AddStringToObject(network, "eth_mac", mac_str);
     } else {
         cJSON_AddNullToObject(network, "eth_mac");
+    }
+
+    wifi_ap_record_t ap_info;
+    memset(&ap_info, 0, sizeof(ap_info));
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+        cJSON_AddBoolToObject(network, "wifi_sta_connected", true);
+        cJSON_AddNumberToObject(network, "wifi_sta_rssi", ap_info.rssi);
+        cJSON_AddNumberToObject(network, "wifi_sta_quality", wifi_quality_from_rssi(ap_info.rssi));
+        cJSON_AddNumberToObject(network, "wifi_sta_channel", ap_info.primary);
+        cJSON_AddStringToObject(network, "wifi_sta_auth", wifi_auth_mode_name(ap_info.authmode));
+        mac_to_string(ap_info.bssid, mac_str, sizeof(mac_str));
+        cJSON_AddStringToObject(network, "wifi_sta_bssid", mac_str);
+    } else {
+        cJSON_AddBoolToObject(network, "wifi_sta_connected", false);
+        cJSON_AddNullToObject(network, "wifi_sta_rssi");
+        cJSON_AddNullToObject(network, "wifi_sta_quality");
+        cJSON_AddNullToObject(network, "wifi_sta_channel");
+        cJSON_AddNullToObject(network, "wifi_sta_auth");
+        cJSON_AddNullToObject(network, "wifi_sta_bssid");
     }
 
     return network;

@@ -647,6 +647,10 @@ cJSON *wifi_list_snapshot(void) {
     return arr;
 }
 
+cJSON *wifi_list_credentials_snapshot(void) {
+    return wifi_list_load_array();
+}
+
 void get_md5_from_flash(char *md5_hash, size_t size) {
     char *stored_md5 = get_char("firmware_md5");
     if (stored_md5 && strlen(stored_md5) > 0) {

@@ -17,6 +17,7 @@ const CONFIG = {
   handshakeTimeoutMs: parseInt(process.env.HANDSHAKE_TIMEOUT_MS ?? '5000', 10),
   heartbeatIntervalMs: parseInt(process.env.HEARTBEAT_INTERVAL_MS ?? '20000', 10),
   maxRequestBodyBytes: parseInt(process.env.MAX_REQUEST_BODY_BYTES ?? `${5 * 1024 * 1024}`, 10),
+  requestChunkBytes: parseInt(process.env.REQUEST_CHUNK_BYTES ?? `${4 * 1024}`, 10),
   requireIdentify: ['1', 'true', 'yes'].includes((process.env.REQUIRE_IDENTIFY ?? '').toLowerCase()),
   logLevel: process.env.LOG_LEVEL ?? 'info',
 };
@@ -193,6 +194,10 @@ class DeviceConnection {
     const body = await collectRequestBody(req, maxRequestBodyBytes);
     const requestId = randomUUID();
     const headers = normaliseOutgoingHeaders(req, body.length);
+    const otaUpload = isOtaUploadRequest(req.method, requestTarget);
+    const timeoutMs = otaUpload
+      ? Math.max(this.manager.config.requestTimeoutMs, 240000)
+      : this.manager.config.requestTimeoutMs;
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -212,7 +217,7 @@ class DeviceConnection {
           res.end();
         }
         reject(new Error('Request timed out waiting for device response'));
-      }, this.manager.config.requestTimeoutMs);
+      }, timeoutMs);
 
       const pending = {
         res,
@@ -222,8 +227,10 @@ class DeviceConnection {
         startedAt: Date.now(),
         method: req.method,
         requestTarget,
+        otaUpload,
         streaming: false,
         responseStarted: false,
+        sentToDevice: false,
       };
 
       this.pendingRequests.set(requestId, pending);
@@ -250,14 +257,43 @@ class DeviceConnection {
       });
 
       try {
-        writeFrame(this.socket, {
-          type: 'httpRequest',
-          requestId,
-          method: req.method,
-          target: requestTarget,
-          httpVersion: req.httpVersion,
-          headers,
-        }, body);
+        if (shouldStreamRequestBody(req.method, requestTarget, body.length)) {
+          writeFrame(this.socket, {
+            type: 'httpRequestStart',
+            requestId,
+            method: req.method,
+            target: requestTarget,
+            httpVersion: req.httpVersion,
+            headers,
+            requestBodyLength: body.length,
+          });
+          let sequence = 0;
+          for (let offset = 0; offset < body.length; offset += this.manager.config.requestChunkBytes) {
+            const chunk = body.subarray(offset, Math.min(offset + this.manager.config.requestChunkBytes, body.length));
+            writeFrame(this.socket, {
+              type: 'httpRequestChunk',
+              requestId,
+              sequence,
+              offset,
+            }, chunk);
+            sequence += 1;
+          }
+          writeFrame(this.socket, {
+            type: 'httpRequestEnd',
+            requestId,
+            chunks: sequence,
+          });
+        } else {
+          writeFrame(this.socket, {
+            type: 'httpRequest',
+            requestId,
+            method: req.method,
+            target: requestTarget,
+            httpVersion: req.httpVersion,
+            headers,
+          }, body);
+        }
+        pending.sentToDevice = true;
       } catch (err) {
         clearTimeout(timeout);
         this.pendingRequests.delete(requestId);
@@ -560,6 +596,23 @@ class DeviceConnection {
   flushPendingRequests() {
     for (const [requestId, pending] of this.pendingRequests.entries()) {
       clearTimeout(pending.timeout);
+      if (pending.otaUpload && pending.sentToDevice && !pending.responseStarted) {
+        if (!pending.res.headersSent) {
+          pending.res.writeHead(202, 'Accepted', {
+            'content-type': 'application/json; charset=utf-8',
+          });
+        }
+        pending.res.end(JSON.stringify({
+          ok: true,
+          accepted: true,
+          reboot: true,
+          tunnelDisconnected: true,
+          message: 'OTA upload was sent to the device and the tunnel disconnected before a response; reboot is likely in progress.',
+        }));
+        pending.resolve();
+        this.pendingRequests.delete(requestId);
+        continue;
+      }
       if (!pending.res.headersSent) {
         pending.res.writeHead(502, 'Bad Gateway');
       }
@@ -825,6 +878,22 @@ function generateShortId() {
   return randomUUID().replace(/-/g, '').slice(0, 8);
 }
 
+function isOtaUploadRequest(method, requestTarget) {
+  if (String(method || '').toUpperCase() !== 'POST') {
+    return false;
+  }
+  try {
+    const url = new URL(requestTarget, 'http://device.local');
+    return url.pathname === '/api/ota/upload';
+  } catch {
+    return String(requestTarget || '').split('?')[0] === '/api/ota/upload';
+  }
+}
+
+function shouldStreamRequestBody(method, requestTarget, bodyLength) {
+  return bodyLength > 64 * 1024 || isOtaUploadRequest(method, requestTarget);
+}
+
 async function collectRequestBody(req, maxBytes) {
   const chunks = [];
   let total = 0;
@@ -898,4 +967,3 @@ async function main() {
 }
 
 main();
-

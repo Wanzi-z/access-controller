@@ -163,6 +163,39 @@ const formatAge = (ms) => {
   return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}s`;
 };
 
+const formatSinceBoot = (ms) => {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value <= 0) return '—';
+  return `${formatUptime(Math.round(value / 1000))} since boot`;
+};
+
+const wifiSignalFromRssi = (rssi) => {
+  const value = Number(rssi);
+  if (!Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(100, Math.round(((value + 90) / 60) * 100)));
+};
+
+const formatWifiSignal = (network) => {
+  if (!network) return '—';
+  const rssi = Number(network.rssi);
+  const quality = wifiSignalFromRssi(rssi);
+  if (quality == null) return '—';
+  return `${quality}% · ${rssi} dBm`;
+};
+
+const formatWifiLink = (qualityValue, rssiValue) => {
+  const quality = Number(qualityValue);
+  const rssi = Number(rssiValue);
+  if (Number.isFinite(quality) && Number.isFinite(rssi)) {
+    return `${Math.round(quality)}% · ${Math.round(rssi)} dBm`;
+  }
+  if (Number.isFinite(rssi)) {
+    const derived = wifiSignalFromRssi(rssi);
+    return derived == null ? `${Math.round(rssi)} dBm` : `${derived}% · ${Math.round(rssi)} dBm`;
+  }
+  return '—';
+};
+
 const isSameDay = (left, right) => (
   left.getFullYear() === right.getFullYear()
   && left.getMonth() === right.getMonth()
@@ -1177,7 +1210,7 @@ const renderState = (state = {}) => {
   if (Array.isArray(state.logs)) {
     renderLogs(state.logs);
   }
-  renderWifi(state.wifi || {});
+  renderWifi(state.wifi || {}, state.device?.network || {}, state.system || {});
 };
 
 const DEVICE_STATE_ERROR_THROTTLE_MS = 15000;
@@ -1277,7 +1310,11 @@ const loadWifiList = async () => {
       wifiNetworksCache = networks;
       wifiScanCache = scanned;
       const wifi = (App.data && App.data.wifi) ? App.data.wifi : {};
-      renderWifi({ ...wifi, networks: wifiNetworksCache, scanned: wifiScanCache });
+      renderWifi(
+        { ...wifi, networks: wifiNetworksCache, scanned: wifiScanCache },
+        App.data?.device?.network || {},
+        App.data?.system || {}
+      );
       if (App.data) {
         App.data.wifi = App.data.wifi || {};
         App.data.wifi.networks = wifiNetworksCache;
@@ -2295,7 +2332,7 @@ const renderEnrollmentUserOptions = (users = []) => {
   }
 };
 
-const renderWifi = (wifi = {}) => {
+const renderWifi = (wifi = {}, networkState = {}, system = {}) => {
   const list = document.getElementById('wifiNetworks');
   const availableList = document.getElementById('wifiAvailableNetworks');
   const activeEl = document.getElementById('wifiActive');
@@ -2304,8 +2341,50 @@ const renderWifi = (wifi = {}) => {
   const scanned = wifi.scanned || [];
   const active = wifi.active_ssid || '';
   const savedSsids = new Set(networks.map((network) => network.ssid).filter(Boolean));
+  const activeSaved = networks.find((network) => network.ssid === active) || null;
+  const activeScan = scanned
+    .filter((network) => network.ssid === active)
+    .sort((left, right) => (Number(right.rssi) || -999) - (Number(left.rssi) || -999))[0] || null;
   if (activeEl) {
-    activeEl.textContent = active || '—';
+    if (!active) {
+      activeEl.innerHTML = '<p class="empty-state muted">No active station network.</p>';
+    } else {
+      const connectedAtMs = activeSaved?.last_used_ms;
+      const connectedForSeconds = Number.isFinite(Number(connectedAtMs))
+        ? Math.max(0, (Number(system.uptimeSeconds) || 0) - Math.round(Number(connectedAtMs) / 1000))
+        : null;
+      const liveSignal = formatWifiLink(networkState.wifi_sta_quality, networkState.wifi_sta_rssi);
+      const activeDetails = [
+        ['Link quality', liveSignal !== '—' ? liveSignal : formatWifiSignal(activeScan)],
+        ['Connected', connectedForSeconds != null ? `${formatUptime(connectedForSeconds)} ago` : formatSinceBoot(connectedAtMs)],
+        ['STA IP', networkState.wifi_sta_ip || '—'],
+        ['Gateway', networkState.wifi_sta_gateway || '—'],
+        ['STA MAC', networkState.wifi_sta_mac || '—'],
+        ['AP BSSID', networkState.wifi_sta_bssid || activeScan?.bssid || '—'],
+        ['Channel', networkState.wifi_sta_channel || activeScan?.channel || '—'],
+        ['Security', networkState.wifi_sta_auth || activeScan?.auth || (activeScan?.secure ? 'Secured' : '—')],
+      ];
+      const strength = Number.isFinite(Number(networkState.wifi_sta_quality))
+        ? Math.max(0, Math.min(100, Math.round(Number(networkState.wifi_sta_quality))))
+        : (wifiSignalFromRssi(activeScan?.rssi) ?? 0);
+      activeEl.innerHTML = `
+        <div class="wifi-active-summary">
+          <div class="wifi-active-title">${escapeHtml(active)}</div>
+          <div class="wifi-active-signal">
+            <span class="wifi-strength" aria-hidden="true"><span style="width:${strength}%"></span></span>
+            <strong>${escapeHtml(activeDetails[0][1])}</strong>
+          </div>
+        </div>
+        <div class="wifi-active-grid">
+          ${activeDetails.map(([label, value]) => `
+            <div class="wifi-detail">
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(value || '—')}</strong>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
   }
 
   if (availableList) {
@@ -2316,7 +2395,7 @@ const renderWifi = (wifi = {}) => {
         .map((network) => {
           const ssid = network.ssid || '';
           const saved = savedSsids.has(ssid);
-          const strength = Math.max(0, Math.min(100, Math.round(((network.rssi || -90) + 90) * 2)));
+          const strength = wifiSignalFromRssi(network.rssi) ?? 0;
           return `
             <button type="button" class="wifi-network-card" data-action="wifi-select" data-ssid="${escapeHtml(ssid)}">
               <span class="wifi-network-name">${escapeHtml(ssid)}</span>
@@ -2336,12 +2415,13 @@ const renderWifi = (wifi = {}) => {
   list.innerHTML = networks
     .map(
       (n) => `
-      <div class="user-row" data-ssid="${escapeHtml(n.ssid || '')}">
-        <div class="user-info">
+      <div class="wifi-saved-card ${active === n.ssid ? 'is-active' : ''}" data-ssid="${escapeHtml(n.ssid || '')}">
+        <div class="wifi-saved-info">
           <strong>${escapeHtml(n.ssid || '')}</strong>
-          <div class="meta muted">${n.last_used_ms ? `Last used: ${Math.round(n.last_used_ms / 1000)}s since boot` : ''}</div>
+          <span>${active === n.ssid ? 'Active now' : 'Saved network'}</span>
+          <div class="meta muted">${n.last_used_ms ? `Last used: ${formatSinceBoot(n.last_used_ms)}` : 'Not used since boot'}</div>
         </div>
-        <div class="user-actions">
+        <div class="wifi-saved-actions">
           <button type="button" class="secondary" data-action="wifi-connect" data-ssid="${escapeHtml(n.ssid || '')}" ${active === n.ssid ? 'disabled' : ''}>Connect</button>
           <button type="button" class="secondary danger" data-action="wifi-delete" data-ssid="${escapeHtml(n.ssid || '')}">Delete</button>
         </div>

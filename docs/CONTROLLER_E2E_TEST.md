@@ -39,6 +39,59 @@ The test is passing only when all of these are confirmed with live evidence:
 Record every run in this section. Use exact timestamps and paste short command
 outputs or report filenames instead of prose-only claims.
 
+### 2026-07-08 New Controller Deploy + Echo42/Device Manager Validation
+
+The complete current procedure is captured in
+`docs/CONTROLLER_DEPLOY_AND_TEST.md`. This log records the concrete known-good
+evidence from the July 8 run.
+
+- Programmed ESP32-S3 board over `/dev/ttyUSB0`.
+- Board MAC: `b8:f8:62:cb:9a:a0`.
+- Controller UUID: `acce5501-b8f8-42cb-9aa0-05c0085e08b7`.
+- First AP observed after flash: `ac_08b7`, password `pyfitech`,
+  `192.168.4.1`.
+- Provisioned from AP mode onto `Echo42`; controller STA IP:
+  `10.69.136.23`.
+- Controller server URL: `https://open-automation.org/devices`.
+- Firmware OTA uploaded via direct controller API:
+  `POST http://10.69.136.23/api/ota/upload`, response included
+  `{"ok":true,"reboot":true}`, partition `app1`.
+- Post-OTA direct state returned:
+  - UUID `acce5501-b8f8-42cb-9aa0-05c0085e08b7`
+  - active SSID `Echo42`
+  - STA IP `10.69.136.23`
+  - gateway `10.69.136.163`
+  - `wifi_sta_quality`, `wifi_sta_rssi`, channel, auth, and AP BSSID present
+  - running partition `app1`
+  - OTA state `valid`
+- Device Manager was restored with `docker restart device-manager` on `sonic`
+  after `/` and `/devices` hung while `/api/health` still returned 200.
+- Device Manager local health:
+  `curl http://192.168.1.40:8102/api/health` returned
+  `{"ok":true,"service":"device-manager","version":"0.1.0"}`.
+- Device Manager ID used for this controller:
+  `61c08cc8-5225-545e-b987-5a0be207b871`.
+- Device Manager access-controller state route returned matching UUID, Echo42
+  SSID, `10.69.136.23`, Wi-Fi quality, and OTA `valid`.
+- Public route behavior:
+  - `POST https://open-automation.org/devices` returned `200
+    application/json`.
+  - `GET https://open-automation.org/devices/` returned `401 Basic
+    realm="Device Manager"`, confirming the public UI is authenticated rather
+    than open.
+- UI Settings page was verified with Playwright at desktop and mobile widths.
+  The Active Network card rendered link quality/RSSI, connected age, STA IP,
+  gateway, STA MAC, AP BSSID, channel, and security.
+- Targeted tests after OTA:
+  - `DEVICE_URL=http://10.69.136.23 npm run test:api`: `77 passed, 0 failed`.
+  - `DEVICE_URL=http://10.69.136.23 npm run test:ui`: `51 passed, 0 failed,
+    2 skipped`.
+- Full automated suite after OTA:
+  - `DEVICE_URL=http://10.69.136.23 npm test`: `161 passed, 0 failed,
+    2 skipped`.
+- Final state after the full suite had no test PIN users and no test RF remotes
+  left behind.
+
 ### 2026-07-06 Factory E2E Run
 
 Pre-reset observations:

@@ -16,11 +16,11 @@ default server URL is:
 https://open-automation.org/devices
 ```
 
-That public URL is intentionally narrow. The public dashboard is not exposed;
-`POST /devices` is accepted as the controller punch-in route, `GET /devices`
-returns JSON/non-dashboard content, and the private Device Manager UI/API remain
-behind the reverse tunnel on `sonic` (`/home/andy/projects/device-manager`,
-local service `192.168.1.40:8102`).
+That public URL is intentionally narrow. Unauthenticated `POST /devices` is
+accepted as the controller punch-in route, while browser/UI `GET /devices/` is
+protected with Basic auth. The unauthenticated public dashboard is not exposed;
+the private Device Manager UI/API remain available on the internal network at
+`http://192.168.1.40:8102/` and through authenticated `/devices/` access.
 
 The server URL and the controller's raw tunnel socket are separate settings.
 Saving `https://open-automation.org/devices` must not rewrite the tunnel host
@@ -121,9 +121,17 @@ sequenceDiagram
 
 ## Verification Checklist
 
+- For the full deploy/test workflow, including two-network switching between
+  saved networks, AP fallback, Device Manager OTA, and browser screenshots, see
+  `docs/CONTROLLER_DEPLOY_AND_TEST.md`.
 - `GET /api/state` includes `server.requireReachable`.
+- `GET /api/state` includes live station link metrics when connected:
+  `wifi_sta_quality`, `wifi_sta_rssi`, `wifi_sta_gateway`,
+  `wifi_sta_channel`, `wifi_sta_auth`, and `wifi_sta_bssid`.
 - Settings page shows **Require server before station mode** and posts the value
   as `requireReachable`.
+- Settings page **Active network** shows SSID, link quality/RSSI, connected
+  age, STA IP, gateway, STA MAC, AP BSSID, channel, and security.
 - With valid Wi-Fi and reachable `https://open-automation.org/devices`, boot
   remains in station mode.
 - With valid Wi-Fi and unreachable server URL while the policy is enabled, boot

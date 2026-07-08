@@ -82,6 +82,20 @@ DEVICE_URL=http://192.168.4.1 npm run test:physical
 
 `npm run test:physical` is interactive and requires real hardware actions.
 
+## Complete Deploy and Recovery Validation
+
+Use `docs/CONTROLLER_DEPLOY_AND_TEST.md` for the end-to-end deploy loop:
+
+- ESP32-S3 serial programming and OTA deploy.
+- First-boot AP validation at `http://192.168.4.1/`.
+- Provisioning to Wi-Fi and switching between saved networks such as `Echo42`
+  and `HelloWorld`.
+- AP fallback/recovery when the active Wi-Fi disappears.
+- Device Manager checks through `http://192.168.1.40:8102/`.
+- Public `https://open-automation.org/devices` punch/auth checks.
+- Direct and Device Manager OTA validation.
+- Full `npm test` and Playwright desktop/mobile UI smoke.
+
 ## Run the Tunnel Locally
 
 Install dependencies:

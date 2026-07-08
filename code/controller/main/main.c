@@ -445,8 +445,120 @@ static bool server_policy_allows_station_with_check(bool run_check_in_current_ta
     return false;
 }
 
-static bool server_policy_allows_station(void) {
-    return server_policy_allows_station_with_check(false);
+typedef struct {
+    char ssid[32];
+    char password[64];
+} wifi_candidate_t;
+
+#define WIFI_CANDIDATE_MAX 8
+
+static wifi_candidate_t s_wifi_candidates[WIFI_CANDIDATE_MAX];
+
+static bool wifi_candidate_matches(const wifi_candidate_t *candidate, const char *ssid) {
+    return candidate && ssid && candidate->ssid[0] != '\0' && strcmp(candidate->ssid, ssid) == 0;
+}
+
+static bool wifi_candidate_add(wifi_candidate_t *candidates, size_t max_candidates, size_t *count, const char *ssid, const char *password) {
+    if (!candidates || !count || !ssid || ssid[0] == '\0') {
+        return false;
+    }
+
+    for (size_t i = 0; i < *count; i++) {
+        if (wifi_candidate_matches(&candidates[i], ssid)) {
+            return false;
+        }
+    }
+
+    if (*count >= max_candidates) {
+        return false;
+    }
+
+    wifi_candidate_t *candidate = &candidates[*count];
+    memset(candidate, 0, sizeof(*candidate));
+    strncpy(candidate->ssid, ssid, sizeof(candidate->ssid) - 1);
+    if (password) {
+        strncpy(candidate->password, password, sizeof(candidate->password) - 1);
+    }
+    (*count)++;
+    return true;
+}
+
+static size_t build_wifi_candidates(wifi_candidate_t *candidates, size_t max_candidates) {
+    size_t count = 0;
+
+    char active_ssid[32] = {0};
+    char active_password[64] = {0};
+    load_wifi_credentials_from_flash(active_ssid, active_password);
+    wifi_candidate_add(candidates, max_candidates, &count, active_ssid, active_password);
+
+    cJSON *saved = wifi_list_credentials_snapshot();
+    if (cJSON_IsArray(saved)) {
+        int saved_count = cJSON_GetArraySize(saved);
+        for (int i = 0; i < saved_count; i++) {
+            cJSON *item = cJSON_GetArrayItem(saved, i);
+            const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(item, "ssid");
+            const cJSON *password = cJSON_GetObjectItemCaseSensitive(item, "password");
+            if (!cJSON_IsString(ssid) || !ssid->valuestring || ssid->valuestring[0] == '\0') {
+                continue;
+            }
+            wifi_candidate_add(
+                candidates,
+                max_candidates,
+                &count,
+                ssid->valuestring,
+                (cJSON_IsString(password) && password->valuestring) ? password->valuestring : "");
+        }
+    }
+    if (saved) {
+        cJSON_Delete(saved);
+    }
+
+    return count;
+}
+
+static bool try_saved_wifi_networks(bool keep_ap_enabled, bool run_policy_in_current_task) {
+    memset(s_wifi_candidates, 0, sizeof(s_wifi_candidates));
+    size_t count = build_wifi_candidates(s_wifi_candidates, WIFI_CANDIDATE_MAX);
+    if (count == 0) {
+        ESP_LOGW(TAG, "No saved WiFi networks available");
+        automation_record_log("No saved WiFi networks available");
+        return false;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        wifi_candidate_t *candidate = &s_wifi_candidates[i];
+        ESP_LOGI(TAG, "Trying saved WiFi network %u/%u: '%s'", (unsigned)(i + 1), (unsigned)count, candidate->ssid);
+        char msg[96];
+        snprintf(msg, sizeof(msg), "Trying saved WiFi network %s", candidate->ssid);
+        automation_record_log(msg);
+
+        if (!station_connect(candidate->ssid, candidate->password, keep_ap_enabled)) {
+            ESP_LOGW(TAG, "Saved WiFi network failed: '%s'", candidate->ssid);
+            continue;
+        }
+
+        if (!server_policy_allows_station_with_check(run_policy_in_current_task)) {
+            ESP_LOGW(TAG, "Saved WiFi network '%s' connected but server policy failed", candidate->ssid);
+            station_disconnect_for_ap_mode();
+            if (keep_ap_enabled) {
+                esp_wifi_set_mode(WIFI_MODE_AP);
+            }
+            continue;
+        }
+
+        esp_err_t err = wifi_list_set_active(candidate->ssid);
+        if (err != ESP_OK) {
+            store_wifi_credentials_to_flash(candidate->ssid, candidate->password);
+        }
+        ESP_LOGI(TAG, "Using saved WiFi network '%s'", candidate->ssid);
+        snprintf(msg, sizeof(msg), "Using saved WiFi network %s", candidate->ssid);
+        automation_record_log(msg);
+        return true;
+    }
+
+    ESP_LOGW(TAG, "All saved WiFi networks failed");
+    automation_record_log("All saved WiFi networks failed");
+    return false;
 }
 
 static void start_access_point_mode(void) {
@@ -464,28 +576,10 @@ static void connectivity_recovery_task(void *arg) {
     vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INITIAL_DELAY_MS));
 
     while (1) {
-        char wifi_ssid[32] = {0};
-        char wifi_password[64] = {0};
-        load_wifi_credentials_from_flash(wifi_ssid, wifi_password);
-
-        if (wifi_ssid[0] == '\0') {
-            ESP_LOGI(TAG, "AP recovery: no saved WiFi network; staying in AP mode");
-            vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INTERVAL_MS));
-            continue;
-        }
-
-        ESP_LOGI(TAG, "AP recovery: trying saved WiFi SSID '%s'", wifi_ssid);
-        automation_record_log("AP recovery trying saved WiFi");
-        if (!station_connect(wifi_ssid, wifi_password, true)) {
-            ESP_LOGW(TAG, "AP recovery: WiFi connection failed");
-            vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INTERVAL_MS));
-            continue;
-        }
-
-        if (!server_policy_allows_station_with_check(true)) {
-            ESP_LOGW(TAG, "AP recovery: server policy failed; keeping AP mode active");
-            station_disconnect_for_ap_mode();
-            esp_wifi_set_mode(WIFI_MODE_AP);
+        ESP_LOGI(TAG, "AP recovery: trying saved WiFi networks");
+        automation_record_log("AP recovery trying saved WiFi networks");
+        if (!try_saved_wifi_networks(true, true)) {
+            ESP_LOGW(TAG, "AP recovery: no saved WiFi network connected");
             vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INTERVAL_MS));
             continue;
         }
@@ -545,15 +639,9 @@ void app_main(void) {
     ESP_LOGI(TAG, "WiFi credentials check: SSID='%s' (len=%d), Password='%s' (len=%d)", 
              wifi_ssid, (int)strlen(wifi_ssid), wifi_password, (int)strlen(wifi_password));
     
-    if (has_valid_credentials && station_main(wifi_ssid, wifi_password)) {
+    if (has_valid_credentials && try_saved_wifi_networks(false, false)) {
         ESP_LOGI(TAG, "Successfully connected to WiFi in station mode");
-        if (server_policy_allows_station()) {
-            station_connected = true;
-        } else {
-            station_disconnect_for_ap_mode();
-            start_access_point_mode();
-            start_connectivity_recovery_task();
-        }
+        station_connected = true;
     } else {
         automation_record_log("WiFi STA failed after retries; starting AP mode");
         start_access_point_mode();

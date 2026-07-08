@@ -22,6 +22,9 @@ gateway so the device UI can be reached through a server.
   and controller mini experiment.
 - [Network Provisioning](NETWORK_PROVISIONING.md): Wi-Fi onboarding, server
   reachability policy, AP fallback, and retry recovery diagrams.
+- [Controller Deploy and Test](CONTROLLER_DEPLOY_AND_TEST.md): complete
+  programming, AP recovery, dual-network switching, Device Manager/proxy, OTA,
+  and automated/UI verification runbook.
 - [Hardware](HARDWARE.md): KiCad projects, board sheets, manufacturing files,
   connectors, enclosure models, and images.
 - [Workflows](WORKFLOWS.md): build, flash, test, tunnel, hardware review, and

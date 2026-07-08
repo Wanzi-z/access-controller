@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
   <header class="app-bar">
@@ -546,15 +546,17 @@
             <p class="empty-state muted">Open Settings or click Scan to refresh nearby networks.</p>
           </div>
         </div>
-        <div class="info-list" id="wifiSaved">
-          <div class="info-row">
-            <span class="label">Active network</span>
-            <span class="value muted" id="wifiActive">—</span>
-          </div>
-          <div class="list-heading">
-            <span class="label">Saved networks</span>
-          </div>
-          <div id="wifiNetworks" class="user-list"></div>
+        <div class="wifi-status-layout" id="wifiSaved">
+          <section class="wifi-active-card" aria-labelledby="wifi-active-heading">
+            <span class="label" id="wifi-active-heading">Active network</span>
+            <div id="wifiActive">—</div>
+          </section>
+          <section class="wifi-saved-panel" aria-labelledby="wifi-saved-heading">
+            <div class="list-heading">
+              <span class="label" id="wifi-saved-heading">Saved networks</span>
+            </div>
+            <div id="wifiNetworks" class="wifi-saved-list"></div>
+          </section>
         </div>
       </div>
 
@@ -584,6 +586,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=23"></script>
+  <script src="script.js?v=25"></script>
 </body>
 </html>

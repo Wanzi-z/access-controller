@@ -31,6 +31,7 @@ bool load_server_require_reachable(void);
 esp_err_t wifi_list_add(const char *ssid, const char *password);
 esp_err_t wifi_list_delete(const char *ssid);
 cJSON *wifi_list_snapshot(void);
+cJSON *wifi_list_credentials_snapshot(void);
 esp_err_t wifi_list_set_active(const char *ssid);
 void get_md5_from_flash(char *md5_hash, size_t size);
 esp_err_t initialize_spiffs(void);
