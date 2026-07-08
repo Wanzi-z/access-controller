@@ -238,8 +238,15 @@ async function browserWorker(baseUrl, metrics, done, workerId) {
       try {
         await page.click('.nav-item[data-target="system"]');
         await page.waitForSelector('#systemUptime', { timeout: 5000 });
+        await page.waitForFunction(() => {
+          const value = document.querySelector('#systemUptime')?.textContent?.trim();
+          return value && value !== '—';
+        }, null, { timeout: 5000 });
         const before = await page.textContent('#systemUptime');
-        await sleep(1200);
+        await page.waitForFunction((previous) => {
+          const value = document.querySelector('#systemUptime')?.textContent?.trim();
+          return value && value !== '—' && value !== previous;
+        }, before, { timeout: 2500 });
         const after = await page.textContent('#systemUptime');
         if (!before || !after || before === after) {
           throw new Error(`uptime did not tick: ${before} -> ${after}`);
