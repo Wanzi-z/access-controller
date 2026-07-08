@@ -212,6 +212,13 @@ void handle_authorize_message(cJSON * payload) {
         const cJSON *server_url_item = cJSON_GetObjectItem(payload, "serverUrl");
         if (cJSON_IsString(server_url_item) && server_url_item->valuestring) {
             snprintf(serverUrl, sizeof(serverUrl), "%s", server_url_item->valuestring);
+            const cJSON *require_item = cJSON_GetObjectItem(payload, "requireReachable");
+            if (!require_item) {
+                require_item = cJSON_GetObjectItem(payload, "serverRequireReachable");
+            }
+            if (cJSON_IsBool(require_item)) {
+                store_server_require_reachable(cJSON_IsTrue(require_item));
+            }
             esp_err_t err = store_server_url_to_flash(serverUrl);
             if (err == ESP_OK) {
                 vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -227,6 +234,13 @@ void handle_authorize_message(cJSON * payload) {
         if (cJSON_GetObjectItem(payload, "serverIp") && cJSON_GetObjectItem(payload, "serverPort")) {
             snprintf(serverIp, sizeof(serverIp), "%s", cJSON_GetObjectItem(payload, "serverIp")->valuestring);
             snprintf(serverPort, sizeof(serverPort), "%s", cJSON_GetObjectItem(payload, "serverPort")->valuestring);
+            const cJSON *require_item = cJSON_GetObjectItem(payload, "requireReachable");
+            if (!require_item) {
+                require_item = cJSON_GetObjectItem(payload, "serverRequireReachable");
+            }
+            if (cJSON_IsBool(require_item)) {
+                store_server_require_reachable(cJSON_IsTrue(require_item));
+            }
             esp_err_t err = store_server_info_to_flash(serverIp, serverPort);
             if (err == ESP_OK) {
                 vTaskDelay(100 / portTICK_PERIOD_MS);
@@ -283,5 +297,5 @@ void auth_main()
 {
   ESP_LOGI(TAG, "starting auth service");
   TaskHandle_t auth_service_task;
-  xTaskCreate(&auth_service, "auth_service_task", 25 * 1000, NULL, 5, NULL);
+  xTaskCreate(&auth_service, "auth_service_task", 9 * 1024, NULL, 5, NULL);
 }

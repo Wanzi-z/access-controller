@@ -11,7 +11,8 @@
     "test:ui": "node runner.mjs --ui-only",
     "test:quick": "node runner.mjs --quick",
     "test:stress": "node runner.mjs --stress",
-    "test:bulk-remove": "node runner.mjs --bulk-remove"
+    "test:bulk-remove": "node runner.mjs --bulk-remove",
+    "test:server-route": "node runner.mjs --server-route-only"
   },
   "dependencies": {
     "playwright": "^1.45.0"

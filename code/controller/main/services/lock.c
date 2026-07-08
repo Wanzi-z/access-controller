@@ -390,22 +390,16 @@ void handle_lock_message(cJSON * payload) {
         }
     }
 
-    // Add debouncing - only process if enough time has passed since last change
-    static int64_t last_change_time[NUM_OF_LOCKS] = {0};
+    // Debounce lock arm/disarm actions only. Configuration writes can arrive
+    // back-to-back from the API/UI test suite and must not be dropped.
+    static int64_t last_arm_change_time[NUM_OF_LOCKS] = {0};
     int64_t current_time = esp_timer_get_time() / 1000; // Convert to milliseconds
-    
-    if (current_time - last_change_time[ch] < 100) { // 100ms debounce
-        ESP_LOGW(TAG, "Debouncing toggle for lock %d, ignoring rapid change", ch + 1);
-        cJSON_Delete(payload);
-        return;
-    }
 
 	if (enable_item) {
 		val = (enable_item->type == cJSON_True);
         // Only update if value actually changed
         if (locks[ch].enable != val) {
             locks[ch].enable = val;
-            last_change_time[ch] = current_time;
             ESP_LOGI(TAG, "Enable for lock %d changed to %d", ch + 1, val);
         }
     }
@@ -415,7 +409,6 @@ void handle_lock_message(cJSON * payload) {
         // Only update if value actually changed
         if (locks[ch].enableContactAlert != val) {
             locks[ch].enableContactAlert = val;
-            last_change_time[ch] = current_time;
             ESP_LOGI(TAG, "Contact alert for lock %d changed to %d", ch + 1, val);
         }
     }
@@ -425,7 +418,6 @@ void handle_lock_message(cJSON * payload) {
         // Only update if value actually changed
         if (locks[ch].polarity != val) {
             locks[ch].polarity = val;
-            last_change_time[ch] = current_time;
             ESP_LOGI(TAG, "Polarity for lock %d changed to %d", ch + 1, val);
         }
     }
@@ -434,8 +426,11 @@ void handle_lock_message(cJSON * payload) {
         val = (arm_item->type == cJSON_True);
         // Only update if value actually changed
         if (locks[ch].shouldLock != val) {
+            if (current_time - last_arm_change_time[ch] < 100) {
+                ESP_LOGW(TAG, "Debouncing arm toggle for lock %d, ignoring rapid change", ch + 1);
+            } else {
             locks[ch].shouldLock = val;
-            last_change_time[ch] = current_time;
+            last_arm_change_time[ch] = current_time;
             lock_set_action_source("api");
             if (val) {
                 arm_lock(ch + 1, true, true);
@@ -443,6 +438,7 @@ void handle_lock_message(cJSON * payload) {
             } else {
                 arm_lock(ch + 1, false, true);
                 ESP_LOGI(TAG, "Disarming lock %d", ch + 1);
+            }
             }
         }
     }

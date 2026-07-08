@@ -237,6 +237,42 @@ export default async function run(api, report) {
     }
   );
 
+  // ─── RF REMOTE REGISTRATION CAPTURE ───
+  await physicalTest(
+    'RF Remote Registration Capture',
+    'Please press an RF remote button during registration mode, then press ENTER.',
+    async () => {
+      const before = await api.getRf();
+      const beforeIds = new Set((before?.users || []).map(u => u.id));
+
+      console.log(`  📡 Starting RF registration mode...`);
+      try {
+        await api.registerRf();
+      } catch (e) {
+        return `Could not start RF registration: ${e.message}`;
+      }
+
+      console.log(`  ⏎  Press an RF remote button now, then press ENTER...`);
+      await ask(rl, '  > ');
+
+      try {
+        const rf = await api.stopRf();
+        const users = rf?.users || [];
+        const newUser = users.find(u => !beforeIds.has(u.id)) || users[users.length - 1];
+        if (newUser?.id) {
+          try {
+            await api.deleteRf(newUser.id);
+            console.log(`  🧹 Cleaned up test RF remote`);
+          } catch {}
+          return true;
+        }
+        return 'No RF remote code was registered. Did you press the remote during registration mode?';
+      } catch (e) {
+        return `RF registration stop failed: ${e.message}`;
+      }
+    }
+  );
+
   // ─── MOTION SENSOR ───
   await physicalTest(
     'Motion Sensor',

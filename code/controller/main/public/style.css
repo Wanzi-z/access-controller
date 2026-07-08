@@ -561,6 +561,157 @@ button.secondary.danger:hover {
   color: var(--color-muted);
 }
 
+#wiegandUserList,
+#keypadUserList,
+#rfUserList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 360px));
+  gap: 12px;
+  align-items: start;
+  justify-content: start;
+}
+
+#wiegandUserList .empty-state,
+#keypadUserList .empty-state,
+#rfUserList .empty-state {
+  grid-column: 1 / -1;
+}
+
+.credential-card.user-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 100%;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+}
+
+.credential-card:hover {
+  border-color: rgba(53, 240, 194, 0.28);
+}
+
+.credential-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.credential-card-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.credential-kind {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.credential-card .user-code {
+  justify-self: start;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+}
+
+.credential-card .user-info {
+  gap: 10px;
+}
+
+.credential-card .stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.credential-card .stacked > span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.credential-card .user-name-input,
+.credential-card select,
+.credential-card .rf-exit-seconds {
+  width: 100%;
+  min-width: 0;
+}
+
+.credential-card .user-name-input {
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: #091017;
+}
+
+.credential-card .user-name-input:focus {
+  border-bottom-color: var(--color-border);
+}
+
+.credential-card .user-config {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.credential-card .rf-exit-seconds {
+  max-width: 9rem;
+}
+
+.credential-card .form-switch {
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.credential-card .credential-alert-switch {
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+}
+
+.credential-card .user-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  align-self: end;
+  gap: 10px;
+  padding-top: 0;
+}
+
+.credential-card .user-actions button {
+  min-width: 88px;
+}
+
+.credential-card-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+}
+
+.credential-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 /* Add Form */
 .add-form {
   padding: 20px;
@@ -778,6 +929,7 @@ body {
   position: sticky;
   top: 65px;
   z-index: 9;
+  justify-content: center;
   gap: 4px;
   padding: 8px clamp(12px, 3vw, 36px);
   background: rgba(5, 7, 11, 0.72);
@@ -867,6 +1019,151 @@ body {
   box-shadow: none;
 }
 
+.control-card-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, 132px) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.control-card-header .card-enable-toggle {
+  grid-column: 3;
+}
+
+.control-card-header .card-enable-text {
+  display: none;
+}
+
+.control-card-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+}
+
+.control-card-title .section-label,
+.control-card-title h4 {
+  margin: 0;
+  min-width: 0;
+}
+
+.card-mode-select {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.card-mode-select > span {
+  color: var(--color-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.card-mode-select select {
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+.hidden-card-control {
+  display: none !important;
+}
+
+.card-enable-toggle {
+  width: auto;
+  min-width: 38px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(9, 16, 23, 0.88);
+  color: var(--color-muted);
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.card-enable-toggle:hover {
+  background: rgba(53, 240, 194, 0.08);
+  border-color: rgba(53, 240, 194, 0.32);
+  box-shadow: none;
+}
+
+.card-enable-toggle.is-enabled {
+  color: var(--color-primary);
+  border-color: rgba(53, 240, 194, 0.4);
+  background: rgba(53, 240, 194, 0.08);
+}
+
+.card-enable-toggle.is-disabled {
+  color: var(--color-muted);
+  border-color: rgba(157, 185, 193, 0.12);
+  background: rgba(9, 16, 23, 0.52);
+}
+
+.card-enable-icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+}
+
+.card-enable-icon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -5px;
+  width: 2px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: translateX(-50%);
+}
+
+.card-enable-text {
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.control-section.is-card-disabled,
+.credential-card.is-card-disabled {
+  background: rgba(17, 27, 36, 0.58);
+  border-color: rgba(157, 185, 193, 0.12);
+}
+
+.control-section.is-card-disabled > :not(.control-card-header),
+.credential-card.is-card-disabled .user-info,
+.credential-card.is-card-disabled .credential-card-footer,
+.credential-card.is-card-disabled > .user-actions {
+  opacity: 0.5;
+}
+
+.control-section.is-card-disabled.is-signal-active,
+.credential-card.is-card-disabled.is-activity-active {
+  border-color: rgba(53, 240, 194, 0.78);
+  box-shadow: 0 0 0 1px rgba(53, 240, 194, 0.28), 0 0 14px rgba(53, 240, 194, 0.14);
+}
+
+.control-section.is-signal-active,
+.credential-card.is-activity-active {
+  border-color: rgba(53, 240, 194, 0.9);
+  background: linear-gradient(180deg, rgba(53, 240, 194, 0.08), rgba(53, 240, 194, 0.025)), var(--color-panel-2);
+  box-shadow: 0 0 0 1px rgba(53, 240, 194, 0.42), 0 0 18px rgba(53, 240, 194, 0.22);
+}
+
+.credential-card.is-activity-active {
+  background: linear-gradient(180deg, rgba(53, 240, 194, 0.08), rgba(53, 240, 194, 0.025)), var(--color-panel);
+}
+
 .control-section h4,
 .section-label,
 .label {
@@ -925,6 +1222,15 @@ select {
   background: #091017;
   color: var(--color-text);
   border-color: var(--color-border);
+}
+
+input.sr-only {
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  padding: 0;
+  border: 0;
 }
 
 input:focus,
@@ -999,14 +1305,135 @@ button.secondary.danger {
 
 .info-row .value {
   max-width: 100%;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--color-text);
   font-family: 'SF Mono', 'Consolas', monospace;
   font-size: 0.9rem;
 }
 
+@media (min-width: 760px) {
+  .info-row-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 520px) {
+  .info-list {
+    grid-template-columns: 1fr;
+  }
+
+  .info-row .value {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .ota-form {
   gap: 16px;
+}
+
+.ota-dropzone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 112px;
+  padding: 18px;
+  border: 1px dashed rgba(126, 167, 255, 0.34);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(126, 167, 255, 0.055), rgba(53, 240, 194, 0.035));
+  cursor: pointer;
+  transition: border-color var(--transition-base), background var(--transition-base), box-shadow var(--transition-base);
+}
+
+.ota-dropzone:hover,
+.ota-dropzone:focus-visible,
+.ota-dropzone.drag-over {
+  border-color: rgba(53, 240, 194, 0.72);
+  background: linear-gradient(180deg, rgba(53, 240, 194, 0.11), rgba(126, 167, 255, 0.055));
+  box-shadow: 0 0 0 3px rgba(53, 240, 194, 0.12);
+  outline: none;
+}
+
+.ota-drop-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid rgba(53, 240, 194, 0.32);
+  background: rgba(53, 240, 194, 0.08);
+}
+
+.ota-drop-icon span {
+  width: 18px;
+  height: 20px;
+  display: block;
+  position: relative;
+  border: 2px solid var(--color-primary);
+  border-top: 0;
+  border-radius: 0 0 4px 4px;
+}
+
+.ota-drop-icon span::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -12px;
+  width: 10px;
+  height: 10px;
+  border-left: 2px solid var(--color-primary);
+  border-top: 2px solid var(--color-primary);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.ota-drop-icon span::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -11px;
+  width: 2px;
+  height: 20px;
+  background: var(--color-primary);
+  transform: translateX(-50%);
+}
+
+.ota-drop-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ota-drop-title {
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.ota-drop-subtitle {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.ota-browse-btn {
+  white-space: nowrap;
 }
 
 .ota-file-meta {
@@ -1094,27 +1521,59 @@ button.secondary.danger {
   gap: 12px;
 }
 
-.enrollment-layout {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.82fr) minmax(360px, 1.18fr);
-  gap: 14px;
+.server-policy-toggle {
+  align-self: flex-start;
 }
 
-.enrollment-controls,
-.enrollment-status {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.enrollment-layout {
+  max-width: 760px;
+}
+
+.enrollment-controls {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 190px;
+  grid-template-rows: 40px 40px;
+  gap: 8px 12px;
   min-width: 0;
 }
 
-.enrollment-new-user {
-  align-items: stretch;
+.enrollment-fields {
+  display: contents;
+}
+
+#enrollment-card #enrollUserSelect,
+#enrollment-card #enrollNewUserName {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
 }
 
 .enrollment-actions {
-  justify-content: flex-start;
-  gap: 10px;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+#enrollStartBtn,
+#enrollStopBtn.enrollment-stop-active {
+  width: 100%;
+  min-height: 88px;
+  padding: 0 18px;
+  white-space: normal;
+}
+
+.enrollment-stop-active.is-listening {
+  color: #ff8b8b;
+  border-color: rgba(255, 105, 105, 0.85);
+  background: rgba(255, 71, 87, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 105, 105, 0.28), 0 0 18px rgba(255, 71, 87, 0.35);
+}
+
+.credential-card.saving {
+  border-color: rgba(53, 240, 194, 0.4);
 }
 
 .enrollment-metrics {
@@ -1139,6 +1598,71 @@ button.secondary.danger {
   display: block;
   margin-top: 6px;
   overflow-wrap: anywhere;
+}
+
+.rf-diagnostics {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.6fr) repeat(4, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.rf-diagnostics .metric-tile {
+  min-height: 70px;
+}
+
+.rf-diagnostics .rf-quality {
+  grid-row: span 2;
+}
+
+.rf-diagnostics .rf-quality .value {
+  font-size: 1.3rem;
+  line-height: 1.25;
+}
+
+.rf-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.rf-card-metric {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rf-card-metric .label {
+  display: block;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.rf-card-metric .value {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.rf-card-metric .value.rf-last-received {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+.rf-card-metric.muted .value {
+  color: var(--color-muted);
+  font-weight: 600;
 }
 
 .list-heading {
@@ -1223,6 +1747,7 @@ button.secondary.danger {
   .nav-tabs {
     top: 0;
     overflow-x: auto;
+    justify-content: flex-start;
   }
 
   .nav-item {
@@ -1247,8 +1772,63 @@ button.secondary.danger {
   .channel-card,
   .info-list,
   .enrollment-layout,
+  .enrollment-controls,
   .enrollment-metrics,
+  .rf-diagnostics,
   .wifi-network-grid {
     grid-template-columns: 1fr;
+  }
+
+  .enrollment-controls {
+    grid-template-rows: none;
+  }
+
+  .enrollment-actions {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  #enrollStartBtn,
+  #enrollStopBtn.enrollment-stop-active {
+    min-height: 48px;
+  }
+
+  .rf-diagnostics .rf-quality {
+    grid-row: auto;
+    grid-column: auto;
+  }
+
+  .ota-dropzone {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
+  .ota-browse-btn {
+    width: 100%;
+  }
+
+  .rf-card-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .credential-card-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .credential-card .user-actions {
+    justify-content: flex-start;
+  }
+
+  .control-card-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .card-mode-select {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .card-enable-text {
+    display: none;
   }
 }

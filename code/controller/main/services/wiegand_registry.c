@@ -75,6 +75,12 @@ static void assign_defaults(wiegand_user_t *user) {
     if (user->name[0] == '\0') {
         snprintf(user->name, sizeof(user->name), "User %lu", (unsigned long)(user->sequence + 1));
     }
+    if (user->mode[0] == '\0' ||
+        (strcmp(user->mode, "momentary") != 0 &&
+         strcmp(user->mode, "toggle") != 0 &&
+         strcmp(user->mode, "latch") != 0)) {
+        strlcpy(user->mode, "momentary", sizeof(user->mode));
+    }
     if (user->status != WIEGAND_USER_STATUS_ACTIVE &&
         user->status != WIEGAND_USER_STATUS_DISABLED &&
         user->status != WIEGAND_USER_STATUS_PENDING) {
@@ -90,12 +96,34 @@ static cJSON *serialize_user(const wiegand_user_t *user) {
     cJSON_AddStringToObject(obj, "id", user->id);
     cJSON_AddStringToObject(obj, "code", user->code);
     cJSON_AddStringToObject(obj, "name", user->name);
+    cJSON_AddStringToObject(obj, "mode", user->mode);
     cJSON_AddStringToObject(obj, "userUuid", user->user_uuid);
     cJSON_AddNumberToObject(obj, "channel", user->channel);
     cJSON_AddNumberToObject(obj, "status", user->status);
+    cJSON_AddBoolToObject(obj, "alert", user->alert);
     cJSON_AddNumberToObject(obj, "sequence", user->sequence);
     cJSON_AddNumberToObject(obj, "created_at_ms", (double)user->created_at_ms);
     cJSON_AddNumberToObject(obj, "updated_at_ms", (double)user->updated_at_ms);
+    cJSON_AddNumberToObject(obj, "last_used_ms", (double)user->last_used_ms);
+    cJSON_AddNumberToObject(obj, "last_used_unix_time", (double)user->last_used_unix_time);
+    if (user->last_used_ms > 0) {
+        cJSON *last_used = cJSON_CreateObject();
+        if (last_used) {
+            uint64_t age_ms = 0;
+            uint64_t now = current_time_ms();
+            if (now >= user->last_used_ms) {
+                age_ms = now - user->last_used_ms;
+            }
+            int64_t unix_time = user->last_used_unix_time;
+            if (unix_time <= 0) {
+                unix_time = automation_unix_time_for_timestamp_ms(user->last_used_ms);
+            }
+            cJSON_AddNumberToObject(last_used, "used_ms", (double)user->last_used_ms);
+            cJSON_AddNumberToObject(last_used, "unixTime", (double)unix_time);
+            cJSON_AddNumberToObject(last_used, "age_ms", (double)age_ms);
+            cJSON_AddItemToObject(obj, "lastUsed", last_used);
+        }
+    }
     return obj;
 }
 
@@ -124,19 +152,26 @@ static bool deserialize_user(const cJSON *obj, wiegand_user_t *out_user) {
         return false;
     }
     parse_string_field(obj, "name", out_user->name, sizeof(out_user->name));
+    parse_string_field(obj, "mode", out_user->mode, sizeof(out_user->mode));
     parse_string_field(obj, "userUuid", out_user->user_uuid, sizeof(out_user->user_uuid));
 
     const cJSON *channel = cJSON_GetObjectItemCaseSensitive(obj, "channel");
     const cJSON *status = cJSON_GetObjectItemCaseSensitive(obj, "status");
+    const cJSON *alert = cJSON_GetObjectItemCaseSensitive(obj, "alert");
     const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(obj, "sequence");
     const cJSON *created_at = cJSON_GetObjectItemCaseSensitive(obj, "created_at_ms");
     const cJSON *updated_at = cJSON_GetObjectItemCaseSensitive(obj, "updated_at_ms");
+    const cJSON *last_used_ms = cJSON_GetObjectItemCaseSensitive(obj, "last_used_ms");
+    const cJSON *last_used_unix_time = cJSON_GetObjectItemCaseSensitive(obj, "last_used_unix_time");
 
     out_user->channel = cJSON_IsNumber(channel) ? (uint8_t)channel->valuedouble : 0;
     out_user->status = cJSON_IsNumber(status) ? (wiegand_user_status_t)status->valuedouble : WIEGAND_USER_STATUS_ACTIVE;
+    out_user->alert = cJSON_IsBool(alert) ? cJSON_IsTrue(alert) : true;
     out_user->sequence = cJSON_IsNumber(sequence) ? (uint32_t)sequence->valuedouble : 0;
     out_user->created_at_ms = cJSON_IsNumber(created_at) ? (uint64_t)created_at->valuedouble : current_time_ms();
     out_user->updated_at_ms = cJSON_IsNumber(updated_at) ? (uint64_t)updated_at->valuedouble : out_user->created_at_ms;
+    out_user->last_used_ms = cJSON_IsNumber(last_used_ms) ? (uint64_t)last_used_ms->valuedouble : 0;
+    out_user->last_used_unix_time = cJSON_IsNumber(last_used_unix_time) ? (int64_t)last_used_unix_time->valuedouble : 0;
 
     assign_defaults(out_user);
     return true;
@@ -392,11 +427,13 @@ esp_err_t wiegand_registry_add_for_user(const char *code,
     wiegand_user_t user = {
         .channel = channel,
         .status = active ? WIEGAND_USER_STATUS_ACTIVE : WIEGAND_USER_STATUS_PENDING,
+        .alert = true,
         .sequence = next_sequence(),
         .created_at_ms = current_time_ms(),
         .updated_at_ms = current_time_ms(),
     };
     strlcpy(user.code, code, sizeof(user.code));
+    strlcpy(user.mode, "momentary", sizeof(user.mode));
     generate_id(user.id, sizeof(user.id));
     if (user_uuid) {
         strlcpy(user.user_uuid, user_uuid, sizeof(user.user_uuid));
@@ -452,6 +489,60 @@ esp_err_t wiegand_registry_update_name(const char *id, const char *name) {
     esp_err_t result = update_user_locked((size_t)idx, &s_users[idx]);
     xSemaphoreGive(s_mutex);
     return result;
+}
+
+esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, uint8_t channel, bool alert) {
+    if (!id || !name || !mode || channel > 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (strcmp(mode, "momentary") != 0 && strcmp(mode, "toggle") != 0 && strcmp(mode, "latch") != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ensure_mutex();
+    if (!s_mutex) return ESP_ERR_NO_MEM;
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    ssize_t idx = find_index_by_id(id);
+    if (idx < 0) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    strlcpy(s_users[idx].name, name, sizeof(s_users[idx].name));
+    strlcpy(s_users[idx].mode, mode, sizeof(s_users[idx].mode));
+    s_users[idx].channel = channel;
+    s_users[idx].alert = alert;
+    assign_defaults(&s_users[idx]);
+    esp_err_t result = update_user_locked((size_t)idx, &s_users[idx]);
+    xSemaphoreGive(s_mutex);
+    return result;
+}
+
+esp_err_t wiegand_registry_record_use(const char *id) {
+    if (!id || id[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ensure_mutex();
+    if (!s_mutex) return ESP_ERR_NO_MEM;
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    ssize_t idx = find_index_by_id(id);
+    if (idx < 0) {
+        xSemaphoreGive(s_mutex);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    uint64_t used_ms = current_time_ms();
+    s_users[idx].last_used_ms = used_ms;
+    s_users[idx].last_used_unix_time = automation_unix_time_for_timestamp_ms(used_ms);
+    s_users[idx].updated_at_ms = used_ms;
+    persist_locked();
+    xSemaphoreGive(s_mutex);
+    return ESP_OK;
 }
 
 esp_err_t wiegand_registry_update_status(const char *id, wiegand_user_status_t status) {

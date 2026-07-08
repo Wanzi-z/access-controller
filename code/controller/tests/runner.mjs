@@ -96,6 +96,7 @@ async function main() {
   const quick = args.includes('--quick');
   const stressOnly = args.includes('--stress');
   const bulkRemoveOnly = args.includes('--bulk-remove');
+  const serverRouteOnly = args.includes('--server-route-only');
 
   console.log('╔══════════════════════════════════════════════════════════╗');
   console.log('║       Access Controller - Comprehensive Test Suite      ║');
@@ -103,6 +104,13 @@ async function main() {
   console.log('');
 
   const report = new TestReport();
+
+  if (serverRouteOnly) {
+    const mod = await import('./suites/server-route.mjs');
+    await mod.default(null, report);
+    report.finish();
+    process.exit(report.results.fail > 0 ? 1 : 0);
+  }
 
   // Build verification
   await runBuildVerification(report);

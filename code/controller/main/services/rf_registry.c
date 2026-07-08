@@ -40,6 +40,9 @@ typedef struct {
     int channel_mask;       /* bit0 -> ch1, bit1 -> ch2 */
     int exit_seconds;       /* only used for exit mode */
     bool alert;             /* play buzzer */
+    bool enabled;
+    bool has_last_rx;
+    rf_rx_metrics_t last_rx;
 } rf_user_t;
 
 static rf_user_t *rf_users = NULL;
@@ -123,6 +126,7 @@ static void rf_persist_locked(void) {
         cJSON_AddNumberToObject(obj, "channel_mask", (double)u->channel_mask);
         cJSON_AddNumberToObject(obj, "exit_seconds", (double)u->exit_seconds);
         cJSON_AddBoolToObject(obj, "alert", u->alert);
+        cJSON_AddBoolToObject(obj, "enabled", u->enabled);
         cJSON_AddItemToArray(arr, obj);
     }
     char *json = cJSON_PrintUnformatted(arr);
@@ -167,6 +171,7 @@ static void load_from_nvs_locked(void) {
         const cJSON *cmask = cJSON_GetObjectItemCaseSensitive(obj, "channel_mask");
         const cJSON *exit_s = cJSON_GetObjectItemCaseSensitive(obj, "exit_seconds");
         const cJSON *alert = cJSON_GetObjectItemCaseSensitive(obj, "alert");
+        const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(obj, "enabled");
 
         if (!cJSON_IsString(id) || !cJSON_IsString(code)) continue;
         strlcpy(tmp.id, id->valuestring, sizeof(tmp.id));
@@ -181,10 +186,11 @@ static void load_from_nvs_locked(void) {
         tmp.created_ms = cJSON_IsNumber(created) ? (uint64_t)created->valuedouble : now_ms();
         tmp.updated_ms = cJSON_IsNumber(updated) ? (uint64_t)updated->valuedouble : tmp.created_ms;
         tmp.last_pulse_count = cJSON_IsNumber(pulse) ? (size_t)pulse->valuedouble : 0;
-        strlcpy(tmp.mode, (cJSON_IsString(mode) && mode->valuestring) ? mode->valuestring : "toggle", sizeof(tmp.mode));
+        strlcpy(tmp.mode, (cJSON_IsString(mode) && mode->valuestring) ? mode->valuestring : "momentary", sizeof(tmp.mode));
         tmp.channel_mask = cJSON_IsNumber(cmask) ? (int)cmask->valuedouble : 0x1; /* default ch1 */
         tmp.exit_seconds = cJSON_IsNumber(exit_s) ? (int)exit_s->valuedouble : 4;
         tmp.alert = cJSON_IsBool(alert) ? cJSON_IsTrue(alert) : true;
+        tmp.enabled = cJSON_IsBool(enabled) ? cJSON_IsTrue(enabled) : true;
 
         if (tmp.name[0] == '\0') {
             snprintf(tmp.name, sizeof(tmp.name), "Remote Fob %lu", (unsigned long)(tmp.sequence));
@@ -289,10 +295,11 @@ esp_err_t rf_registry_add_for_user(uint32_t code, size_t pulse_count, const char
     u->created_ms = now_ms();
     u->updated_ms = u->created_ms;
     u->last_pulse_count = pulse_count;
-    strlcpy(u->mode, "toggle", sizeof(u->mode));
+    strlcpy(u->mode, "momentary", sizeof(u->mode));
     u->channel_mask = 0x1;   /* default channel 1 */
     u->exit_seconds = 4;
     u->alert = true;
+    u->enabled = true;
     if (rf_registration_active) {
         rf_pending++;
     }
@@ -386,11 +393,66 @@ static cJSON *serialize_state_locked(void) {
             cJSON_AddNumberToObject(uobj, "channel_mask", (double)u->channel_mask);
             cJSON_AddNumberToObject(uobj, "exit_seconds", (double)u->exit_seconds);
             cJSON_AddBoolToObject(uobj, "alert", u->alert);
+            cJSON_AddBoolToObject(uobj, "enabled", u->enabled);
+            if (u->has_last_rx) {
+                cJSON *rx = cJSON_CreateObject();
+                if (rx) {
+                    uint64_t age_ms = 0;
+                    uint64_t now = now_ms();
+                    if (u->last_rx.received_ms > 0 && now >= u->last_rx.received_ms) {
+                        age_ms = now - u->last_rx.received_ms;
+                    }
+                    int64_t unix_time = u->last_rx.unix_time;
+                    if (unix_time <= 0 && u->last_rx.received_ms > 0) {
+                        unix_time = automation_unix_time_for_timestamp_ms(u->last_rx.received_ms);
+                    }
+                    cJSON_AddNumberToObject(rx, "received_ms", (double)u->last_rx.received_ms);
+                    cJSON_AddNumberToObject(rx, "unixTime", (double)unix_time);
+                    cJSON_AddNumberToObject(rx, "age_ms", (double)age_ms);
+                    cJSON_AddNumberToObject(rx, "pulse_count", (double)u->last_rx.pulse_count);
+                    cJSON_AddNumberToObject(rx, "qualityScore", (double)u->last_rx.quality_score);
+                    cJSON_AddStringToObject(rx, "qualityLabel", u->last_rx.quality_label);
+                    cJSON_AddNumberToObject(rx, "shortUs", (double)u->last_rx.short_us);
+                    cJSON_AddNumberToObject(rx, "longUs", (double)u->last_rx.long_us);
+                    cJSON_AddNumberToObject(rx, "jitterPercent", u->last_rx.jitter_percent);
+                    cJSON_AddNumberToObject(rx, "repeatCount", (double)u->last_rx.repeat_count);
+                    cJSON_AddNumberToObject(rx, "noisePercent", (double)u->last_rx.noise_percent);
+                    cJSON_AddNumberToObject(rx, "noiseRatePerSecond", (double)u->last_rx.noise_rate_per_second);
+                    cJSON_AddNumberToObject(rx, "edgeRatePerSecond", (double)u->last_rx.edge_rate_per_second);
+                    cJSON_AddNumberToObject(rx, "decodeOkCount", (double)u->last_rx.decode_ok_count);
+                    cJSON_AddNumberToObject(rx, "captureCount", (double)u->last_rx.capture_count);
+                    cJSON_AddNumberToObject(rx, "decodeSuccessRatePercent", (double)u->last_rx.decode_success_rate_percent);
+                    cJSON_AddNumberToObject(rx, "lastCapturePulses", (double)u->last_rx.last_capture_pulses);
+                    cJSON_AddNumberToObject(rx, "syncCount", (double)u->last_rx.sync_count);
+                    cJSON_AddBoolToObject(rx, "hadSync", u->last_rx.had_sync);
+                    cJSON_AddItemToObject(uobj, "lastRx", rx);
+                }
+            }
             cJSON_AddItemToArray(arr, uobj);
         }
         cJSON_AddItemToObject(obj, "users", arr);
     }
     return obj;
+}
+
+void rf_registry_record_rx(uint32_t code, const rf_rx_metrics_t *metrics) {
+    if (!metrics) {
+        return;
+    }
+
+    char code_hex[9] = {0};
+    to_hex_code(code, code_hex, sizeof(code_hex));
+
+    rf_ensure_mutex();
+    xSemaphoreTake(rf_mutex, portMAX_DELAY);
+    for (size_t i = 0; i < rf_user_count; i++) {
+        if (strcmp(rf_users[i].code, code_hex) == 0) {
+            rf_users[i].last_rx = *metrics;
+            rf_users[i].has_last_rx = true;
+            break;
+        }
+    }
+    xSemaphoreGive(rf_mutex);
 }
 
 cJSON *rf_state_snapshot(void) {
@@ -405,6 +467,7 @@ static bool is_valid_mode(const char *mode) {
     return mode &&
         (!strcmp(mode, "toggle") ||
          !strcmp(mode, "momentary") ||
+         !strcmp(mode, "latch") ||
          !strcmp(mode, "exit") ||
          !strcmp(mode, "power_on") ||
          !strcmp(mode, "power_off"));
@@ -446,6 +509,10 @@ static void apply_mode_action(const rf_user_t *u) {
             start_rearm_timer(rf_momentary_timers, channel, u->exit_seconds > 0 ? u->exit_seconds : 1);
             log_action(u, "momentary (off then re-arm)");
             if (u->alert) beep_keypad(1, channel);
+        } else if (!strcmp(u->mode, "latch")) {
+            arm_lock(channel, false, false);
+            log_action(u, "latch");
+            if (u->alert) beep_keypad(1, channel);
         } else if (!strcmp(u->mode, "exit")) {
             arm_lock(channel, false, false);
             start_rearm_timer(rf_exit_timers, channel, u->exit_seconds > 0 ? u->exit_seconds : 4);
@@ -465,7 +532,7 @@ static void apply_mode_action(const rf_user_t *u) {
     }
 }
 
-esp_err_t rf_registry_update_config(const char *id, const char *mode, int channel_mask, int exit_seconds, bool alert) {
+esp_err_t rf_registry_update_config(const char *id, const char *mode, int channel_mask, int exit_seconds, bool alert, bool enabled) {
     if (!id || !mode) return ESP_ERR_INVALID_ARG;
     if (!is_valid_mode(mode)) return ESP_ERR_INVALID_ARG;
     if (channel_mask <= 0 || channel_mask > 0x3) return ESP_ERR_INVALID_ARG;
@@ -481,6 +548,7 @@ esp_err_t rf_registry_update_config(const char *id, const char *mode, int channe
     u->channel_mask = channel_mask;
     u->exit_seconds = exit_seconds;
     u->alert = alert;
+    u->enabled = enabled;
     u->updated_ms = now_ms();
     rf_persist_locked();
     xSemaphoreGive(rf_mutex);
@@ -517,11 +585,17 @@ bool rf_registry_handle_code(uint32_t code) {
         ESP_LOGW(RF_REGISTRY_TAG, "Unknown RF code %s (no action)", code_hex);
         return false;
     }
+    if (!u->enabled) {
+        xSemaphoreGive(rf_mutex);
+        ESP_LOGI(RF_REGISTRY_TAG, "RF code %s disabled, ignoring", code_hex);
+        return true;
+    }
     u->last_pulse_count = 0;
     u->updated_ms = now_ms();
+    rf_user_t copy = *u;
     rf_persist_locked();
     xSemaphoreGive(rf_mutex);
 
-    apply_action_for_user(u);
+    apply_action_for_user(&copy);
     return true;
 }

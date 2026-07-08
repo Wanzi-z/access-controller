@@ -29,6 +29,7 @@ static const char* STORE_TAG = "storage.c";
 #define OLD_DEFAULT_SERVER_HOST "pyfisecurity.com"
 #define OLD_DEFAULT_SERVER_PORT "80"
 #define SERVER_URL_MAX_LEN 160
+#define SERVER_REQUIRE_REACHABLE_KEY "srv_req_reach"
 
 static bool spiffs_mounted = false;
 
@@ -531,6 +532,18 @@ void load_server_info_from_flash(char *server_ip, char *server_port) {
     free(port_str);
 }
 
+esp_err_t store_server_require_reachable(bool required) {
+    set_bool(SERVER_REQUIRE_REACHABLE_KEY, required);
+    automation_record_log(required
+        ? "Server reachability required for station mode"
+        : "Server reachability not required for station mode");
+    return ESP_OK;
+}
+
+bool load_server_require_reachable(void) {
+    return get_bool(SERVER_REQUIRE_REACHABLE_KEY, true);
+}
+
 /* ---------- WiFi list management ---------- */
 static uint64_t now_ms_store(void) { return esp_timer_get_time() / 1000ULL; }
 static esp_err_t wifi_list_save_array(cJSON *arr); // forward
@@ -839,15 +852,22 @@ esp_err_t delete_user_from_flash(const char *uuid_to_delete) {
     }
 
     uint32_t user_count = get_user_count_from_flash();
-    for (uint32_t i = 0; i < user_count; i++) {
+    bool deleted = false;
+    for (uint32_t i = 0; i < user_count;) {
         cJSON *user = load_user_from_flash(i + 1);
-        if (!user) continue;
+        if (!user) {
+            i++;
+            continue;
+        }
 
         cJSON *uuid_json = cJSON_GetObjectItemCaseSensitive(user, "uuid");
         bool match = cJSON_IsString(uuid_json) && strcmp(uuid_json->valuestring, uuid_to_delete) == 0;
         cJSON_Delete(user);
 
-        if (!match) continue;
+        if (!match) {
+            i++;
+            continue;
+        }
 
         for (uint32_t j = i; j < user_count - 1; j++) {
             cJSON *next_user = load_user_from_flash(j + 2);
@@ -869,15 +889,20 @@ esp_err_t delete_user_from_flash(const char *uuid_to_delete) {
         if (remove(last_path) != 0 && errno != ENOENT) {
             ESP_LOGW(STORE_TAG, "Failed to remove stale user file %s: errno=%d", last_path, errno);
         }
-        store_u32("auth_user_count", user_count - 1);
+        user_count--;
+        store_u32("auth_user_count", user_count);
+        deleted = true;
         ESP_LOGI(STORE_TAG, "Deleted user %s", uuid_to_delete);
-        return ESP_OK;
     }
 
-    return ESP_ERR_NOT_FOUND;
+    return deleted ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t delete_all_users_from_flash(void) {
+    if (ensure_spiffs() != ESP_OK) {
+        return ESP_FAIL;
+    }
+
     uint32_t user_count = get_user_count_from_flash();
     uint32_t removed = 0;
     DIR *dir = opendir("/spiffs");
@@ -1001,14 +1026,6 @@ esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_p
         store_char("server_url", server_url);
     }
 
-    /* Keep tunnel host/port in sync with server settings */
-    if (err_ip == ESP_OK) {
-        store_char("tunnel_host", server_ip);
-    }
-    if (err_port == ESP_OK) {
-        store_char("tunnel_port", server_port);
-    }
-
     if (err_ip == ESP_OK && err_port == ESP_OK) {
         char log_msg[LOG_STORE_MESSAGE_MAX];
         snprintf(log_msg, sizeof(log_msg), "Server settings updated (IP=%s, port=%s)", server_ip, server_port);
@@ -1029,17 +1046,13 @@ esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_p
 
 esp_err_t store_server_url_to_flash(const char *server_url) {
     char normalized[SERVER_URL_MAX_LEN];
-    char server_host[32];
-    char server_port[8];
 
     trim_copy(server_url, normalized, sizeof(normalized));
     if (normalized[0] == '\0') {
         snprintf(normalized, sizeof(normalized), "%s", DEFAULT_SERVER_URL);
     }
 
-    parse_server_url(normalized, server_host, sizeof(server_host), server_port, sizeof(server_port));
-
-    esp_err_t err_info = store_server_info_to_flash(server_host, server_port);
+    esp_err_t err_info = store_server_url_fields_to_flash(normalized);
     esp_err_t err_url = store_char("server_url", normalized);
     if (err_url == ESP_OK && err_info == ESP_OK) {
         char log_msg[LOG_STORE_MESSAGE_MAX];
@@ -1054,6 +1067,33 @@ esp_err_t store_server_url_to_flash(const char *server_url) {
         return err_url;
     }
     return err_info;
+}
+
+esp_err_t store_server_url_fields_to_flash(const char *server_url) {
+    char normalized[SERVER_URL_MAX_LEN];
+    char server_host[32];
+    char server_port[8];
+
+    trim_copy(server_url, normalized, sizeof(normalized));
+    if (normalized[0] == '\0') {
+        snprintf(normalized, sizeof(normalized), "%s", DEFAULT_SERVER_URL);
+    }
+
+    parse_server_url(normalized, server_host, sizeof(server_host), server_port, sizeof(server_port));
+
+    esp_err_t err_ip = store_char("server_ip", server_host);
+    esp_err_t err_port = store_char("server_port", server_port);
+    if (err_ip == ESP_OK && err_port == ESP_OK) {
+        return ESP_OK;
+    }
+
+    if (err_ip != ESP_OK) {
+        ESP_LOGE(STORE_TAG, "Failed to store server host from URL: %s", esp_err_to_name(err_ip));
+        return err_ip;
+    }
+
+    ESP_LOGE(STORE_TAG, "Failed to store server port from URL: %s", esp_err_to_name(err_port));
+    return err_port;
 }
 esp_err_t store_wifi_credentials_to_flash(const char *ssid, const char *password) {
     esp_err_t err_ssid = store_char("wifi_ssid", ssid);

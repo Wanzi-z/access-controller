@@ -5,6 +5,7 @@ const config = {
   deviceUrl: process.env.DEVICE_URL || 'http://192.168.4.1',
   deviceApSsid: process.env.DEVICE_AP_SSID || null,
   deviceApPassword: 'pyfitech',
+  serverUrl: process.env.SERVER_URL || 'https://open-automation.org/devices',
 
   // Browser
   headless: process.env.HEADLESS !== 'false',

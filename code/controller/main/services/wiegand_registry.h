@@ -9,6 +9,7 @@
 #define WIEGAND_USER_CODE_MAX   64
 #define WIEGAND_USER_NAME_MAX   64
 #define WIEGAND_USER_ID_MAX     40
+#define WIEGAND_USER_MODE_MAX   16
 #define WIEGAND_USER_MAX_COUNT  256
 
 typedef enum {
@@ -21,12 +22,16 @@ typedef struct {
     char id[WIEGAND_USER_ID_MAX];
     char code[WIEGAND_USER_CODE_MAX];
     char name[WIEGAND_USER_NAME_MAX];
+    char mode[WIEGAND_USER_MODE_MAX];
     char user_uuid[WIEGAND_USER_ID_MAX];
     uint8_t channel;
     wiegand_user_status_t status;
+    bool alert;
     uint32_t sequence;
     uint64_t created_at_ms;
     uint64_t updated_at_ms;
+    uint64_t last_used_ms;
+    int64_t last_used_unix_time;
 } wiegand_user_t;
 
 void wiegand_registry_init(void);
@@ -38,7 +43,9 @@ const wiegand_user_t *wiegand_registry_find_by_id(const char *id);
 esp_err_t wiegand_registry_add(const char *code, uint8_t channel, wiegand_user_t *out_user);
 esp_err_t wiegand_registry_add_for_user(const char *code, uint8_t channel, const char *user_uuid, const char *name, bool active, wiegand_user_t *out_user);
 esp_err_t wiegand_registry_update_name(const char *id, const char *name);
+esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, uint8_t channel, bool alert);
 esp_err_t wiegand_registry_update_status(const char *id, wiegand_user_status_t status);
+esp_err_t wiegand_registry_record_use(const char *id);
 esp_err_t wiegand_registry_remove(const char *id);
 esp_err_t wiegand_registry_clear(void);
 esp_err_t wiegand_registry_reload(void);

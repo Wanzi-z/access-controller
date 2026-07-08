@@ -71,7 +71,7 @@ int handle_fob_property (char * prop)
 
 void check_fobs (struct fob *fb)
 {
-	fb->isPressed = get_mcp_io(fb->pin);
+	fb->isPressed = !get_mcp_io(fb->pin);
 	if (!fb->enable) {
 		fb->prevPress = fb->isPressed;
 		return;
@@ -84,10 +84,10 @@ void check_fobs (struct fob *fb)
 		arm_lock(fb->channel, fb->isPressed, fb->alert);
 		enableExit(fb->channel, fb->isPressed);
 		enableKeypad(fb->channel, fb->isPressed);
-	} else if (!fb->latch && !fb->isPressed && fb->prevPress) {
-		// Momentary mode: FOB release triggers unlock and timer
-		ESP_LOGI(TAG, "Fob %d released (momentary mode) - disarming lock", fb->channel);
-        lock_set_action_source("fob_release");
+	} else if (!fb->latch && fb->isPressed && !fb->prevPress) {
+		// Momentary mode: active edge triggers unlock and timer
+		ESP_LOGI(TAG, "Fob %d activated (momentary mode) - disarming lock", fb->channel);
+        lock_set_action_source("fob_active");
 		arm_lock(fb->channel, false, fb->alert);
 		start_fob_timer(fb, true);
 	}

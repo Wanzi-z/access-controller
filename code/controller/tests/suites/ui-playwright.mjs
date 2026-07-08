@@ -357,10 +357,13 @@ export default async function run(api, report) {
     try {
       const rfRegisterBtn = await page.$('#rfRegisterBtn');
       const rfList = await page.$('#rfUserList');
-      if (rfRegisterBtn || rfList) {
+      const rfCardMetrics = await page.$('.credential-card--remote .rf-card-metrics');
+      if ((rfRegisterBtn || rfList) && rfList) {
         report.pass('UI: RF fobs section elements present', '', Date.now() - t0);
+      } else if (rfCardMetrics) {
+        report.pass('UI: RF fobs card metrics present', '', Date.now() - t0);
       } else {
-        report.skip('UI: RF fobs section', 'Elements not found', Date.now() - t0);
+        report.skip('UI: RF fobs section', `Elements not found list=${!!rfList} metrics=${!!rfCardMetrics}`, Date.now() - t0);
       }
     } catch (err) {
       report.skip('UI: RF fobs section', err.message, Date.now() - t0);

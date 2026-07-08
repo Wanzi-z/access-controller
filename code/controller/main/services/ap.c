@@ -28,10 +28,13 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
 void ap_main(char *ssid, char *password)
 {
-    esp_netif_create_default_wifi_ap();
+    static bool ap_netif_created = false;
+    if (!ap_netif_created) {
+        esp_netif_create_default_wifi_ap();
+        ap_netif_created = true;
+    }
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(wifi_driver_ensure_initialized());
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,

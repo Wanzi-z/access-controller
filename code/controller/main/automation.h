@@ -45,6 +45,7 @@ void init_automation_queues(void);
 cJSON *system_logs_snapshot(void);
 void automation_record_log(const char *message);
 void automation_update_unix_time(int64_t unix_time_seconds);
+int64_t automation_unix_time_for_timestamp_ms(uint64_t timestamp_ms);
 void automation_log_boot_event(void);
 void arm_lock(int channel, bool arm, bool alert);
 void lock_set_action_source(const char *source);

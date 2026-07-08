@@ -27,8 +27,14 @@ component at that local path.
 
 ### Boot Flow
 
-`main.c` includes service `.c` files directly and calls service initializers in
-this order after network/AP selection:
+`main.c` includes service `.c` files directly. Network selection happens before
+device services start: the firmware tries saved Wi-Fi, applies the configured
+server reachability policy, falls back to provisioning AP mode when required,
+and starts an AP recovery loop if station mode is not accepted. See
+[Network Provisioning](NETWORK_PROVISIONING.md) for the full state diagrams.
+
+After network/AP selection, the firmware calls service initializers in this
+order:
 
 1. `gpio_main`
 2. `i2c_main`

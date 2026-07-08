@@ -104,7 +104,6 @@ static esp_err_t enrollment_default_user(char *uuid, size_t uuid_size, char *nam
 
     enrollment_generate_uuid(uuid, uuid_size);
     strlcpy(name, "Default User", name_size);
-    store_user_to_flash(uuid, name, "");
     return ESP_OK;
 }
 
@@ -228,13 +227,20 @@ bool enrollment_on_pin(const char *pin, int channel) {
     }
 
     char user_uuid[ENROLLMENT_USER_UUID_MAX];
+    char user_name[ENROLLMENT_USER_NAME_MAX];
     xSemaphoreTake(s_enrollment_mutex, portMAX_DELAY);
     if (!s_enrollment.active) {
         xSemaphoreGive(s_enrollment_mutex);
         return false;
     }
     strlcpy(user_uuid, s_enrollment.user_uuid, sizeof(user_uuid));
+    strlcpy(user_name, s_enrollment.user_name, sizeof(user_name));
     xSemaphoreGive(s_enrollment_mutex);
+
+    char existing_name[ENROLLMENT_USER_NAME_MAX] = {0};
+    if (!enrollment_load_user_name(user_uuid, existing_name, sizeof(existing_name))) {
+        store_user_to_flash(user_uuid, user_name[0] ? user_name : "Default User", "");
+    }
 
     bool added = false;
     esp_err_t err = append_user_pin_to_flash(user_uuid, pin, &added);

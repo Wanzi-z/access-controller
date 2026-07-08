@@ -340,6 +340,7 @@ static cJSON *build_state_snapshot(void) {
         cJSON_AddStringToObject(server, "url", server_url);
         cJSON_AddStringToObject(server, "host", server_host);
         cJSON_AddStringToObject(server, "port", server_port);
+        cJSON_AddBoolToObject(server, "requireReachable", load_server_require_reachable());
         cJSON_AddItemToObject(root, "server", server);
     }
 
@@ -389,6 +390,12 @@ static cJSON *build_state_snapshot(void) {
     cJSON *rf = rf_state_snapshot();
     if (!rf) {
         rf = cJSON_CreateObject();
+    }
+    if (rf) {
+        cJSON *receiver = rf_receiver_diagnostics_snapshot();
+        if (receiver) {
+            cJSON_AddItemToObject(rf, "receiver", receiver);
+        }
     }
     cJSON_AddItemToObject(root, "rf", rf);
 
@@ -507,6 +514,38 @@ static esp_err_t api_state_get_handler(httpd_req_t *req) {
     return send_json_response(req, build_state_snapshot());
 }
 
+static esp_err_t api_signals_get_handler(httpd_req_t *req) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to build signal response");
+    }
+
+    cJSON *locks = lock_state_snapshot();
+    cJSON_AddItemToObject(root, "locks", locks ? locks : cJSON_CreateArray());
+
+    cJSON *exits = exit_state_snapshot();
+    cJSON_AddItemToObject(root, "exits", exits ? exits : cJSON_CreateArray());
+
+    cJSON *fobs = fob_state_snapshot();
+    cJSON_AddItemToObject(root, "fobs", fobs ? fobs : cJSON_CreateArray());
+
+    cJSON *keypads = keypad_state_snapshot();
+    cJSON_AddItemToObject(root, "keypads", keypads ? keypads : cJSON_CreateArray());
+
+    cJSON *motions = motion_state_snapshot();
+    cJSON_AddItemToObject(root, "motions", motions ? motions : cJSON_CreateArray());
+
+    cJSON *wiegand = wiegand_state_snapshot();
+    cJSON_AddItemToObject(root, "wiegand", wiegand ? wiegand : cJSON_CreateObject());
+
+    cJSON *rf = rf_state_snapshot();
+    cJSON_AddItemToObject(root, "rf", rf ? rf : cJSON_CreateObject());
+
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
+    httpd_resp_set_hdr(req, "Pragma", "no-cache");
+    return send_json_response(req, root);
+}
+
 static esp_err_t api_discovery_get_handler(httpd_req_t *req) {
     cJSON *root = cJSON_CreateObject();
     if (!root) {
@@ -553,6 +592,7 @@ static esp_err_t api_discovery_get_handler(httpd_req_t *req) {
     cJSON *api = cJSON_CreateObject();
     if (api) {
         cJSON_AddStringToObject(api, "state", "/api/state");
+        cJSON_AddStringToObject(api, "signals", "/api/signals");
         cJSON_AddStringToObject(api, "otaUpload", "/api/ota/upload");
         cJSON_AddStringToObject(api, "logs", "/api/logs");
         cJSON_AddStringToObject(api, "wifiScan", "/api/wifi/scan");
@@ -788,6 +828,11 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
 
     const cJSON *id_item = cJSON_GetObjectItemCaseSensitive(payload, "id");
     const cJSON *name_item = cJSON_GetObjectItemCaseSensitive(payload, "name");
+    const cJSON *channel_item = cJSON_GetObjectItemCaseSensitive(payload, "channel");
+    const cJSON *alert_item = cJSON_GetObjectItemCaseSensitive(payload, "alert");
+    const cJSON *status_item = cJSON_GetObjectItemCaseSensitive(payload, "status");
+    const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
+    const cJSON *mode_item = cJSON_GetObjectItemCaseSensitive(payload, "mode");
     const char *id_raw = (cJSON_IsString(id_item) && id_item->valuestring) ? id_item->valuestring : NULL;
     const char *name_raw = (cJSON_IsString(name_item) && name_item->valuestring) ? name_item->valuestring : NULL;
 
@@ -807,10 +852,56 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
     char name[WIEGAND_USER_NAME_MAX];
     strlcpy(id, id_raw, sizeof(id));
     strlcpy(name, name_raw, sizeof(name));
+    const wiegand_user_t *existing = wiegand_registry_find_by_id(id);
+    uint8_t channel = existing ? existing->channel : 0;
+    bool alert = existing ? existing->alert : true;
+    char mode[WIEGAND_USER_MODE_MAX];
+    strlcpy(mode, (existing && existing->mode[0] != '\0') ? existing->mode : "momentary", sizeof(mode));
+    wiegand_user_status_t status = existing ? existing->status : WIEGAND_USER_STATUS_ACTIVE;
+    if (cJSON_IsNumber(channel_item)) {
+        int requested_channel = (int)channel_item->valuedouble;
+        if (requested_channel < 0 || requested_channel > 2) {
+            cJSON_Delete(payload);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid channel");
+        }
+        channel = (uint8_t)requested_channel;
+    }
+    if (cJSON_IsBool(alert_item)) {
+        alert = cJSON_IsTrue(alert_item);
+    }
+    if (cJSON_IsString(mode_item) && mode_item->valuestring) {
+        if (strcmp(mode_item->valuestring, "momentary") != 0 &&
+            strcmp(mode_item->valuestring, "toggle") != 0 &&
+            strcmp(mode_item->valuestring, "latch") != 0) {
+            cJSON_Delete(payload);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid mode");
+        }
+        strlcpy(mode, mode_item->valuestring, sizeof(mode));
+    }
+    if (cJSON_IsBool(enabled_item)) {
+        status = cJSON_IsTrue(enabled_item) ? WIEGAND_USER_STATUS_ACTIVE : WIEGAND_USER_STATUS_DISABLED;
+    }
+    if (cJSON_IsNumber(status_item)) {
+        int requested_status = (int)status_item->valuedouble;
+        if (requested_status < WIEGAND_USER_STATUS_PENDING || requested_status > WIEGAND_USER_STATUS_DISABLED) {
+            cJSON_Delete(payload);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid status");
+        }
+        status = (wiegand_user_status_t)requested_status;
+    }
     cJSON_Delete(payload);
 
-    ESP_LOGI(API_TAG, "Renaming Wiegand user %s to '%s'", id, name);
-    err = wiegand_registry_update_name(id, name);
+    ESP_LOGI(API_TAG,
+             "Updating Wiegand user %s name='%s' mode=%s channel=%u alert=%s",
+             id,
+             name,
+             mode,
+             (unsigned)channel,
+             alert ? "true" : "false");
+    err = wiegand_registry_update_config(id, name, mode, channel, alert);
+    if (err == ESP_OK && existing && status != existing->status) {
+        err = wiegand_registry_update_status(id, status);
+    }
 
     if (err == ESP_ERR_NOT_FOUND) {
         ESP_LOGW(API_TAG, "Wiegand user not found: %s", id);
@@ -1018,7 +1109,80 @@ static esp_err_t api_favicon_handler(httpd_req_t *req) {
 }
 
 // Build JSON array of keypad PIN users
+static bool keypad_user_has_pins(cJSON *user) {
+    if (!user) {
+        return false;
+    }
+
+    const cJSON *pin = cJSON_GetObjectItemCaseSensitive(user, "pin");
+    if (cJSON_IsString(pin) && pin->valuestring && pin->valuestring[0] != '\0') {
+        return true;
+    }
+
+    const cJSON *pins = cJSON_GetObjectItemCaseSensitive(user, "pins");
+    if (!cJSON_IsArray(pins)) {
+        return false;
+    }
+
+    int count = cJSON_GetArraySize(pins);
+    for (int i = 0; i < count; i++) {
+        const cJSON *item = cJSON_GetArrayItem(pins, i);
+        if (cJSON_IsString(item) && item->valuestring && item->valuestring[0] != '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool keypad_user_is_empty_default(cJSON *user) {
+    if (!user || keypad_user_has_pins(user)) {
+        return false;
+    }
+
+    const cJSON *name = cJSON_GetObjectItemCaseSensitive(user, "name");
+    return cJSON_IsString(name) && name->valuestring && strcmp(name->valuestring, "Default User") == 0;
+}
+
+static void prune_empty_default_keypad_users(void) {
+    bool pruned = false;
+
+    do {
+        pruned = false;
+        uint32_t user_count = get_user_count_from_flash();
+        for (uint32_t i = 0; i < user_count; i++) {
+            cJSON *user = load_user_from_flash(i + 1);
+            if (!user) {
+                continue;
+            }
+
+            const cJSON *uuid_item = cJSON_GetObjectItemCaseSensitive(user, "uuid");
+            char uuid[64] = {0};
+            if (keypad_user_is_empty_default(user) &&
+                cJSON_IsString(uuid_item) &&
+                uuid_item->valuestring &&
+                uuid_item->valuestring[0] != '\0') {
+                strlcpy(uuid, uuid_item->valuestring, sizeof(uuid));
+            }
+            cJSON_Delete(user);
+
+            if (uuid[0] == '\0') {
+                continue;
+            }
+
+            esp_err_t err = delete_user_from_flash(uuid);
+            if (err == ESP_OK) {
+                ESP_LOGI(API_TAG, "Pruned empty Default User keypad record: %s", uuid);
+                pruned = true;
+                break;
+            }
+            ESP_LOGW(API_TAG, "Failed to prune empty Default User keypad record %s (%s)", uuid, esp_err_to_name(err));
+        }
+    } while (pruned);
+}
+
 static cJSON *keypad_users_snapshot(void) {
+    prune_empty_default_keypad_users();
+
     cJSON *array = cJSON_CreateArray();
     if (!array) return NULL;
 
@@ -1072,7 +1236,7 @@ static esp_err_t api_keypad_user_post_handler(httpd_req_t *req) {
     store_user_to_flash(uuid, (char *)name, (char *)(pin ? pin : ""));
     cJSON_Delete(payload);
 
-    return send_json_response(req, cJSON_CreateArray());
+    return send_json_response(req, keypad_users_snapshot());
 }
 
 // DELETE /api/keypad/user - Delete PIN user by UUID
@@ -1198,12 +1362,27 @@ static esp_err_t api_wiegand_delete_all_post_handler(httpd_req_t *req) {
 
 /* RF remote fobs */
 static esp_err_t send_rf_state_response(httpd_req_t *req) {
-    return send_json_response(req, rf_state_snapshot());
+    cJSON *rf = rf_state_snapshot();
+    if (!rf) {
+        rf = cJSON_CreateObject();
+    }
+    if (rf) {
+        cJSON *receiver = rf_receiver_diagnostics_snapshot();
+        if (receiver) {
+            cJSON_AddItemToObject(rf, "receiver", receiver);
+        }
+    }
+    return send_json_response(req, rf);
 }
 
 static esp_err_t api_rf_get_handler(httpd_req_t *req) {
     ESP_LOGI(API_TAG, "RF state requested");
     return send_rf_state_response(req);
+}
+
+static esp_err_t api_rf_line_test_get_handler(httpd_req_t *req) {
+    ESP_LOGI(API_TAG, "RF line test requested");
+    return send_json_response(req, rf_receiver_line_test_snapshot());
 }
 
 static esp_err_t api_rf_delete_all_post_handler(httpd_req_t *req) {
@@ -1316,18 +1495,20 @@ static esp_err_t api_rf_config_post_handler(httpd_req_t *req) {
     const cJSON *ch_item = cJSON_GetObjectItemCaseSensitive(payload, "channel_mask");
     const cJSON *exit_item = cJSON_GetObjectItemCaseSensitive(payload, "exit_seconds");
     const cJSON *alert_item = cJSON_GetObjectItemCaseSensitive(payload, "alert");
+    const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
     const char *id = cJSON_IsString(id_item) ? id_item->valuestring : NULL;
     const char *mode = cJSON_IsString(mode_item) ? mode_item->valuestring : NULL;
     int ch_mask = cJSON_IsNumber(ch_item) ? (int)ch_item->valuedouble : 0;
     int exit_s = cJSON_IsNumber(exit_item) ? (int)exit_item->valuedouble : 0;
     bool alert = alert_item ? cJSON_IsTrue(alert_item) : true;
+    bool enabled = enabled_item ? cJSON_IsTrue(enabled_item) : true;
 
     if (!id || !mode || ch_mask <= 0) {
         cJSON_Delete(payload);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "id, mode, channel_mask required");
     }
 
-    err = rf_registry_update_config(id, mode, ch_mask, exit_s, alert);
+    err = rf_registry_update_config(id, mode, ch_mask, exit_s, alert, enabled);
     cJSON_Delete(payload);
     if (err == ESP_ERR_NOT_FOUND) {
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "RF code not found");
@@ -1388,6 +1569,13 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_state_get_handler,
     };
     httpd_register_uri_handler(server, &state);
+
+    httpd_uri_t signals = {
+        .uri = "/api/signals",
+        .method = HTTP_GET,
+        .handler = api_signals_get_handler,
+    };
+    httpd_register_uri_handler(server, &signals);
 
     httpd_uri_t discovery = {
         .uri = "/api/discovery",
@@ -1472,6 +1660,13 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_rf_get_handler,
     };
     httpd_register_uri_handler(server, &rf_get);
+
+    httpd_uri_t rf_line_test_get = {
+        .uri = "/api/rf/line-test",
+        .method = HTTP_GET,
+        .handler = api_rf_line_test_get_handler,
+    };
+    httpd_register_uri_handler(server, &rf_line_test_get);
 
     httpd_uri_t rf_register_post = {
         .uri = "/api/rf/register",

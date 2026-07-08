@@ -27,6 +27,7 @@
 #include "services/ap.c"
 #include "services/api.c"
 #include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
 
@@ -36,6 +37,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/event_groups.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -53,6 +55,12 @@ char stored_firmware_md5[33];
 bool need_to_update_firmware = true;
 
 #define OTA_STARTUP_VALIDATION_DELAY_MS 10000
+#define DEVICE_PUNCH_CHECK_TASK_STACK_BYTES 8192
+#define CONNECTIVITY_RECOVERY_TASK_STACK_BYTES 8192
+#define CONNECTIVITY_RECOVERY_INITIAL_DELAY_MS 30000
+#define CONNECTIVITY_RECOVERY_INTERVAL_MS 60000
+
+#define DEVICE_PUNCH_CHECK_DONE_BIT BIT0
 
 static bool running_app_pending_verify(void) {
 #ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
@@ -267,6 +275,204 @@ void fetch_firmware_md5_from_server(char *buffer, size_t buffer_size, const char
     esp_http_client_cleanup(client);
 }
 
+static bool post_device_punch_to_server(void) {
+    char server_url[160] = {0};
+    load_server_url_from_flash(server_url, sizeof(server_url));
+    if (server_url[0] == '\0') {
+        ESP_LOGW(TAG, "Skipping device punch: server URL is empty");
+        return false;
+    }
+
+    bool use_tls = strncmp(server_url, "https://", 8) == 0;
+    if (!use_tls && strncmp(server_url, "http://", 7) != 0) {
+        ESP_LOGW(TAG, "Skipping device punch: server URL must start with http:// or https:// (%s)", server_url);
+        return false;
+    }
+
+    char payload[512];
+    snprintf(payload, sizeof(payload),
+             "{"
+             "\"id\":\"%s\","
+             "\"name\":\"Access Controller %s\","
+             "\"type\":\"access_controller\","
+             "\"model\":\"ESP32-S3\","
+             "\"version\":\"%s\","
+             "\"capabilities\":[\"access-control\",\"esp32\",\"wiegand\",\"rf\",\"keypad\",\"motion\",\"ota-upload\"],"
+             "\"metadata\":{\"firmware\":\"controller\",\"gitBranch\":\"%s\",\"gitDirty\":%s}"
+             "}",
+             device_id,
+             device_id,
+             BUILD_GIT_COMMIT,
+             BUILD_GIT_BRANCH,
+             BUILD_GIT_DIRTY ? "true" : "false");
+
+    esp_http_client_config_t http_config = {
+        .url = server_url,
+        .timeout_ms = 10000,
+    };
+    if (use_tls) {
+        http_config.crt_bundle_attach = esp_crt_bundle_attach;
+    }
+
+    esp_http_client_handle_t client = esp_http_client_init(&http_config);
+    if (!client) {
+        ESP_LOGE(TAG, "Failed to initialize device punch HTTP client");
+        return false;
+    }
+
+    esp_http_client_set_method(client, HTTP_METHOD_POST);
+    esp_http_client_set_header(client, "Content-Type", "application/json");
+    esp_http_client_set_post_field(client, payload, strlen(payload));
+
+    ESP_LOGI(TAG, "Posting device punch to %s", server_url);
+    esp_err_t err = esp_http_client_perform(client);
+    int status = esp_http_client_get_status_code(client);
+    bool ok = false;
+    if (err == ESP_OK && status >= 200 && status < 300) {
+        ESP_LOGI(TAG, "Device punch accepted (status=%d)", status);
+        automation_record_log("Device punch accepted by server");
+        ok = true;
+    } else {
+        ESP_LOGW(TAG, "Device punch failed: err=%s status=%d", esp_err_to_name(err), status);
+        automation_record_log("Device punch failed");
+    }
+
+    esp_http_client_cleanup(client);
+    return ok;
+}
+
+typedef struct {
+    EventGroupHandle_t done;
+    bool ok;
+} device_punch_check_t;
+
+static void device_punch_check_task(void *arg) {
+    device_punch_check_t *check = (device_punch_check_t *)arg;
+    if (check) {
+        check->ok = post_device_punch_to_server();
+        xEventGroupSetBits(check->done, DEVICE_PUNCH_CHECK_DONE_BIT);
+    }
+    vTaskDelete(NULL);
+}
+
+static bool post_device_punch_to_server_for_policy(void) {
+    device_punch_check_t check = {
+        .done = xEventGroupCreate(),
+        .ok = false,
+    };
+    if (!check.done) {
+        ESP_LOGE(TAG, "Failed to create device punch check event group");
+        return false;
+    }
+
+    BaseType_t result = xTaskCreate(
+        device_punch_check_task,
+        "punch_check",
+        DEVICE_PUNCH_CHECK_TASK_STACK_BYTES,
+        &check,
+        5,
+        NULL);
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create device punch check task");
+        vEventGroupDelete(check.done);
+        return false;
+    }
+
+    EventBits_t bits = xEventGroupWaitBits(
+        check.done,
+        DEVICE_PUNCH_CHECK_DONE_BIT,
+        pdTRUE,
+        pdFALSE,
+        portMAX_DELAY);
+    bool ok = (bits & DEVICE_PUNCH_CHECK_DONE_BIT) && check.ok;
+    vEventGroupDelete(check.done);
+    return ok;
+}
+
+static bool server_policy_allows_station_with_check(bool run_check_in_current_task) {
+    bool require_server = load_server_require_reachable();
+    if (!require_server) {
+        ESP_LOGI(TAG, "Server reachability is not required for station mode");
+        return true;
+    }
+
+    ESP_LOGI(TAG, "Server reachability is required; checking configured server URL");
+    if (run_check_in_current_task ? post_device_punch_to_server() : post_device_punch_to_server_for_policy()) {
+        return true;
+    }
+
+    ESP_LOGW(TAG, "Configured server URL is not reachable; station mode rejected by policy");
+    automation_record_log("Server unreachable; falling back to AP mode");
+    return false;
+}
+
+static bool server_policy_allows_station(void) {
+    return server_policy_allows_station_with_check(false);
+}
+
+static void start_access_point_mode(void) {
+    ESP_LOGI(TAG, "Starting Access Point...");
+    automation_record_log("Starting AP provisioning mode");
+
+    char ap_ssid[32];
+    generate_ssid_from_device_id(device_id, ap_ssid, sizeof(ap_ssid));
+
+    ap_main(ap_ssid, "pyfitech");
+}
+
+static void connectivity_recovery_task(void *arg) {
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INITIAL_DELAY_MS));
+
+    while (1) {
+        char wifi_ssid[32] = {0};
+        char wifi_password[64] = {0};
+        load_wifi_credentials_from_flash(wifi_ssid, wifi_password);
+
+        if (wifi_ssid[0] == '\0') {
+            ESP_LOGI(TAG, "AP recovery: no saved WiFi network; staying in AP mode");
+            vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INTERVAL_MS));
+            continue;
+        }
+
+        ESP_LOGI(TAG, "AP recovery: trying saved WiFi SSID '%s'", wifi_ssid);
+        automation_record_log("AP recovery trying saved WiFi");
+        if (!station_connect(wifi_ssid, wifi_password, true)) {
+            ESP_LOGW(TAG, "AP recovery: WiFi connection failed");
+            vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INTERVAL_MS));
+            continue;
+        }
+
+        if (!server_policy_allows_station_with_check(true)) {
+            ESP_LOGW(TAG, "AP recovery: server policy failed; keeping AP mode active");
+            station_disconnect_for_ap_mode();
+            esp_wifi_set_mode(WIFI_MODE_AP);
+            vTaskDelay(pdMS_TO_TICKS(CONNECTIVITY_RECOVERY_INTERVAL_MS));
+            continue;
+        }
+
+        ESP_LOGI(TAG, "AP recovery: network and policy passed; switching to station mode");
+        automation_record_log("AP recovery restored station mode");
+        esp_wifi_set_mode(WIFI_MODE_STA);
+        tunnel_start();
+        vTaskDelete(NULL);
+    }
+}
+
+static void start_connectivity_recovery_task(void) {
+    BaseType_t result = xTaskCreate(
+        connectivity_recovery_task,
+        "net_recover",
+        CONNECTIVITY_RECOVERY_TASK_STACK_BYTES,
+        NULL,
+        4,
+        NULL);
+    if (result != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create connectivity recovery task");
+        automation_record_log("Connectivity recovery task failed to start");
+    }
+}
+
 
 void app_main(void) {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -296,11 +502,26 @@ void app_main(void) {
     
     // Check if we have valid credentials before attempting station mode
     bool has_valid_credentials = (strlen(wifi_ssid) > 0 && strlen(wifi_password) > 0);
+    bool station_connected = false;
     ESP_LOGI(TAG, "WiFi credentials check: SSID='%s' (len=%d), Password='%s' (len=%d)", 
              wifi_ssid, (int)strlen(wifi_ssid), wifi_password, (int)strlen(wifi_password));
     
     if (has_valid_credentials && station_main(wifi_ssid, wifi_password)) {
         ESP_LOGI(TAG, "Successfully connected to WiFi in station mode");
+        if (server_policy_allows_station()) {
+            station_connected = true;
+        } else {
+            station_disconnect_for_ap_mode();
+            start_access_point_mode();
+            start_connectivity_recovery_task();
+        }
+    } else {
+        automation_record_log("WiFi STA failed after retries; starting AP mode");
+        start_access_point_mode();
+        start_connectivity_recovery_task();
+    }
+
+    if (station_connected) {
         load_server_info_from_flash(server_ip, server_port);
         char ota_url[256];
 
@@ -323,16 +544,18 @@ void app_main(void) {
         if (strcmp(device_id, "") == 0) {
             ESP_LOGE(TAG, "Device ID not found");
         }
+    }
 
-        tunnel_start();
+    esp_err_t spiffs_result = initialize_spiffs();
+    if (spiffs_result == ESP_OK) {
+        ESP_LOGI(TAG, "SPIFFS Initialized successfully");
     } else {
-        ESP_LOGI(TAG, "Starting Access Point...");
-        automation_record_log("WiFi STA failed after retries; starting AP mode");
-        
-        char ap_ssid[32];
-        generate_ssid_from_device_id(device_id, ap_ssid, sizeof(ap_ssid));
-        
-        ap_main(ap_ssid, "pyfitech");
+        rollback_pending_app_and_reboot("SPIFFS failed");
+    }
+
+    esp_err_t server_result = server_main();
+    if (server_result != ESP_OK) {
+        rollback_pending_app_and_reboot("web server failed");
     }
 
     gpio_main();
@@ -349,19 +572,11 @@ void app_main(void) {
     rf_registry_init();
     rf_receiver_init();
     lock_main();
-    esp_err_t server_result = server_main();
-    if (server_result != ESP_OK) {
-        rollback_pending_app_and_reboot("web server failed");
-    }
-
-    esp_err_t spiffs_result = initialize_spiffs();
-    if (spiffs_result == ESP_OK) {
-        ESP_LOGI(TAG, "SPIFFS Initialized successfully");
-    } else {
-        rollback_pending_app_and_reboot("SPIFFS failed");
-    }
     if (server_result == ESP_OK && spiffs_result == ESP_OK) {
         schedule_running_app_validation();
+    }
+    if (station_connected) {
+        tunnel_start();
     }
     send_user_count();
 

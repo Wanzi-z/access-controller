@@ -20,6 +20,8 @@ gateway so the device UI can be reached through a server.
   subfolder is for.
 - [Software](SOFTWARE.md): firmware apps, web UI, APIs, tests, tunnel server,
   and controller mini experiment.
+- [Network Provisioning](NETWORK_PROVISIONING.md): Wi-Fi onboarding, server
+  reachability policy, AP fallback, and retry recovery diagrams.
 - [Hardware](HARDWARE.md): KiCad projects, board sheets, manufacturing files,
   connectors, enclosure models, and images.
 - [Workflows](WORKFLOWS.md): build, flash, test, tunnel, hardware review, and

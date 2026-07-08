@@ -71,6 +71,21 @@ export default async function run(api, report) {
         report.fail('OTA slot metadata present', JSON.stringify(firmware), 0);
       }
 
+      const server = state?.server;
+      if (
+        server &&
+        typeof server.url === 'string' &&
+        typeof server.requireReachable === 'boolean'
+      ) {
+        report.pass(
+          `Server policy: requireReachable=${server.requireReachable}`,
+          server.url,
+          0
+        );
+      } else {
+        report.fail('State has server URL and connectivity policy', JSON.stringify(server), 0);
+      }
+
       // Locks
       const locks = state?.locks;
       if (!Array.isArray(locks) || locks.length < 2) {
@@ -142,6 +157,20 @@ export default async function run(api, report) {
       if (state?.rf && typeof state.rf === 'object') {
         report.pass('RF state present', '', 0);
         systemInfo.rfUsers = state.rf.users?.length || 0;
+        const receiver = state.rf.receiver;
+        const hasQuality =
+          receiver &&
+          typeof receiver.qualityScore === 'number' &&
+          typeof receiver.qualityLabel === 'string' &&
+          typeof receiver.noisePercent === 'number' &&
+          typeof receiver.decodeSuccessRatePercent === 'number' &&
+          typeof receiver.lastRepeatCount === 'number' &&
+          typeof receiver.lastJitterPercent === 'number';
+        if (hasQuality) {
+          report.pass(`RF quality: ${receiver.qualityLabel} ${receiver.qualityScore}/100`, '', 0);
+        } else {
+          report.fail('RF receiver quality metrics present', JSON.stringify(receiver), 0);
+        }
       } else {
         report.fail('RF state missing', '', 0);
       }
@@ -200,6 +229,20 @@ export default async function run(api, report) {
       if (r && typeof r === 'object') {
         report.pass(`RF fobs: ${r.users?.length || 0} registered`, '', dur);
         systemInfo.rfUsers = r.users?.length || 0;
+        const receiver = r.receiver;
+        const hasReceiverMetrics =
+          receiver &&
+          typeof receiver.qualityScore === 'number' &&
+          typeof receiver.qualityLabel === 'string' &&
+          typeof receiver.edgeRatePerSecond === 'number' &&
+          typeof receiver.noiseRatePerSecond === 'number' &&
+          typeof receiver.lastDecodeAgeMs === 'number' &&
+          typeof receiver.lastJitterPercent === 'number';
+        if (hasReceiverMetrics) {
+          report.pass(`RF receiver metrics: noise=${receiver.noisePercent}% success=${receiver.decodeSuccessRatePercent}%`, '', 0);
+        } else {
+          report.fail('RF receiver metrics invalid', JSON.stringify(receiver), dur);
+        }
       } else {
         report.fail('RF response invalid', '', dur);
       }

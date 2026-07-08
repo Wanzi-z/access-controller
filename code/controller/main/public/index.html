@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <header class="app-bar">
@@ -320,52 +320,17 @@
         <div class="card-header">
           <div>
             <h2>Credential Enrollment</h2>
-            <p class="subtitle">One user, one listening session, any credential source.</p>
           </div>
         </div>
         <div class="enrollment-layout">
           <div class="enrollment-controls">
-            <label class="form-field">
-              <span>User</span>
+            <div class="enrollment-fields">
               <select id="enrollUserSelect" aria-label="Enrollment user"></select>
-            </label>
-            <div class="input-group enrollment-new-user">
-              <input type="text" id="enrollNewUserName" placeholder="New user name">
-              <button type="button" class="secondary" id="enrollAddUserBtn">Add User</button>
+              <input type="text" id="enrollNewUserName" placeholder="New user name (optional)" aria-label="New user name">
             </div>
             <div class="form-actions enrollment-actions">
               <button type="button" id="enrollStartBtn">Add Credential</button>
-              <button type="button" class="secondary" id="enrollStopBtn">Stop</button>
-            </div>
-          </div>
-          <div class="enrollment-status" id="enrollmentStatusPanel">
-            <div class="status-bar" id="enrollmentStatusBar">
-              <div class="status-indicator">
-                <span class="status-dot"></span>
-                <span id="enrollmentStatus">Idle</span>
-              </div>
-              <div class="status-meta">
-                <span class="label">User:</span>
-                <span id="enrollmentUser" class="value muted">—</span>
-              </div>
-            </div>
-            <div class="enrollment-metrics">
-              <div class="metric-tile">
-                <span class="label">RFID</span>
-                <span id="enrollRfidCount" class="value">0</span>
-              </div>
-              <div class="metric-tile">
-                <span class="label">PIN</span>
-                <span id="enrollPinCount" class="value">0</span>
-              </div>
-              <div class="metric-tile">
-                <span class="label">Remote</span>
-                <span id="enrollRemoteCount" class="value">0</span>
-              </div>
-              <div class="metric-tile wide">
-                <span class="label">Last input</span>
-                <span id="enrollmentLastInput" class="value muted">—</span>
-              </div>
+              <button type="button" class="secondary enrollment-stop-active" id="enrollStopBtn" hidden>Stop</button>
             </div>
           </div>
         </div>
@@ -438,11 +403,11 @@
           </div>
         </div>
         <div class="info-list">
-          <div class="info-row">
+          <div class="info-row info-row-wide">
             <span class="label">UUID</span>
             <span class="value" id="uuid">—</span>
           </div>
-          <div class="info-row">
+          <div class="info-row info-row-wide">
             <span class="label">Server URL</span>
             <span class="value" id="systemServerUrl">https://open-automation.org/devices</span>
           </div>
@@ -454,7 +419,7 @@
             <span class="label">Build Branch</span>
             <span class="value" id="firmwareBranch">—</span>
           </div>
-          <div class="info-row">
+          <div class="info-row info-row-wide">
             <span class="label">Build Commit</span>
             <span class="value" id="firmwareCommit">—</span>
           </div>
@@ -509,10 +474,17 @@
           </div>
         </div>
         <form id="otaForm" class="form ota-form">
-          <label class="form-field">
-            <span>Firmware Binary</span>
-            <input type="file" id="otaFile" accept=".bin,application/octet-stream">
-          </label>
+          <div class="ota-dropzone" id="otaDropzone" role="button" tabindex="0" aria-label="Select firmware binary">
+            <input type="file" id="otaFile" class="sr-only" accept=".bin,application/octet-stream">
+            <div class="ota-drop-icon" aria-hidden="true">
+              <span></span>
+            </div>
+            <div class="ota-drop-copy">
+              <span class="ota-drop-title">Drop firmware binary</span>
+              <span class="ota-drop-subtitle">or choose a controller .bin file</span>
+            </div>
+            <button type="button" class="secondary ota-browse-btn" id="otaBrowseBtn">Choose File</button>
+          </div>
           <div class="ota-file-meta">
             <span id="otaFileName">No file selected</span>
             <span id="otaFileSize">—</span>
@@ -598,6 +570,10 @@
             <span>Server URL</span>
             <input type="text" id="serverUrl" placeholder="https://open-automation.org/devices" value="https://open-automation.org/devices">
           </label>
+          <label class="form-switch server-policy-toggle">
+            <input type="checkbox" id="serverRequireReachable" checked>
+            <span>Require server before station mode</span>
+          </label>
           <div class="form-actions">
             <button type="submit">Save Server</button>
           </div>
@@ -608,6 +584,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=13"></script>
+  <script src="script.js?v=18"></script>
 </body>
 </html>

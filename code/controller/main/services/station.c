@@ -27,6 +27,10 @@ static int s_retry_num = 0;
 static bool s_sntp_started = false;
 static bool s_connected_once = false;
 static int s_disconnect_retry = 0;
+static bool s_wifi_driver_ready = false;
+static bool s_wifi_started = false;
+static bool s_sta_netif_ready = false;
+static bool s_sta_handlers_ready = false;
 
 static void time_sync_notification_cb(struct timeval *tv) {
     time_t now = 0;
@@ -72,7 +76,9 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         s_retry_num = 0;
         s_connected_once = true;
         s_disconnect_retry = 0;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        if (s_wifi_event_group) {
+            xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        }
         if (!s_sntp_started) {
             esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
             esp_sntp_setservername(0, "pool.ntp.org");
@@ -84,16 +90,44 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-bool station_main(char *ssid, char *password) {
-    s_wifi_event_group = xEventGroupCreate();
-
-    ESP_ERROR_CHECK(esp_netif_init());
-
-    esp_netif_create_default_wifi_sta();
+esp_err_t wifi_driver_ensure_initialized(void) {
+    if (s_wifi_driver_ready) {
+        return ESP_OK;
+    }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    esp_err_t err = esp_wifi_init(&cfg);
+    if (err == ESP_OK || err == ESP_ERR_WIFI_INIT_STATE) {
+        s_wifi_driver_ready = true;
+        return ESP_OK;
+    }
 
+    ESP_LOGE(TAG, "Failed to initialize WiFi driver (%s)", esp_err_to_name(err));
+    return err;
+}
+
+static esp_err_t station_ensure_initialized(void) {
+    if (!s_wifi_event_group) {
+        s_wifi_event_group = xEventGroupCreate();
+        if (!s_wifi_event_group) {
+            ESP_LOGE(TAG, "Failed to create WiFi event group");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (!s_sta_netif_ready) {
+        esp_netif_create_default_wifi_sta();
+        s_sta_netif_ready = true;
+    }
+
+    esp_err_t err = wifi_driver_ensure_initialized();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (s_sta_handlers_ready) {
+        return ESP_OK;
+    }
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
@@ -106,6 +140,24 @@ bool station_main(char *ssid, char *password) {
                                                         &event_handler,
                                                         NULL,
                                                         &instance_got_ip));
+    s_sta_handlers_ready = true;
+    return ESP_OK;
+}
+
+bool station_connect(char *ssid, char *password, bool keep_ap_enabled) {
+    if (!ssid || ssid[0] == '\0') {
+        return false;
+    }
+
+    esp_err_t err = station_ensure_initialized();
+    if (err != ESP_OK) {
+        return false;
+    }
+
+    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    s_retry_num = 0;
+    s_disconnect_retry = 0;
+    s_connected_once = false;
 
     wifi_config_t wifi_config = {
         .sta = {
@@ -115,14 +167,34 @@ bool station_main(char *ssid, char *password) {
     };
 
     // Copy ssid and password into wifi_config
-    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
-    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start());
+    err = esp_wifi_set_mode(keep_ap_enabled ? WIFI_MODE_APSTA : WIFI_MODE_STA);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set WiFi mode (%s)", esp_err_to_name(err));
+        return false;
+    }
 
-    ESP_LOGI(TAG, "wifi_init_sta finished.");
+    err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set WiFi STA config (%s)", esp_err_to_name(err));
+        return false;
+    }
+
+    if (!s_wifi_started) {
+        err = esp_wifi_start();
+        if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+            ESP_LOGE(TAG, "Failed to start WiFi (%s)", esp_err_to_name(err));
+            return false;
+        }
+        s_wifi_started = true;
+    } else {
+        esp_wifi_disconnect();
+        esp_wifi_connect();
+    }
+
+    ESP_LOGI(TAG, "wifi_init_sta finished%s.", keep_ap_enabled ? " in APSTA recovery mode" : "");
 
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
             WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
@@ -135,6 +207,21 @@ bool station_main(char *ssid, char *password) {
         return true;
     } else {
         ESP_LOGE(TAG, "Failed to connect to SSID:%s, password:%s", ssid, password);
+        if (keep_ap_enabled) {
+            esp_wifi_disconnect();
+            esp_wifi_set_mode(WIFI_MODE_AP);
+        }
         return false;
     }
+}
+
+void station_disconnect_for_ap_mode(void) {
+    s_connected_once = false;
+    s_retry_num = EXAMPLE_ESP_MAXIMUM_RETRY;
+    s_disconnect_retry = EXAMPLE_ESP_MAXIMUM_RETRY;
+    esp_wifi_disconnect();
+}
+
+bool station_main(char *ssid, char *password) {
+    return station_connect(ssid, password, false);
 }

@@ -141,8 +141,8 @@ class ApiClient {
   }
 
   // Server
-  async updateServer(serverIp, serverPort) {
-    return this.post('/api/server', { serverIp, serverPort });
+  async updateServer(serverUrl, requireReachable = true) {
+    return this.post('/api/server', { serverUrl, requireReachable });
   }
 }
 

@@ -448,6 +448,8 @@ esp_err_t start_file_server(const char *base_path)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 56; // allow API, websocket, OTA, upload, and embedded asset routes
+    config.max_open_sockets = 7;
+    config.lru_purge_enable = true;
     config.stack_size = 8192;
     config.recv_wait_timeout = 30;
     config.send_wait_timeout = 30;

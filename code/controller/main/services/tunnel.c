@@ -26,10 +26,13 @@ static const char *TUNNEL_TAG = "tunnel";
 
 #define TUNNEL_DEFAULT_HOST "192.168.1.43"
 #define TUNNEL_DEFAULT_PORT 9001
+#define PUBLIC_SERVER_HOST "open-automation.org"
+#define PUBLIC_SERVER_PORT 443
 #define TUNNEL_RECONNECT_DELAY_MS 60000
 #define TUNNEL_MAX_HEADER_BYTES (64 * 1024)
 #define TUNNEL_MAX_BODY_BYTES   (128 * 1024)
 #define LOCAL_HTTP_TIMEOUT_MS   8000
+#define TUNNEL_TASK_STACK_BYTES  (8 * 1024)
 
 typedef struct {
     char host[64];
@@ -95,13 +98,9 @@ static void load_tunnel_config(tunnel_config_t *cfg) {
 
     char *stored_host = get_char("tunnel_host");
     char *stored_port = get_char("tunnel_port");
-    char *server_host = get_char("server_ip");
-    char *server_port = get_char("server_port");
 
-    const char *host_pick = (stored_host && stored_host[0]) ? stored_host :
-                            (server_host && server_host[0]) ? server_host : TUNNEL_DEFAULT_HOST;
-    const char *port_pick_str = (stored_port && stored_port[0]) ? stored_port :
-                                (server_port && server_port[0]) ? server_port : NULL;
+    const char *host_pick = (stored_host && stored_host[0]) ? stored_host : TUNNEL_DEFAULT_HOST;
+    const char *port_pick_str = (stored_port && stored_port[0]) ? stored_port : NULL;
 
     snprintf(cfg->host, sizeof(cfg->host), "%s", host_pick);
     if (port_pick_str) {
@@ -114,10 +113,19 @@ static void load_tunnel_config(tunnel_config_t *cfg) {
         cfg->port = TUNNEL_DEFAULT_PORT;
     }
 
+    if (strcmp(cfg->host, PUBLIC_SERVER_HOST) == 0 && cfg->port == PUBLIC_SERVER_PORT) {
+        ESP_LOGW(TUNNEL_TAG,
+                 "Ignoring stale tunnel endpoint %s:%d from server URL settings; using default %s:%d",
+                 cfg->host,
+                 cfg->port,
+                 TUNNEL_DEFAULT_HOST,
+                 TUNNEL_DEFAULT_PORT);
+        snprintf(cfg->host, sizeof(cfg->host), "%s", TUNNEL_DEFAULT_HOST);
+        cfg->port = TUNNEL_DEFAULT_PORT;
+    }
+
     if (stored_host) free(stored_host);
     if (stored_port) free(stored_port);
-    if (server_host) free(server_host);
-    if (server_port) free(server_port);
 }
 
 static esp_http_client_method_t http_method_from_string(const char *method) {
@@ -845,9 +853,14 @@ void tunnel_start(void) {
     host_copy[sizeof(host_copy) - 1] = '\0';
     int port_copy = cfg->port;
 
-    BaseType_t result = xTaskCreate(&tunnel_task, "tunnel_task", 12 * 1024, cfg, 5, NULL);
+    BaseType_t result = xTaskCreate(&tunnel_task, "tunnel_task", TUNNEL_TASK_STACK_BYTES, cfg, 5, NULL);
     if (result != pdPASS) {
-        ESP_LOGE(TUNNEL_TAG, "Failed to create tunnel task");
+        ESP_LOGE(TUNNEL_TAG,
+                 "Failed to create tunnel task (stack=%d free=%lu min=%lu largest=%lu)",
+                 TUNNEL_TASK_STACK_BYTES,
+                 (unsigned long)esp_get_free_heap_size(),
+                 (unsigned long)esp_get_minimum_free_heap_size(),
+                 (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         free(cfg);
         return;
     }
@@ -855,4 +868,3 @@ void tunnel_start(void) {
     tunnel_task_started = true;
     ESP_LOGI(TUNNEL_TAG, "Tunnel task started (connecting to %s:%d)", host_copy, port_copy);
 }
-

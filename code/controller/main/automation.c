@@ -122,6 +122,13 @@ void automation_update_unix_time(int64_t unix_time_seconds) {
     }
 }
 
+int64_t automation_unix_time_for_timestamp_ms(uint64_t timestamp_ms) {
+    if (!s_ntp_synced) {
+        return 0;
+    }
+    return s_unix_offset + (int64_t)(timestamp_ms / 1000ULL);
+}
+
 static const char *reset_reason_to_string(esp_reset_reason_t reason) {
     switch (reason) {
         case ESP_RST_POWERON: return "Power-on";
@@ -396,4 +403,4 @@ void addServerMessageToQueue(const char *message) {
 
     // Transfer ownership to service queue; it will free the object
     addServiceMessageToQueue(json_msg);
-} 
+}
