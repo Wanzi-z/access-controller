@@ -11,6 +11,7 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "esp_heap_caps.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -44,6 +45,7 @@ static const char *API_TAG = "api_server";
 
 static SemaphoreHandle_t s_response_mutex;
 static SemaphoreHandle_t s_ota_mutex;
+static SemaphoreHandle_t s_state_snapshot_mutex;
 static char s_state_response_buffer[STATE_RESPONSE_BUFFER_SIZE];
 
 extern cJSON *lock_state_snapshot(void);
@@ -53,6 +55,9 @@ extern cJSON *keypad_state_snapshot(void);
 extern cJSON *motion_state_snapshot(void);
 extern cJSON *wiegand_state_snapshot(void);
 extern cJSON *system_logs_snapshot(void);
+extern void buzzer_set_quiet_test_mode(bool enabled);
+extern bool buzzer_get_quiet_test_mode(void);
+extern void beep_keypad_force(int beeps, int channel);
 
 extern void handle_lock_message(cJSON *payload);
 extern void handle_exit_message(cJSON *payload);
@@ -78,6 +83,22 @@ static void mac_to_string(const uint8_t mac[6], char *buf, size_t size) {
         return;
     }
     snprintf(buf, size, MACSTR, MAC2STR(mac));
+}
+
+static const char *api_reset_reason_name(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON: return "Power-on";
+        case ESP_RST_EXT: return "External";
+        case ESP_RST_SW: return "Software";
+        case ESP_RST_PANIC: return "Panic";
+        case ESP_RST_INT_WDT: return "Interrupt WDT";
+        case ESP_RST_TASK_WDT: return "Task WDT";
+        case ESP_RST_WDT: return "Other WDT";
+        case ESP_RST_DEEPSLEEP: return "Deep sleep";
+        case ESP_RST_BROWNOUT: return "Brownout";
+        case ESP_RST_SDIO: return "SDIO";
+        default: return "Unknown";
+    }
 }
 
 static void add_netif_ip(cJSON *object, const char *field, const char *if_key) {
@@ -347,6 +368,10 @@ static cJSON *build_state_snapshot(void) {
     cJSON *system = cJSON_CreateObject();
     if (system) {
         cJSON_AddNumberToObject(system, "uptimeSeconds", (double)(esp_timer_get_time() / 1000000ULL));
+        cJSON_AddNumberToObject(system, "freeHeap", esp_get_free_heap_size());
+        cJSON_AddNumberToObject(system, "minFreeHeap", esp_get_minimum_free_heap_size());
+        cJSON_AddNumberToObject(system, "largestFreeBlock", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        cJSON_AddStringToObject(system, "resetReason", api_reset_reason_name(esp_reset_reason()));
         add_firmware_info(system);
         cJSON_AddItemToObject(root, "system", system);
     }
@@ -427,46 +452,61 @@ static esp_err_t send_json_response(httpd_req_t *req, cJSON *json) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to build JSON response");
     }
 
-    bool used_preallocated = false;
-    bool mutex_held = false;
-    char *resp_str = NULL;
-
     if (!s_response_mutex) {
         s_response_mutex = xSemaphoreCreateMutex();
     }
 
-    if (s_response_mutex && xSemaphoreTake(s_response_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-        mutex_held = true;
-        if (cJSON_PrintPreallocated(json, s_state_response_buffer, STATE_RESPONSE_BUFFER_SIZE, false)) {
-            resp_str = s_state_response_buffer;
-            used_preallocated = true;
-        }
+    if (!s_response_mutex || xSemaphoreTake(s_response_mutex, pdMS_TO_TICKS(5000)) != pdTRUE) {
+        cJSON_Delete(json);
+        ESP_LOGW(API_TAG, "Timed out waiting for JSON response buffer");
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Response buffer busy");
     }
 
-    if (!resp_str) {
-        resp_str = cJSON_PrintUnformatted(json);
-        if (!resp_str) {
-            if (mutex_held) {
-                xSemaphoreGive(s_response_mutex);
-            }
-            cJSON_Delete(json);
-            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to serialise JSON");
-        }
+    if (!cJSON_PrintPreallocated(json, s_state_response_buffer, STATE_RESPONSE_BUFFER_SIZE, false)) {
+        xSemaphoreGive(s_response_mutex);
+        cJSON_Delete(json);
+        ESP_LOGE(API_TAG, "JSON response exceeds static buffer (%d bytes)", STATE_RESPONSE_BUFFER_SIZE);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Response too large");
     }
 
-    size_t resp_len = strlen(resp_str);
-    ESP_LOGI(API_TAG, "state response size=%zu (prealloc=%s)", resp_len, used_preallocated ? "yes" : "no");
+    size_t resp_len = strlen(s_state_response_buffer);
+    ESP_LOGD(API_TAG, "json response size=%zu heap=%lu min=%lu largest=%lu",
+             resp_len,
+             (unsigned long)esp_get_free_heap_size(),
+             (unsigned long)esp_get_minimum_free_heap_size(),
+             (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
     httpd_resp_set_hdr(req, "Pragma", "no-cache");
-    esp_err_t result = httpd_resp_send(req, resp_str, resp_len);
+    httpd_resp_set_hdr(req, "Connection", "close");
+    esp_err_t result = httpd_resp_send(req, s_state_response_buffer, resp_len);
     cJSON_Delete(json);
-    if (!used_preallocated) {
-        free(resp_str);
+    xSemaphoreGive(s_response_mutex);
+    return result;
+}
+
+static esp_err_t send_full_state_response(httpd_req_t *req) {
+    bool mutex_held = false;
+    if (!s_state_snapshot_mutex) {
+        s_state_snapshot_mutex = xSemaphoreCreateMutex();
     }
+
+    if (s_state_snapshot_mutex) {
+        if (xSemaphoreTake(s_state_snapshot_mutex, pdMS_TO_TICKS(15000)) != pdTRUE) {
+            ESP_LOGW(API_TAG, "Timed out waiting to build full state snapshot");
+            return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "State snapshot busy");
+        }
+        mutex_held = true;
+    }
+
+    cJSON *state = build_state_snapshot();
+    esp_err_t result = state
+        ? send_json_response(req, state)
+        : httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to build state");
+
     if (mutex_held) {
-        xSemaphoreGive(s_response_mutex);
+        xSemaphoreGive(s_state_snapshot_mutex);
     }
     return result;
 }
@@ -511,7 +551,7 @@ static esp_err_t read_json_body(httpd_req_t *req, cJSON **out_payload) {
 static esp_err_t api_state_get_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
     httpd_resp_set_hdr(req, "Pragma", "no-cache");
-    return send_json_response(req, build_state_snapshot());
+    return send_full_state_response(req);
 }
 
 static esp_err_t api_signals_get_handler(httpd_req_t *req) {
@@ -1019,6 +1059,45 @@ static esp_err_t api_motion_post_handler(httpd_req_t *req) {
     return handle_json_post(req, motion_message_wrapper, motion_state_snapshot);
 }
 
+static esp_err_t api_buzzer_quiet_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
+    bool enabled = enabled_item ? cJSON_IsTrue(enabled_item) : true;
+    cJSON_Delete(payload);
+
+    buzzer_set_quiet_test_mode(enabled);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "quietTestMode", buzzer_get_quiet_test_mode());
+    return send_json_response(req, root);
+}
+
+static esp_err_t api_buzzer_error_beep_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *beeps_item = cJSON_GetObjectItemCaseSensitive(payload, "beeps");
+    const cJSON *channel_item = cJSON_GetObjectItemCaseSensitive(payload, "channel");
+    int beeps = cJSON_IsNumber(beeps_item) ? beeps_item->valueint : 2;
+    int channel = cJSON_IsNumber(channel_item) ? channel_item->valueint : 1;
+    if (beeps < 1) beeps = 1;
+    if (beeps > 5) beeps = 5;
+    if (channel < 1 || channel > 2) channel = 1;
+    cJSON_Delete(payload);
+
+    beep_keypad_force(beeps, channel);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", true);
+    return send_json_response(req, root);
+}
+
 static esp_err_t api_wifi_post_handler(httpd_req_t *req) {
     return handle_json_post(req, handle_authorize_message, build_state_snapshot);
 }
@@ -1028,7 +1107,7 @@ static esp_err_t api_server_post_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_wifi_get_handler(httpd_req_t *req) {
-    return send_json_response(req, build_state_snapshot());
+    return send_full_state_response(req);
 }
 
 static esp_err_t api_wifi_list_get_handler(httpd_req_t *req) {
@@ -1076,7 +1155,7 @@ static esp_err_t api_wifi_delete_post_handler(httpd_req_t *req) {
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete WiFi");
     }
-    return send_json_response(req, build_state_snapshot());
+    return send_full_state_response(req);
 }
 
 static esp_err_t api_wifi_connect_post_handler(httpd_req_t *req) {
@@ -1793,6 +1872,20 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_motion_post_handler,
     };
     httpd_register_uri_handler(server, &motion_post);
+
+    httpd_uri_t buzzer_quiet_post = {
+        .uri = "/api/buzzer/quiet",
+        .method = HTTP_POST,
+        .handler = api_buzzer_quiet_post_handler,
+    };
+    httpd_register_uri_handler(server, &buzzer_quiet_post);
+
+    httpd_uri_t buzzer_error_beep_post = {
+        .uri = "/api/buzzer/error-beep",
+        .method = HTTP_POST,
+        .handler = api_buzzer_error_beep_post_handler,
+    };
+    httpd_register_uri_handler(server, &buzzer_error_beep_post);
 
     httpd_uri_t wifi_post = {
         .uri = "/api/wifi",

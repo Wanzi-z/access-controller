@@ -25,6 +25,19 @@ menu "Wifi Configuration"
             Max number of the STA connects to AP.
 endmenu
 
+menu "Access Controller"
+
+    config ACCESS_CONTROLLER_ENABLE_TUNNEL
+        bool "Enable experimental controller reverse tunnel client"
+        default n
+        help
+            Enables the ESP32-side reverse tunnel task. Leave this disabled for
+            normal Device Manager operation; the current Device Manager path
+            reaches the controller over LAN from the manager host and the public
+            /devices endpoint is only used for punch-in registration.
+
+endmenu
+
 menu "Http_File_Serving Example menu"
 
     config EXAMPLE_MOUNT_SD_CARD

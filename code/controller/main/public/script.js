@@ -692,7 +692,7 @@ const startWiegandPolling = () => {
       }
       renderWiegand(wiegand);
     } catch (error) {
-      handleError(error, 'Failed to refresh Wiegand state');
+      console.warn('Failed to refresh Wiegand state', error);
       stopWiegandPolling();
     }
   }, 2500);

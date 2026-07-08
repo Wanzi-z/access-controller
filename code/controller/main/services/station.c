@@ -194,6 +194,13 @@ bool station_connect(char *ssid, char *password, bool keep_ap_enabled) {
         esp_wifi_connect();
     }
 
+    err = esp_wifi_set_ps(WIFI_PS_NONE);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi power save disabled for low-latency controller traffic");
+    } else {
+        ESP_LOGW(TAG, "Failed to disable WiFi power save (%s)", esp_err_to_name(err));
+    }
+
     ESP_LOGI(TAG, "wifi_init_sta finished%s.", keep_ap_enabled ? " in APSTA recovery mode" : "");
 
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,

@@ -32,6 +32,10 @@ struct motionButton
 };
 
 struct motionButton motions[NUM_OF_MOTIONS];
+static bool motion_settings_dirty = false;
+static TickType_t motion_settings_due = 0;
+
+int storeMotionSettings(void);
 
 static bool motion_json_bool(const cJSON *item)
 {
@@ -72,6 +76,24 @@ static const char *motion_current_mode(struct motionButton *mot)
 		motion_set_mode(mot, motion_mode_from_latch(mot->latch));
 	}
 	return mot->mode;
+}
+
+static void scheduleMotionSettingsStore(void)
+{
+	motion_settings_dirty = true;
+	motion_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+}
+
+static void flushMotionSettingsIfDue(void)
+{
+	if (!motion_settings_dirty) {
+		return;
+	}
+	if ((int32_t)(xTaskGetTickCount() - motion_settings_due) < 0) {
+		return;
+	}
+	motion_settings_dirty = false;
+	storeMotionSettings();
 }
 
 int storeMotionSettings()
@@ -249,7 +271,7 @@ void handle_motion_message(cJSON * payload)
 		if (cJSON_IsString(mode) && mode->valuestring) {
 			modeMotion(ch, mode->valuestring);
 		}
-		storeMotionSettings();
+		scheduleMotionSettingsStore();
 	}
 
 	cJSON_Delete(payload);
@@ -287,6 +309,7 @@ motion_service (void *pvParameter)
 		}
 
 		handle_motion_message(checkServiceMessageByType("motion"));
+		flushMotionSettingsIfDue();
     vTaskDelay(SERVICE_LOOP / portTICK_PERIOD_MS);
   }
 }

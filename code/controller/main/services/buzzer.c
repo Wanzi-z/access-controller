@@ -4,6 +4,7 @@ struct buzzer
 	uint8_t beepCount;
 	uint8_t longBeepCount;
 	bool enable;
+	bool quietTestMode;
 	bool contactAlert;
 };
 
@@ -23,8 +24,9 @@ extern void set_mcp_io_dir(uint8_t io, bool dir);
 
 static const char *BUZZER_TAG = "buzzer";
 
-void beep_keypad(int beeps, int channel) {
+static void beep_keypad_internal(int beeps, int channel, bool force) {
     if (!bzr.enable) return;
+    if (bzr.quietTestMode && !force) return;
 
     // Select the correct PUSH pin based on channel (1 or 2)
     uint8_t push_pin = (channel == 2) ? MCP_PUSH1_IO : MCP_PUSH0_IO;
@@ -61,6 +63,23 @@ void beep_keypad(int beeps, int channel) {
     }
 }
 
+void beep_keypad(int beeps, int channel) {
+    beep_keypad_internal(beeps, channel, false);
+}
+
+void beep_keypad_force(int beeps, int channel) {
+    beep_keypad_internal(beeps, channel, true);
+}
+
+void buzzer_set_quiet_test_mode(bool enabled) {
+    bzr.quietTestMode = enabled;
+    ESP_LOGI(BUZZER_TAG, "Quiet test mode %s", enabled ? "enabled" : "disabled");
+}
+
+bool buzzer_get_quiet_test_mode(void) {
+    return bzr.quietTestMode;
+}
+
 static void buzzer_task(void *pvParameter) {
   while (1) {
     // This task can be used for more complex patterns in the future
@@ -71,6 +90,7 @@ static void buzzer_task(void *pvParameter) {
 void buzzer_main() {
 	bzr.pin = BUZZER_IO;
 	bzr.enable = true;
+	bzr.quietTestMode = false;
 	bzr.contactAlert = true;
 	bzr.longBeepCount = 0;
 	bzr.beepCount = 0;

@@ -35,6 +35,7 @@ class Metrics {
     this.events = [];
     this.lastUptime = null;
     this.reboots = 0;
+    this.heap = { samples: 0, minFree: null, minLargest: null, lastFree: null, lastLargest: null };
   }
 
   record(name, ok, ms, detail = '') {
@@ -51,6 +52,19 @@ class Metrics {
 
   event(name, detail = '') {
     this.events.push({ time: new Date().toISOString(), name, detail });
+  }
+
+  recordHeap(system = {}) {
+    const free = Number(system.freeHeap);
+    const largest = Number(system.largestFreeBlock);
+    if (!Number.isFinite(free)) return;
+    this.heap.samples++;
+    this.heap.lastFree = free;
+    this.heap.minFree = this.heap.minFree == null ? free : Math.min(this.heap.minFree, free);
+    if (Number.isFinite(largest)) {
+      this.heap.lastLargest = largest;
+      this.heap.minLargest = this.heap.minLargest == null ? largest : Math.min(this.heap.minLargest, largest);
+    }
   }
 
   summaryRows() {
@@ -96,7 +110,7 @@ async function timedFetch(baseUrl, path, options, metrics, name) {
   try {
     const response = await fetch(`${baseUrl}${path}`, {
       cache: 'no-store',
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', 'Connection': 'close' },
       signal: controller.signal,
       ...options,
     });
@@ -120,8 +134,27 @@ const postJson = (baseUrl, path, body, metrics, name) => timedFetch(baseUrl, pat
   body: JSON.stringify(body),
 }, metrics, name);
 
-async function stateWorker(baseUrl, metrics, done) {
+async function setQuietTestMode(baseUrl, metrics, enabled) {
+  try {
+    await postJson(baseUrl, '/api/buzzer/quiet', { enabled }, metrics, enabled ? 'POST /api/buzzer/quiet on' : 'POST /api/buzzer/quiet off');
+  } catch (error) {
+    metrics.event('quiet-mode-fail', `${enabled ? 'enable' : 'disable'}: ${error.message}`);
+  }
+}
+
+async function audibleFailureAlert(baseUrl, metrics) {
+  process.stdout.write('\x07');
+  try {
+    await postJson(baseUrl, '/api/buzzer/error-beep', { beeps: 3, channel: 1 }, metrics, 'POST /api/buzzer/error-beep');
+  } catch (error) {
+    metrics.event('error-beep-fail', error.message);
+  }
+}
+
+async function stateWorker(baseUrl, metrics, done, workerId = 0, stateWorkerCount = 1) {
   let i = 0;
+  const auxEvery = numberEnv('SOAK_AUX_EVERY', 20);
+  const auxOffset = (workerId * Math.max(1, Math.floor(auxEvery / Math.max(1, stateWorkerCount)))) % auxEvery;
   while (!done()) {
     try {
       const state = await timedFetch(baseUrl, `/api/state?t=${Date.now()}`, {}, metrics, 'GET /api/state');
@@ -131,17 +164,18 @@ async function stateWorker(baseUrl, metrics, done) {
         metrics.event('reboot-detected', `uptime ${metrics.lastUptime}s -> ${uptime}s`);
       }
       metrics.lastUptime = uptime;
+      metrics.recordHeap(state?.system);
     } catch {}
 
     try {
       await timedFetch(baseUrl, `/api/signals?t=${Date.now()}`, { timeoutMs: 5000 }, metrics, 'GET /api/signals');
     } catch {}
 
-    if (i % 10 === 0) {
+    if ((i + auxOffset) % auxEvery === 0) {
       await Promise.allSettled([
         timedFetch(baseUrl, '/api/discovery', { timeoutMs: 5000 }, metrics, 'GET /api/discovery'),
         timedFetch(baseUrl, '/api/logs', { timeoutMs: 5000 }, metrics, 'GET /api/logs'),
-        timedFetch(baseUrl, '/api/wifi', { timeoutMs: 5000 }, metrics, 'GET /api/wifi'),
+        timedFetch(baseUrl, '/api/wifi/list', { timeoutMs: 5000 }, metrics, 'GET /api/wifi/list'),
         timedFetch(baseUrl, '/api/wiegand', { timeoutMs: 5000 }, metrics, 'GET /api/wiegand'),
         timedFetch(baseUrl, '/api/rf', { timeoutMs: 5000 }, metrics, 'GET /api/rf'),
       ]);
@@ -152,20 +186,29 @@ async function stateWorker(baseUrl, metrics, done) {
   }
 }
 
-async function settingsWorker(baseUrl, metrics, done) {
+async function settingsWorker(baseUrl, metrics, done, workerId = 0) {
   const modes = ['momentary', 'toggle', 'latch'];
   let i = 0;
+  await sleep(workerId * numberEnv('SOAK_SETTINGS_WORKER_STAGGER_MS', 150));
   while (!done()) {
     const channel = (i % 2) + 1;
     const mode = modes[i % modes.length];
     const latch = mode === 'latch';
     const delay = 4 + (i % 3);
-    await Promise.allSettled([
-      postJson(baseUrl, '/api/exit', { channel, mode, latch, delay, alert: i % 2 === 0 }, metrics, 'POST /api/exit'),
-      postJson(baseUrl, '/api/fob', { channel, mode, latch, delay, alert: i % 2 !== 0 }, metrics, 'POST /api/fob'),
-      postJson(baseUrl, '/api/keypad', { channel, mode, latch, delay, alert: true }, metrics, 'POST /api/keypad'),
-      postJson(baseUrl, '/api/motion', { channel, mode, latch, delay, alert: true }, metrics, 'POST /api/motion'),
-    ]);
+    const updates = [
+      ['/api/exit', 'POST /api/exit'],
+      ['/api/fob', 'POST /api/fob'],
+      ['/api/keypad', 'POST /api/keypad'],
+      ['/api/motion', 'POST /api/motion'],
+    ];
+    const offset = workerId % updates.length;
+    for (let j = 0; j < updates.length; j++) {
+      const [path, name] = updates[(j + offset) % updates.length];
+      try {
+        await postJson(baseUrl, path, { channel, enable: false, mode, latch, delay, alert: false }, metrics, name);
+      } catch {}
+      await sleep(numberEnv('SOAK_SETTINGS_STEP_MS', 50));
+    }
     i++;
     await sleep(300);
   }
@@ -251,13 +294,50 @@ async function otaScheduler(baseUrl, metrics, done, startedAt, durationMs) {
   }
 }
 
+const serviceState = (state, key) => Array.isArray(state?.[key]) ? state[key] : [];
+
+async function applyNonActuatingSettings(baseUrl, metrics) {
+  for (const channel of [1, 2]) {
+    await Promise.allSettled([
+      postJson(baseUrl, '/api/exit', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/exit'),
+      postJson(baseUrl, '/api/fob', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/fob'),
+      postJson(baseUrl, '/api/keypad', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/keypad'),
+      postJson(baseUrl, '/api/motion', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/motion'),
+    ]);
+  }
+  await sleep(1200);
+}
+
+async function restoreSettings(baseUrl, metrics, initialState) {
+  const restoreService = async (path, key, metricName) => {
+    for (const item of serviceState(initialState, key)) {
+      const channel = Number(item.channel);
+      if (!Number.isFinite(channel) || channel < 1) continue;
+      await postJson(baseUrl, path, {
+        channel,
+        enable: !!item.enable,
+        alert: !!item.alert,
+        mode: item.mode || (item.latch ? 'latch' : 'momentary'),
+        latch: !!item.latch,
+        delay: Number.isFinite(Number(item.delay)) ? Number(item.delay) : 4,
+      }, metrics, metricName);
+    }
+  };
+  await Promise.allSettled([
+    restoreService('/api/exit', 'exits', 'restore /api/exit'),
+    restoreService('/api/fob', 'fobs', 'restore /api/fob'),
+    restoreService('/api/keypad', 'keypads', 'restore /api/keypad'),
+    restoreService('/api/motion', 'motions', 'restore /api/motion'),
+  ]);
+}
+
 async function restoreDefaults(baseUrl, metrics) {
   for (const channel of [1, 2]) {
     await Promise.allSettled([
-      postJson(baseUrl, '/api/exit', { channel, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/exit'),
-      postJson(baseUrl, '/api/fob', { channel, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/fob'),
-      postJson(baseUrl, '/api/keypad', { channel, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/keypad'),
-      postJson(baseUrl, '/api/motion', { channel, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/motion'),
+      postJson(baseUrl, '/api/exit', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/exit'),
+      postJson(baseUrl, '/api/fob', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/fob'),
+      postJson(baseUrl, '/api/keypad', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/keypad'),
+      postJson(baseUrl, '/api/motion', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/motion'),
     ]);
   }
 }
@@ -270,7 +350,7 @@ function writeArtifacts(metrics, config, reportName = 'reliability-soak') {
   const totals = metrics.totals();
   const jsonPath = resolve(artifactDir, `${reportName}-${stamp}.json`);
   const mdPath = resolve(artifactDir, `${reportName}-${stamp}.md`);
-  writeFileSync(jsonPath, JSON.stringify({ config, totals, rows, events: metrics.events, failures: metrics.failures }, null, 2));
+  writeFileSync(jsonPath, JSON.stringify({ config, totals, rows, heap: metrics.heap, events: metrics.events, failures: metrics.failures }, null, 2));
   writeFileSync(mdPath, [
     '# Access Controller Reliability Soak',
     '',
@@ -284,6 +364,14 @@ function writeArtifacts(metrics, config, reportName = 'reliability-soak') {
     '',
     formatTable(rows),
     '',
+    '## Heap',
+    '',
+    `Samples: ${metrics.heap.samples}`,
+    `Minimum free heap: ${metrics.heap.minFree ?? 'unknown'}`,
+    `Minimum largest free block: ${metrics.heap.minLargest ?? 'unknown'}`,
+    `Last free heap: ${metrics.heap.lastFree ?? 'unknown'}`,
+    `Last largest free block: ${metrics.heap.lastLargest ?? 'unknown'}`,
+    '',
     '## Events',
     '',
     ...(metrics.events.length ? metrics.events.map(e => `- ${e.time} ${e.name}: ${e.detail}`) : ['- none']),
@@ -295,6 +383,20 @@ function writeArtifacts(metrics, config, reportName = 'reliability-soak') {
   ].join('\n'));
   return { jsonPath, mdPath };
 }
+
+const isTransientNetworkDetail = (detail = '') => (
+  /fetch failed|timed out|ECONN|ERR_CONNECTION|ERR_EMPTY_RESPONSE|ERR_INCOMPLETE|reset|aborted|terminated/i.test(String(detail))
+);
+
+const isFailureNearOtaEvent = (failure, events, windowMs) => {
+  const failureMs = Date.parse(failure?.time || '');
+  if (!Number.isFinite(failureMs)) return false;
+  return events.some(event => {
+    if (!['ota-pass', 'reboot-detected'].includes(event?.name)) return false;
+    const eventMs = Date.parse(event.time || '');
+    return Number.isFinite(eventMs) && Math.abs(failureMs - eventMs) <= windowMs;
+  });
+};
 
 export default async function run(api, report) {
   report.startSuite('Reliability Soak', 'Concurrent API, UI refresh, settings update, uptime, and OTA load test');
@@ -315,9 +417,18 @@ export default async function run(api, report) {
   };
 
   metrics.event('start', JSON.stringify(config));
+  let initialState = null;
+  try {
+    initialState = await timedFetch(baseUrl, `/api/state?t=${Date.now()}`, {}, metrics, 'GET /api/state initial');
+    await setQuietTestMode(baseUrl, metrics, true);
+    await applyNonActuatingSettings(baseUrl, metrics);
+  } catch (error) {
+    metrics.event('prepare-fail', error.message);
+  }
+
   const tasks = [];
-  for (let i = 0; i < config.stateWorkers; i++) tasks.push(stateWorker(baseUrl, metrics, done));
-  for (let i = 0; i < config.settingsWorkers; i++) tasks.push(settingsWorker(baseUrl, metrics, done));
+  for (let i = 0; i < config.stateWorkers; i++) tasks.push(stateWorker(baseUrl, metrics, done, i, config.stateWorkers));
+  for (let i = 0; i < config.settingsWorkers; i++) tasks.push(settingsWorker(baseUrl, metrics, done, i));
   for (let i = 0; i < config.browserWorkers; i++) tasks.push(browserWorker(baseUrl, metrics, done, i + 1));
   tasks.push(otaScheduler(baseUrl, metrics, done, startedAt, durationMs));
 
@@ -330,7 +441,11 @@ export default async function run(api, report) {
 
   try {
     await Promise.allSettled(tasks);
-    await restoreDefaults(baseUrl, metrics);
+    if (initialState) {
+      await restoreSettings(baseUrl, metrics, initialState);
+    } else {
+      await restoreDefaults(baseUrl, metrics);
+    }
   } finally {
     clearInterval(progressTimer);
   }
@@ -341,11 +456,23 @@ export default async function run(api, report) {
   console.log('\nFinal reliability table:');
   console.log(formatTable(rows));
 
+  const hasUnexpectedFailures = totals.fail > 0 || metrics.reboots > config.otaRepeats;
+  if (hasUnexpectedFailures && boolEnv('SOAK_AUDIBLE_ALERT', true)) {
+    await audibleFailureAlert(baseUrl, metrics);
+  } else {
+    await setQuietTestMode(baseUrl, metrics, false);
+  }
+
   if (totals.fail === 0) {
     report.pass('Soak completed without request failures', `${totals.ok}/${totals.count} ok; ${artifacts.mdPath}`, Date.now() - startedAt);
   } else {
-    const allowOtaFailures = boolEnv('SOAK_ALLOW_OTA_DOWNTIME', true);
-    const nonOtaFailures = metrics.failures.filter(f => !allowOtaFailures || !/fetch failed|timed out|ECONN|reset|aborted/i.test(f.detail));
+    const allowOtaFailures = config.otaRepeats > 0 && boolEnv('SOAK_ALLOW_OTA_DOWNTIME', true);
+    const otaWindowMs = numberEnv('SOAK_OTA_TRANSIENT_WINDOW_MS', 45000);
+    const nonOtaFailures = metrics.failures.filter(f => (
+      !allowOtaFailures
+      || !isTransientNetworkDetail(f.detail)
+      || !isFailureNearOtaEvent(f, metrics.events, otaWindowMs)
+    ));
     if (nonOtaFailures.length === 0) {
       report.pass('Soak completed with only expected OTA/reboot transient failures', `${totals.ok}/${totals.count} ok, ${totals.fail} transient; ${artifacts.mdPath}`, Date.now() - startedAt);
     } else {

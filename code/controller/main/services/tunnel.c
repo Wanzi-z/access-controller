@@ -34,6 +34,10 @@ static const char *TUNNEL_TAG = "tunnel";
 #define LOCAL_HTTP_TIMEOUT_MS   8000
 #define TUNNEL_TASK_STACK_BYTES  (8 * 1024)
 
+#ifndef CONFIG_ACCESS_CONTROLLER_ENABLE_TUNNEL
+#define CONFIG_ACCESS_CONTROLLER_ENABLE_TUNNEL 0
+#endif
+
 typedef struct {
     char host[64];
     int port;
@@ -837,6 +841,15 @@ static void tunnel_task(void *param) {
 }
 
 void tunnel_start(void) {
+    if (!CONFIG_ACCESS_CONTROLLER_ENABLE_TUNNEL) {
+        static bool logged_disabled = false;
+        if (!logged_disabled) {
+            ESP_LOGI(TUNNEL_TAG, "Controller reverse tunnel disabled by firmware config");
+            logged_disabled = true;
+        }
+        return;
+    }
+
     if (tunnel_task_started) {
         return;
     }

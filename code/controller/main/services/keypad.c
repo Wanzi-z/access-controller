@@ -32,9 +32,12 @@ struct keypadButton
 };
 
 struct keypadButton keypads[NUM_OF_KEYPADS];
+static bool keypad_settings_dirty = false;
+static TickType_t keypad_settings_due = 0;
 
 void sendKeypadState(void);
 cJSON *keypad_state_snapshot(void);
+int storeKeypadSettings(void);
 
 static bool keypad_json_bool(const cJSON *item)
 {
@@ -75,6 +78,24 @@ static const char *keypad_current_mode(struct keypadButton *pad)
 		keypad_set_mode(pad, keypad_mode_from_latch(pad->latch));
 	}
 	return pad->mode;
+}
+
+static void scheduleKeypadSettingsStore(void)
+{
+	keypad_settings_dirty = true;
+	keypad_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+}
+
+static void flushKeypadSettingsIfDue(void)
+{
+	if (!keypad_settings_dirty) {
+		return;
+	}
+	if ((int32_t)(xTaskGetTickCount() - keypad_settings_due) < 0) {
+		return;
+	}
+	keypad_settings_dirty = false;
+	storeKeypadSettings();
 }
 
 void start_keypad_timer (struct keypadButton *pad, bool val)
@@ -308,7 +329,7 @@ void handle_keypad_message(cJSON * payload)
 			 modeKeypad(ch, mode->valuestring);
 		 }
 
-		 storeKeypadSettings();
+		 scheduleKeypadSettingsStore();
 	}
 
 	cJSON_Delete(payload);
@@ -324,6 +345,7 @@ keypad_service (void *pvParameter)
 			check_keypads(&keypads[i]);
 
 		                handle_keypad_message(checkServiceMessageByType("keypad"));
+		flushKeypadSettingsIfDue();
     vTaskDelay(SERVICE_LOOP / portTICK_PERIOD_MS);
   }
 }

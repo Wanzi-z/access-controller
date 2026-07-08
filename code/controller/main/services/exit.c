@@ -27,6 +27,10 @@ struct exitButton
 };
 
 struct exitButton exits[NUM_OF_EXITS];
+static bool exit_settings_dirty = false;
+static TickType_t exit_settings_due = 0;
+
+int storeExitSettings(void);
 
 static bool exit_json_bool(const cJSON *item)
 {
@@ -67,6 +71,24 @@ static const char *exit_current_mode(struct exitButton *ext)
 		exit_set_mode(ext, exit_mode_from_latch(ext->latch));
 	}
 	return ext->mode;
+}
+
+static void scheduleExitSettingsStore(void)
+{
+	exit_settings_dirty = true;
+	exit_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+}
+
+static void flushExitSettingsIfDue(void)
+{
+	if (!exit_settings_dirty) {
+		return;
+	}
+	if ((int32_t)(xTaskGetTickCount() - exit_settings_due) < 0) {
+		return;
+	}
+	exit_settings_dirty = false;
+	storeExitSettings();
 }
 
 void start_exit_timer (struct exitButton *ext, bool val)
@@ -285,7 +307,7 @@ void handle_exit_message(cJSON * payload)
 		if (cJSON_IsString(mode) && mode->valuestring) {
 			modeExit(ch, mode->valuestring);
 		}
-		storeExitSettings();
+		scheduleExitSettingsStore();
 	}
 
 	cJSON_Delete(payload);
@@ -299,6 +321,7 @@ exit_service (void *pvParameter)
 			check_exit(&exits[i]);
 
 		                handle_exit_message(checkServiceMessageByType("exit"));
+		flushExitSettingsIfDue();
     vTaskDelay(SERVICE_LOOP / portTICK_PERIOD_MS);
   }
 }

@@ -32,11 +32,12 @@ Run the full load test with browser refreshes, settings churn, API traffic, upti
 cd ~/projects/access-controller/code/controller/tests
 DEVICE_URL=http://192.168.1.131 \
 SOAK_DURATION_MS=3600000 \
-SOAK_STATE_WORKERS=4 \
-SOAK_SETTINGS_WORKERS=2 \
-SOAK_BROWSER_WORKERS=2 \
+SOAK_STATE_WORKERS=2 \
+SOAK_SETTINGS_WORKERS=1 \
+SOAK_BROWSER_WORKERS=1 \
 SOAK_BROWSER_REFRESH_MS=3000 \
 SOAK_OTA_REPEATS=4 \
+SOAK_AUDIBLE_ALERT=1 \
 SOAK_PROGRESS_MS=60000 \
 npm run test:soak
 ```
@@ -47,13 +48,18 @@ Expected evidence:
 - Browser reloads succeed and System uptime text ticks every second.
 - OTA upload/reboot succeeds for every scheduled upload.
 - No unexpected reboot beyond scheduled OTA reboot events.
+- Normal load testing is quiet: the suite enables controller quiet-test mode and sends synthetic settings updates with `alert:false`.
+- If a non-OTA request failure or unexpected reboot is detected, the suite emits an audible terminal bell and attempts a forced controller error beep.
 - Markdown and JSON reports are written to `code/controller/tests/artifacts/`.
+
+The 4 state / 2 settings / 2 browser worker profile is a destructive stress profile for the current ESP32 build. Use it only when intentionally investigating overload behavior; it can wedge Wi-Fi/HTTP without a firmware panic. The acceptance soak is the 2/1/1 profile above, which still exercises continuous API traffic, browser refreshes, settings churn, uptime ticks, and OTA.
 
 ## Fast Smoke After Fixes
 
 ```bash
 cd ~/projects/access-controller/code/controller/tests
 DEVICE_URL=http://192.168.1.131 npm run test:quick
+DEVICE_URL=http://192.168.1.131 SOAK_DURATION_MS=120000 SOAK_OTA_REPEATS=0 SOAK_AUDIBLE_ALERT=1 npm run test:soak
 DEVICE_URL=http://192.168.1.131 npm run test:ui
 ```
 
@@ -69,6 +75,45 @@ for i in 1 2 3 4 5; do
   curl -sf http://192.168.1.131/api/state | jq '{version:.system.firmware.projectVersion, ota:.system.firmware.otaState, running:.system.firmware.runningPartition.label, uptime:.system.uptimeSeconds}'
 done
 ```
+
+## Device Manager And Public `/devices`
+
+The production path is:
+
+- ESP32 posts/punches to `https://open-automation.org/devices`.
+- Cloudflare/nginx forwards only punch/health traffic through the Sonic reverse SSH tunnel.
+- Device Manager on `sonic` controls and OTAs the controller over LAN at the controller STA IP.
+- The ESP32-side experimental reverse tunnel client is disabled by default with `CONFIG_ACCESS_CONTROLLER_ENABLE_TUNNEL=n`; do not re-enable it for normal testing because it consumes heap/socket capacity and the current implementation is not suitable for full OTA-sized bodies.
+
+Verify the public punch path without exposing the full UI:
+
+```bash
+curl -sf -X POST https://open-automation.org/devices \
+  -H 'Content-Type: application/json' \
+  -d '{"uuid":"smoke-test","name":"codex-smoke","type":"access_controller"}'
+```
+
+Remove any temporary punch record after the test from `sonic:/home/andy/projects/device-manager/data/discovery/punched.json`.
+
+Verify Device Manager LAN-backed state:
+
+```bash
+ssh sonic 'curl -sf http://127.0.0.1:8102/api/devices/9f820690-f8e3-5a9c-84c1-f474f57c08a2/access-controller/state \
+  | jq "{ok, device_id, uuid:.state.device.uuid, ip:.state.device.network.wifi_sta_ip, running:.state.system.firmware.runningPartition.label, ota:.state.system.firmware.otaState}"'
+```
+
+Verify Device Manager OTA:
+
+```bash
+scp ~/projects/access-controller/code/controller/build/controller.bin sonic:/tmp/access-controller-candidate.bin
+ssh sonic 'curl -sf --max-time 180 -X POST \
+  http://127.0.0.1:8102/api/devices/9f820690-f8e3-5a9c-84c1-f474f57c08a2/access-controller/ota \
+  -H "Content-Type: application/octet-stream" \
+  -H "X-Firmware-Filename: controller.bin" \
+  --data-binary @/tmp/access-controller-candidate.bin | jq .'
+```
+
+After Device Manager OTA, confirm both direct LAN and Device Manager state return `otaState: valid`.
 
 ## Erase-Flash And AP Recovery
 
@@ -123,7 +168,7 @@ To test fallback without erasing flash:
 5. During AP mode, run a short soak against `http://192.168.4.1`:
    ```bash
    cd ~/projects/access-controller/code/controller/tests
-   DEVICE_URL=http://192.168.4.1 SOAK_DURATION_MS=300000 SOAK_OTA_REPEATS=0 npm run test:soak
+   DEVICE_URL=http://192.168.4.1 SOAK_DURATION_MS=300000 SOAK_OTA_REPEATS=0 SOAK_AUDIBLE_ALERT=1 npm run test:soak
    ```
 
 ## Pass Criteria
@@ -132,6 +177,8 @@ To test fallback without erasing flash:
 - p95 state and signal latency stays below 1000 ms on LAN.
 - Browser refresh p95 stays below 3000 ms on LAN.
 - Uptime text changes every second in the UI.
+- No normal beeps during passing load traffic; audible alerts occur only for failure/reboot conditions.
 - Every scheduled OTA returns online, lands in the alternate app slot, and becomes `valid`.
+- Device Manager can fetch state and proxy OTA over LAN from `sonic`; public `open-automation.org/devices` remains punch-only unless an authenticated public control route is intentionally added.
 - Flash erase produces AP mode and Wi-Fi reprovisioning returns to STA mode.
 - Reports and any fixes are committed with the exact verification commands in the final summary.

@@ -69,8 +69,9 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     extern const unsigned char favicon_ico_end[]   asm("_binary_favicon_ico_end");
     const size_t favicon_ico_size = (favicon_ico_end - favicon_ico_start);
     httpd_resp_set_type(req, "image/x-icon");
-    httpd_resp_send(req, (const char *)favicon_ico_start, favicon_ico_size);
-    return ESP_OK;
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400, immutable");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return httpd_resp_send(req, (const char *)favicon_ico_start, favicon_ico_size);
 }
 
 static esp_err_t script_get_handler(httpd_req_t *req)
@@ -79,9 +80,9 @@ static esp_err_t script_get_handler(httpd_req_t *req)
     extern const unsigned char script_js_end[]   asm("_binary_script_js_end");
     const size_t script_js_size = (script_js_end - script_js_start);
     httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    httpd_resp_send(req, (const char *)script_js_start, script_js_size);
-    return ESP_OK;
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400, immutable");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return httpd_resp_send(req, (const char *)script_js_start, script_js_size);
 }
 
 static esp_err_t style_get_handler(httpd_req_t *req)
@@ -90,9 +91,9 @@ static esp_err_t style_get_handler(httpd_req_t *req)
     extern const unsigned char style_css_end[]   asm("_binary_style_css_end");
     const size_t style_css_size = (style_css_end - style_css_start);
     httpd_resp_set_type(req, "text/css");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    httpd_resp_send(req, (const char *)style_css_start, style_css_size);
-    return ESP_OK;
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400, immutable");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return httpd_resp_send(req, (const char *)style_css_start, style_css_size);
 }
 
 static esp_err_t index_get_handler(httpd_req_t *req)
@@ -102,8 +103,8 @@ static esp_err_t index_get_handler(httpd_req_t *req)
     const size_t index_html_size = (index_html_end - index_html_start);
     httpd_resp_set_type(req, "text/html");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    httpd_resp_send(req, (const char *)index_html_start, index_html_size);
-    return ESP_OK;
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return httpd_resp_send(req, (const char *)index_html_start, index_html_size);
 }
 
 /* Send HTTP response with a run-time generated html consisting of
@@ -117,8 +118,8 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 	const size_t index_html_size = (index_html_end - index_html_start);
 	httpd_resp_set_type(req, "text/html");
 	httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-	httpd_resp_send(req, (const char *)index_html_start, index_html_size);
-	return ESP_OK;
+	httpd_resp_set_hdr(req, "Connection", "close");
+	return httpd_resp_send(req, (const char *)index_html_start, index_html_size);
 }
 
 #define IS_FILE_EXT(filename, ext) \
@@ -227,6 +228,7 @@ static esp_err_t download_get_handler(httpd_req_t *req)
     /* Prevent browser from caching HTML/JS/CSS so updated files are always loaded */
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
     httpd_resp_set_hdr(req, "Pragma", "no-cache");
+    httpd_resp_set_hdr(req, "Connection", "close");
 
     /* Retrieve the pointer to scratch buffer for temporary storage */
     char *chunk = ((struct file_server_data *)req->user_ctx)->scratch;
@@ -256,9 +258,7 @@ static esp_err_t download_get_handler(httpd_req_t *req)
     ESP_LOGI(FILE_TAG, "File sending complete");
 
     /* Respond with an empty chunk to signal HTTP response completion */
-#ifdef CONFIG_EXAMPLE_HTTPD_CONN_CLOSE_HEADER
     httpd_resp_set_hdr(req, "Connection", "close");
-#endif
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
@@ -370,9 +370,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     /* Redirect onto root to see the updated file list */
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
-#ifdef CONFIG_EXAMPLE_HTTPD_CONN_CLOSE_HEADER
     httpd_resp_set_hdr(req, "Connection", "close");
-#endif
     httpd_resp_sendstr(req, "File uploaded successfully");
     return ESP_OK;
 }
@@ -414,9 +412,7 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
     /* Redirect onto root to see the updated file list */
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
-#ifdef CONFIG_EXAMPLE_HTTPD_CONN_CLOSE_HEADER
     httpd_resp_set_hdr(req, "Connection", "close");
-#endif
     httpd_resp_sendstr(req, "File deleted successfully");
     return ESP_OK;
 }
@@ -447,12 +443,12 @@ esp_err_t start_file_server(const char *base_path)
             sizeof(server_data->base_path));
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 56; // allow API, websocket, OTA, upload, and embedded asset routes
+    config.max_uri_handlers = 58; // allow API, websocket, OTA, upload, and embedded asset routes
     config.max_open_sockets = 7;
     config.lru_purge_enable = true;
     config.stack_size = 8192;
-    config.recv_wait_timeout = 30;
-    config.send_wait_timeout = 30;
+    config.recv_wait_timeout = 5;
+    config.send_wait_timeout = 5;
 
     /* Use the URI wildcard matching function in order to
      * allow the same handler to respond to multiple different

@@ -29,6 +29,10 @@ struct fob
 };
 
 struct fob fobs[NUM_OF_FOBS];
+static bool fob_settings_dirty = false;
+static TickType_t fob_settings_due = 0;
+
+int storeFobSettings(void);
 
 static bool fob_json_bool(const cJSON *item)
 {
@@ -69,6 +73,24 @@ static const char *fob_current_mode(struct fob *fb)
 		fob_set_mode(fb, fob_mode_from_latch(fb->latch));
 	}
 	return fb->mode;
+}
+
+static void scheduleFobSettingsStore(void)
+{
+	fob_settings_dirty = true;
+	fob_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+}
+
+static void flushFobSettingsIfDue(void)
+{
+	if (!fob_settings_dirty) {
+		return;
+	}
+	if ((int32_t)(xTaskGetTickCount() - fob_settings_due) < 0) {
+		return;
+	}
+	fob_settings_dirty = false;
+	storeFobSettings();
 }
 
 void start_fob_timer (struct fob *fb, bool val)
@@ -262,7 +284,7 @@ void handle_fob_message(cJSON * payload)
 		if (cJSON_IsString(mode) && mode->valuestring) {
 			fob_set_mode(&fobs[ch - 1], mode->valuestring);
 		}
-		storeFobSettings();
+		scheduleFobSettingsStore();
 	}
 
 	cJSON_Delete(payload);
@@ -278,6 +300,7 @@ fob_service (void *pvParameter)
 			check_fobs(&fobs[i]);
 
 		                handle_fob_message(checkServiceMessageByType("fob"));
+		flushFobSettingsIfDue();
     vTaskDelay(SERVICE_LOOP / portTICK_PERIOD_MS);
   }
 }
