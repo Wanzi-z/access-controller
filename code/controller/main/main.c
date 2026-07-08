@@ -30,6 +30,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_random.h"
 #include "esp_heap_caps.h"
+#include "esp_mac.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -145,6 +146,44 @@ static void generate_uuid_v4(char *uuid, size_t size) {
              bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
 }
 
+static void generate_device_uuid(char *uuid, size_t size) {
+    if (!uuid || size < 37) {
+        if (uuid && size > 0) {
+            uuid[0] = '\0';
+        }
+        return;
+    }
+
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) {
+        generate_uuid_v4(uuid, size);
+        return;
+    }
+
+    uint8_t bytes[16] = {
+        0xac, 0xce, 0x55, 0x01,
+        mac[0], mac[1], mac[2], mac[3],
+        mac[4], mac[5],
+        (uint8_t)(mac[5] ^ 0xa5),
+        (uint8_t)(mac[4] ^ 0x5a),
+        (uint8_t)(mac[3] ^ 0xc3),
+        (uint8_t)(mac[2] ^ 0x3c),
+        (uint8_t)(mac[1] ^ 0xf0),
+        (uint8_t)(mac[0] ^ 0x0f),
+    };
+
+    bytes[6] = (bytes[6] & 0x0F) | 0x40; // Version 4 layout
+    bytes[8] = (bytes[8] & 0x3F) | 0x80; // RFC 4122 variant
+
+    snprintf(uuid, size,
+             "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+             bytes[0], bytes[1], bytes[2], bytes[3],
+             bytes[4], bytes[5],
+             bytes[6], bytes[7],
+             bytes[8], bytes[9],
+             bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
+}
+
 static void ensure_device_identity(void) {
     char *stored_device_id = get_char("device_id");
     bool need_new_device_id = true;
@@ -154,7 +193,7 @@ static void ensure_device_identity(void) {
     }
 
     if (need_new_device_id) {
-        generate_uuid_v4(device_id, sizeof(device_id));
+        generate_device_uuid(device_id, sizeof(device_id));
         if (store_char("device_id", device_id) != ESP_OK) {
             ESP_LOGE(TAG, "Failed to persist device UUID");
         }

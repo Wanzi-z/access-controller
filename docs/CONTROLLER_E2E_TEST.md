@@ -335,7 +335,7 @@ idf.py -p /dev/ttyUSB0 monitor
 Expected first-boot evidence:
 
 - NVS starts empty or is re-initialized.
-- A new or retained factory identity is printed as `Device UUID: ...`.
+- A deterministic MAC-derived identity is printed as `Device UUID: ...`; repeated full-chip erases of the same board must produce the same UUID.
 - Wi-Fi station mode fails due to no saved valid Wi-Fi credentials.
 - AP mode starts with an `ac_...` SSID and password `pyfitech`.
 - Device UI is reachable at `http://192.168.4.1/` after joining the AP.

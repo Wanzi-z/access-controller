@@ -136,6 +136,7 @@ This is destructive to saved settings. Preserve the known Wi-Fi credentials firs
    - Connect the host Wi-Fi to the controller AP.
    - Open or query `http://192.168.4.1/api/state`.
    - Confirm `device.network.wifi_ap_ip` is `192.168.4.1` and STA IP is empty.
+   - Confirm `device.uuid` is stable for this board across full-chip erases.
 
 4. Restore Wi-Fi from AP mode:
    ```bash
@@ -180,5 +181,5 @@ To test fallback without erasing flash:
 - No normal beeps during passing load traffic; audible alerts occur only for failure/reboot conditions.
 - Every scheduled OTA returns online, lands in the alternate app slot, and becomes `valid`.
 - Device Manager can fetch state and proxy OTA over LAN from `sonic`; public `open-automation.org/devices` remains punch-only unless an authenticated public control route is intentionally added.
-- Flash erase produces AP mode and Wi-Fi reprovisioning returns to STA mode.
+- Flash erase produces the same MAC-derived UUID, enters AP mode, and Wi-Fi reprovisioning returns to STA mode.
 - Reports and any fixes are committed with the exact verification commands in the final summary.
