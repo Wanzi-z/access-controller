@@ -615,7 +615,8 @@ cJSON *wiegand_registry_snapshot(void) {
         return NULL;
     }
 
-    if (!s_mutex || xSemaphoreTake(s_mutex, portMAX_DELAY) != pdTRUE) {
+    if (!s_mutex || xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+        ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY, "Timed out waiting for registry snapshot lock");
         cJSON_Delete(array);
         return NULL;
     }

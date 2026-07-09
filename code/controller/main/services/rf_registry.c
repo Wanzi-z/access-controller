@@ -211,7 +211,13 @@ void rf_registry_init(void) {
 }
 
 bool rf_registry_is_active(void) {
-    return rf_registration_active;
+    rf_ensure_mutex();
+    if (!rf_mutex || xSemaphoreTake(rf_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return false;
+    }
+    bool active = rf_registration_active;
+    xSemaphoreGive(rf_mutex);
+    return active;
 }
 
 esp_err_t rf_registration_start(void) {
@@ -435,6 +441,36 @@ static cJSON *serialize_state_locked(void) {
     return obj;
 }
 
+static cJSON *serialize_summary_locked(void) {
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) return NULL;
+    cJSON_AddBoolToObject(obj, "registrationActive", rf_registration_active);
+    cJSON_AddNumberToObject(obj, "registrationPending", (double)rf_pending);
+    cJSON_AddStringToObject(obj, "lastDuplicateCode", rf_last_duplicate);
+    cJSON_AddNumberToObject(obj, "userCount", (double)rf_user_count);
+
+    cJSON *arr = cJSON_CreateArray();
+    if (arr) {
+        for (size_t i = 0; i < rf_user_count; i++) {
+            rf_user_t *u = &rf_users[i];
+            cJSON *uobj = cJSON_CreateObject();
+            if (!uobj) continue;
+            cJSON_AddStringToObject(uobj, "id", u->id);
+            cJSON_AddStringToObject(uobj, "code", u->code);
+            cJSON_AddStringToObject(uobj, "name", u->name);
+            cJSON_AddNumberToObject(uobj, "sequence", (double)u->sequence);
+            cJSON_AddStringToObject(uobj, "mode", u->mode);
+            cJSON_AddNumberToObject(uobj, "channel_mask", (double)u->channel_mask);
+            cJSON_AddNumberToObject(uobj, "exit_seconds", (double)u->exit_seconds);
+            cJSON_AddBoolToObject(uobj, "alert", u->alert);
+            cJSON_AddBoolToObject(uobj, "enabled", u->enabled);
+            cJSON_AddItemToArray(arr, uobj);
+        }
+        cJSON_AddItemToObject(obj, "users", arr);
+    }
+    return obj;
+}
+
 void rf_registry_record_rx(uint32_t code, const rf_rx_metrics_t *metrics) {
     if (!metrics) {
         return;
@@ -457,8 +493,37 @@ void rf_registry_record_rx(uint32_t code, const rf_rx_metrics_t *metrics) {
 
 cJSON *rf_state_snapshot(void) {
     rf_ensure_mutex();
-    xSemaphoreTake(rf_mutex, portMAX_DELAY);
+    if (!rf_mutex || xSemaphoreTake(rf_mutex, pdMS_TO_TICKS(250)) != pdTRUE) {
+        cJSON *busy = cJSON_CreateObject();
+        if (busy) {
+            cJSON_AddBoolToObject(busy, "registrationActive", false);
+            cJSON_AddNumberToObject(busy, "registrationPending", 0);
+            cJSON_AddStringToObject(busy, "lastDuplicateCode", "");
+            cJSON_AddBoolToObject(busy, "busy", true);
+            cJSON_AddItemToObject(busy, "users", cJSON_CreateArray());
+        }
+        return busy;
+    }
     cJSON *snap = serialize_state_locked();
+    xSemaphoreGive(rf_mutex);
+    return snap;
+}
+
+cJSON *rf_state_summary_snapshot(void) {
+    rf_ensure_mutex();
+    if (!rf_mutex || xSemaphoreTake(rf_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        cJSON *busy = cJSON_CreateObject();
+        if (busy) {
+            cJSON_AddBoolToObject(busy, "registrationActive", false);
+            cJSON_AddNumberToObject(busy, "registrationPending", 0);
+            cJSON_AddStringToObject(busy, "lastDuplicateCode", "");
+            cJSON_AddNumberToObject(busy, "userCount", 0);
+            cJSON_AddBoolToObject(busy, "busy", true);
+            cJSON_AddItemToObject(busy, "users", cJSON_CreateArray());
+        }
+        return busy;
+    }
+    cJSON *snap = serialize_summary_locked();
     xSemaphoreGive(rf_mutex);
     return snap;
 }
@@ -593,7 +658,6 @@ bool rf_registry_handle_code(uint32_t code) {
     u->last_pulse_count = 0;
     u->updated_ms = now_ms();
     rf_user_t copy = *u;
-    rf_persist_locked();
     xSemaphoreGive(rf_mutex);
 
     apply_action_for_user(&copy);

@@ -21,6 +21,7 @@ esp_err_t rf_registry_update_name(const char *id, const char *name);
 esp_err_t rf_registry_remove(const char *id);
 esp_err_t rf_registry_clear(void);
 cJSON *rf_state_snapshot(void);
+cJSON *rf_state_summary_snapshot(void);
 bool rf_registry_handle_code(uint32_t code);
 esp_err_t rf_registry_update_config(const char *id, const char *mode, int channel_mask, int exit_seconds, bool alert, bool enabled);
 

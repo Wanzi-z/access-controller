@@ -110,6 +110,28 @@ static bool is_ota_upload_target(const char *target) {
     return path_len == strlen("/api/ota/upload") && strncmp(path, "/api/ota/upload", path_len) == 0;
 }
 
+static bool is_tunnel_forward_allowed(const char *target) {
+    if (!target) {
+        return false;
+    }
+
+    char normalized_path[256];
+    const char *path = normalize_target(target, normalized_path, sizeof(normalized_path));
+    const char *query = strchr(path, '?');
+    size_t path_len = query ? (size_t)(query - path) : strlen(path);
+
+    if (path_len == strlen("/api") && strncmp(path, "/api", path_len) == 0) {
+        return true;
+    }
+    if (path_len > strlen("/api/") && strncmp(path, "/api/", strlen("/api/")) == 0) {
+        return true;
+    }
+    if (path_len == strlen("/ws") && strncmp(path, "/ws", path_len) == 0) {
+        return true;
+    }
+    return false;
+}
+
 static bool tunnel_task_started = false;
 static SemaphoreHandle_t s_tunnel_ota_mutex = NULL;
 
@@ -332,6 +354,21 @@ static esp_err_t send_json_http_response(int sock, const char *request_id, int s
     return err;
 }
 
+static esp_err_t send_tunnel_rejected_http_response(int sock, const char *request_id, const char *target) {
+    cJSON *payload = cJSON_CreateObject();
+    if (!payload) {
+        return send_http_error(sock, request_id, "Endpoint is not exposed through the device tunnel");
+    }
+    cJSON_AddBoolToObject(payload, "ok", false);
+    cJSON_AddStringToObject(payload, "message", "Endpoint is not exposed through the device tunnel");
+    if (target) {
+        cJSON_AddStringToObject(payload, "target", target);
+    }
+    esp_err_t err = send_json_http_response(sock, request_id, 404, payload);
+    cJSON_Delete(payload);
+    return err;
+}
+
 static void tunnel_ota_reboot_task(void *arg) {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(TUNNEL_OTA_REBOOT_DELAY_MS));
@@ -549,6 +586,11 @@ static esp_err_t forward_request_to_local_http(tunnel_client_t *client, const ch
     if (body_len > TUNNEL_MAX_BODY_BYTES) {
         ESP_LOGW(TUNNEL_TAG, "Request body too large (%u bytes)", (unsigned int)body_len);
         return send_http_error(client->sock, request_id, "Request body too large");
+    }
+
+    if (!is_tunnel_forward_allowed(target)) {
+        ESP_LOGW(TUNNEL_TAG, "Rejecting non-API tunnel request: %s %s", method, target);
+        return send_tunnel_rejected_http_response(client->sock, request_id, target);
     }
 
     char normalized_path[256];
@@ -897,6 +939,11 @@ static esp_err_t forward_streamed_request_to_local_http(tunnel_client_t *client,
 
     if (strcasecmp(method, "POST") == 0 && is_ota_upload_target(target)) {
         return handle_streamed_ota_upload(client, request_id, request_body_len);
+    }
+
+    if (!is_tunnel_forward_allowed(target)) {
+        ESP_LOGW(TUNNEL_TAG, "Rejecting non-API streamed tunnel request: %s %s", method, target);
+        return send_tunnel_rejected_http_response(client->sock, request_id, target);
     }
 
     char normalized_path[256];

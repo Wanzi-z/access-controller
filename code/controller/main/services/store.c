@@ -583,6 +583,22 @@ static void wifi_list_remove_ssid(cJSON *arr, const char *ssid) {
     }
 }
 
+static esp_err_t wifi_list_store_first_as_active_or_clear(cJSON *arr) {
+    if (!arr || cJSON_GetArraySize(arr) == 0) {
+        return store_wifi_credentials_to_flash("", "");
+    }
+
+    cJSON *item = cJSON_GetArrayItem(arr, 0);
+    const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(item, "ssid");
+    const cJSON *password = cJSON_GetObjectItemCaseSensitive(item, "password");
+    if (!cJSON_IsString(ssid) || !ssid->valuestring || ssid->valuestring[0] == '\0') {
+        return store_wifi_credentials_to_flash("", "");
+    }
+
+    const char *pwd = (cJSON_IsString(password) && password->valuestring) ? password->valuestring : "";
+    return store_wifi_credentials_to_flash(ssid->valuestring, pwd);
+}
+
 esp_err_t wifi_list_add(const char *ssid, const char *password) {
     if (!ssid || ssid[0] == '\0') return ESP_ERR_INVALID_ARG;
     cJSON *arr = wifi_list_load_array();
@@ -608,6 +624,9 @@ esp_err_t wifi_list_delete(const char *ssid) {
     if (!arr) return ESP_ERR_NO_MEM;
     wifi_list_remove_ssid(arr, ssid);
     esp_err_t err = wifi_list_save_array(arr);
+    if (err == ESP_OK) {
+        err = wifi_list_store_first_as_active_or_clear(arr);
+    }
     cJSON_Delete(arr);
     return err;
 }

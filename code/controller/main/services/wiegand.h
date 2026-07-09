@@ -15,6 +15,6 @@ uint8_t wiegand_registration_channel(void);
 const char *wiegand_registration_last_duplicate(void);
 size_t wiegand_registration_pending_count(void);
 cJSON *wiegand_state_snapshot(void);
+cJSON *wiegand_state_summary_snapshot(void);
 
 #endif // WIEGAND_SERVICE_H
-

@@ -904,3 +904,24 @@ cJSON *wiegand_state_snapshot(void) {
     cJSON_AddItemToObject(root, "users", users);
     return root;
 }
+
+cJSON *wiegand_state_summary_snapshot(void) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        return NULL;
+    }
+
+    bool active = wiegand_registration_is_active();
+    uint8_t channel = wiegand_registration_channel();
+    size_t pending = registration_pending_count();
+    const char *duplicate = wiegand_registration_last_duplicate();
+
+    cJSON_AddBoolToObject(root, "registrationActive", active);
+    cJSON_AddNumberToObject(root, "registrationChannel", channel);
+    cJSON_AddNumberToObject(root, "registrationPending", (double)pending);
+    if (duplicate && duplicate[0] != '\0') {
+        cJSON_AddStringToObject(root, "lastDuplicateCode", duplicate);
+    }
+    cJSON_AddItemToObject(root, "users", cJSON_CreateArray());
+    return root;
+}

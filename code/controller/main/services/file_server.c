@@ -446,7 +446,8 @@ esp_err_t start_file_server(const char *base_path)
     config.max_uri_handlers = 58; // allow API, websocket, OTA, upload, and embedded asset routes
     config.max_open_sockets = 7;
     config.lru_purge_enable = true;
-    config.stack_size = 8192;
+    config.task_priority = 8;
+    config.stack_size = 12288;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
 

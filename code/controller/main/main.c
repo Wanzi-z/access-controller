@@ -486,11 +486,6 @@ static bool wifi_candidate_add(wifi_candidate_t *candidates, size_t max_candidat
 static size_t build_wifi_candidates(wifi_candidate_t *candidates, size_t max_candidates) {
     size_t count = 0;
 
-    char active_ssid[32] = {0};
-    char active_password[64] = {0};
-    load_wifi_credentials_from_flash(active_ssid, active_password);
-    wifi_candidate_add(candidates, max_candidates, &count, active_ssid, active_password);
-
     cJSON *saved = wifi_list_credentials_snapshot();
     if (cJSON_IsArray(saved)) {
         int saved_count = cJSON_GetArraySize(saved);
@@ -626,20 +621,9 @@ void app_main(void) {
     ensure_device_identity();
     ESP_LOGI(TAG, "Device UUID: %s", device_id);
     
-    char wifi_ssid[32];
-    char wifi_password[64];
-    snprintf(wifi_ssid, sizeof(wifi_ssid), "pyfitech");
-    snprintf(wifi_password, sizeof(wifi_password), "pyfitech");
-
-    load_wifi_credentials_from_flash(wifi_ssid, wifi_password);
-    
-    // Check if we have valid credentials before attempting station mode
-    bool has_valid_credentials = (strlen(wifi_ssid) > 0 && strlen(wifi_password) > 0);
     bool station_connected = false;
-    ESP_LOGI(TAG, "WiFi credentials check: SSID='%s' (len=%d), Password='%s' (len=%d)", 
-             wifi_ssid, (int)strlen(wifi_ssid), wifi_password, (int)strlen(wifi_password));
-    
-    if (has_valid_credentials && try_saved_wifi_networks(false, false)) {
+
+    if (try_saved_wifi_networks(false, false)) {
         ESP_LOGI(TAG, "Successfully connected to WiFi in station mode");
         station_connected = true;
     } else {

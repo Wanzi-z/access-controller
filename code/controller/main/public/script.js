@@ -333,6 +333,9 @@ const onPageActivated = (targetId) => {
       App.pageBoot.device = true;
       // Loaded on-demand to avoid spiking the ESP32 heap when opening via tunnel.
       loadKeypadUsers();
+      loadCredentialDetails().catch((error) => {
+        console.warn('Failed to load credential details', error);
+      });
     }
   }
 
@@ -738,9 +741,65 @@ const stopWiegandPolling = () => {
   }
 };
 
+const loadCredentialDetails = async () => {
+  const [wiegandResult, rfResult] = await Promise.allSettled([
+    fetchJSON(`api/wiegand?t=${Date.now()}`),
+    fetchJSON(`api/rf?t=${Date.now()}`),
+  ]);
+
+  if (!App.data) App.data = {};
+  if (wiegandResult.status === 'fulfilled') {
+    App.data.wiegand = wiegandResult.value;
+    renderWiegand(wiegandResult.value);
+  }
+  if (rfResult.status === 'fulfilled') {
+    App.data.rf = rfResult.value;
+    renderRf(rfResult.value);
+  }
+};
+
+const applyEnrollmentUpdate = (update = {}) => {
+  if (!App.data) App.data = {};
+  if (update.enrollment) {
+    App.data.enrollment = update.enrollment;
+    renderEnrollment(update.enrollment);
+  }
+  if (update.rf) {
+    App.data.rf = update.rf;
+    renderRf(update.rf);
+  }
+  if (update.wiegand) {
+    App.data.wiegand = update.wiegand;
+    renderWiegand(update.wiegand);
+  }
+};
+
+const refreshEnrollmentState = async () => {
+  const [enrollmentResult, rfResult] = await Promise.allSettled([
+    fetchJSON(`api/enrollment?t=${Date.now()}`),
+    fetchJSON(`api/rf?t=${Date.now()}`),
+  ]);
+
+  const update = {};
+  if (enrollmentResult.status === 'fulfilled') update.enrollment = enrollmentResult.value;
+  if (rfResult.status === 'fulfilled') update.rf = rfResult.value;
+  applyEnrollmentUpdate(update);
+
+  if (enrollmentResult.status !== 'fulfilled') {
+    throw enrollmentResult.reason;
+  }
+};
+
 const startEnrollmentPolling = () => {
   if (App.enrollmentPollTimer) return;
-  App.enrollmentPollTimer = setInterval(loadState, 1800);
+  App.enrollmentPollTimer = setInterval(async () => {
+    try {
+      await refreshEnrollmentState();
+    } catch (error) {
+      console.warn('Failed to refresh enrollment state', error);
+      stopEnrollmentPolling();
+    }
+  }, 1800);
 };
 
 const stopEnrollmentPolling = () => {
@@ -1156,7 +1215,11 @@ const renderRf = (rf = {}) => {
 
   if (registrationActive) {
     if (!App.rfPollTimer) {
-      App.rfPollTimer = setInterval(loadState, 2000);
+      App.rfPollTimer = setInterval(() => {
+        refreshEnrollmentState().catch((error) => {
+          console.warn('Failed to refresh RF registration state', error);
+        });
+      }, 900);
     }
   } else if (App.rfPollTimer) {
     clearInterval(App.rfPollTimer);
@@ -1717,10 +1780,7 @@ const setupEnrollmentHandlers = () => {
           method: 'POST',
           body: JSON.stringify({ userUuid }),
         });
-        if (state) {
-          App.data = state;
-          renderState(state);
-        }
+        if (state) applyEnrollmentUpdate(state);
         showToast('Listening for credentials.');
       } catch (error) {
         handleError(error, 'Failed to start enrollment');
@@ -1737,10 +1797,7 @@ const setupEnrollmentHandlers = () => {
           method: 'POST',
           body: JSON.stringify({}),
         });
-        if (state) {
-          App.data = state;
-          renderState(state);
-        }
+        if (state) applyEnrollmentUpdate(state);
         await Promise.allSettled([loadKeypadUsers(), loadState()]);
         showToast('Enrollment stopped.');
       } catch (error) {

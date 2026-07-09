@@ -194,11 +194,14 @@ static void IRAM_ATTR rf_isr_handler(void *arg)
         }
 
         /*
-         * RXB6 modules are noisy while idle. Start only on a frame sync pulse,
-         * but accept either polarity because boards/modules may invert DATA.
+         * RXB6 modules are noisy while idle. On this controller revision the
+         * DATA path is inverted by Q4, so only the known sync polarity should
+         * start a capture. Accepting either polarity lets idle noise drive
+         * constant decode work and can starve HTTP/tunnel traffic.
          */
         bool is_sync_width = (pulse_us >= RF_SYNC_MIN_US && pulse_us <= RF_SYNC_MAX_US);
-        if (!rf_capturing && is_sync_width) {
+        bool is_frame_sync = is_sync_width && (prev_level == RF_SYNC_LEVEL);
+        if (!rf_capturing && is_frame_sync) {
             rf_capturing = true;
             rf_sync_detected = true;
             rf_capture_ready = false;
@@ -207,7 +210,7 @@ static void IRAM_ATTR rf_isr_handler(void *arg)
             rf_pulses[rf_pulse_count].level = prev_level;
             rf_pulse_count++;
         }
-        else if (rf_capturing && is_sync_width && rf_pulse_count >= RF_MIN_VALID_PULSES) {
+        else if (rf_capturing && is_frame_sync && rf_pulse_count >= RF_MIN_VALID_PULSES) {
             rf_capture_ready = true;
         }
         else if (rf_capturing && rf_pulse_count < RF_CAPTURE_SIZE) {
@@ -621,20 +624,14 @@ static void rf_process_capture(size_t count, bool had_sync, int64_t now_us)
                                 ((now_us - rf_last_code_time_us) < RF_DEBOUNCE_US);
 
             if (!is_duplicate) {
-                /* NEW VALID CODE! */
-                ESP_LOGI(RF_TAG, "========================================");
-                ESP_LOGI(RF_TAG, "RF CODE RECEIVED: 0x%06lX", (unsigned long)code);
-                ESP_LOGI(RF_TAG, "  Full 24-bit code: 0x%06lX (%lu)",
-                         (unsigned long)code, (unsigned long)code);
-                ESP_LOGI(RF_TAG, "  Binary: %d%d%d%d%d%d%d%d %d%d%d%d%d%d%d%d %d%d%d%d%d%d%d%d",
-                         (code >> 23) & 1, (code >> 22) & 1, (code >> 21) & 1, (code >> 20) & 1,
-                         (code >> 19) & 1, (code >> 18) & 1, (code >> 17) & 1, (code >> 16) & 1,
-                         (code >> 15) & 1, (code >> 14) & 1, (code >> 13) & 1, (code >> 12) & 1,
-                         (code >> 11) & 1, (code >> 10) & 1, (code >> 9) & 1, (code >> 8) & 1,
-                         (code >> 7) & 1, (code >> 6) & 1, (code >> 5) & 1, (code >> 4) & 1,
-                         (code >> 3) & 1, (code >> 2) & 1, (code >> 1) & 1, (code >> 0) & 1);
-                ESP_LOGI(RF_TAG, "  Pulses captured: %d", (int)count);
-                ESP_LOGI(RF_TAG, "========================================");
+                ESP_LOGI(RF_TAG,
+                         "RF code received 0x%06lX pulses=%d short=%luus long=%luus jitter=%lu.%lu%%",
+                         (unsigned long)code,
+                         (int)count,
+                         (unsigned long)rf_diag_last_short_us,
+                         (unsigned long)rf_diag_last_long_us,
+                         (unsigned long)(rf_diag_last_jitter_pct_x10 / 10U),
+                         (unsigned long)(rf_diag_last_jitter_pct_x10 % 10U));
 
                 rf_last_code = code;
                 rf_last_code_time_us = now_us;
@@ -767,7 +764,7 @@ void rf_receiver_init(void)
     }
     
     /* Start processing task */
-    xTaskCreate(rf_process_task, "rf_rx", 8192, NULL, 5, NULL);
+    xTaskCreate(rf_process_task, "rf_rx", 12288, NULL, 3, NULL);
     
     ESP_LOGI(RF_TAG, "RF receiver ready - waiting for fob signals...");
 }
@@ -867,6 +864,53 @@ cJSON *rf_receiver_diagnostics_snapshot(void)
         }
         cJSON_AddItemToObject(obj, "pulseBins", bins);
     }
+
+    return obj;
+}
+
+cJSON *rf_receiver_diagnostics_summary_snapshot(void)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) {
+        return NULL;
+    }
+
+    uint32_t success_rate_pct = 0;
+    uint32_t noise_pct = 0;
+    uint32_t last_age_ms = 0;
+    uint32_t edge_rate_hz = 0;
+    uint32_t noise_rate_hz = 0;
+    uint32_t quality_score = rf_quality_score(&success_rate_pct, &noise_pct, &last_age_ms,
+                                              &edge_rate_hz, &noise_rate_hz);
+    const char *quality_label = rf_quality_label(quality_score, noise_pct);
+
+    cJSON_AddNumberToObject(obj, "gpio", RF_DATA_GPIO);
+    cJSON_AddStringToObject(obj, "isrAddResult", esp_err_to_name(rf_diag_isr_add_result));
+    cJSON_AddNumberToObject(obj, "qualityScore", quality_score);
+    cJSON_AddStringToObject(obj, "qualityLabel", quality_label);
+    cJSON_AddBoolToObject(obj, "signalInverted", RF_SIGNAL_INVERTED);
+    cJSON_AddNumberToObject(obj, "syncLevel", RF_SYNC_LEVEL);
+    cJSON_AddNumberToObject(obj, "currentLevel", gpio_get_level(RF_DATA_GPIO));
+    cJSON_AddNumberToObject(obj, "edgeCount", rf_diag_edge_count);
+    cJSON_AddNumberToObject(obj, "edgeRatePerSecond", edge_rate_hz);
+    cJSON_AddNumberToObject(obj, "noiseCount", rf_diag_noise_count);
+    cJSON_AddNumberToObject(obj, "noiseRatePerSecond", noise_rate_hz);
+    cJSON_AddNumberToObject(obj, "noisePercent", noise_pct);
+    cJSON_AddNumberToObject(obj, "syncCount", rf_diag_sync_count);
+    cJSON_AddNumberToObject(obj, "captureCount", rf_diag_capture_count);
+    cJSON_AddNumberToObject(obj, "decodeOkCount", rf_diag_decode_ok_count);
+    cJSON_AddNumberToObject(obj, "decodeFailCount", rf_diag_decode_fail_count);
+    cJSON_AddNumberToObject(obj, "decodeSuccessRatePercent", success_rate_pct);
+    cJSON_AddNumberToObject(obj, "discardCount", rf_diag_discard_count);
+    cJSON_AddNumberToObject(obj, "lastCapturePulses", rf_diag_last_capture_pulses);
+    cJSON_AddBoolToObject(obj, "lastHadSync", rf_diag_last_had_sync);
+    cJSON_AddNumberToObject(obj, "lastDecodeStart", rf_diag_last_decode_start);
+    cJSON_AddNumberToObject(obj, "lastShortUs", rf_diag_last_short_us);
+    cJSON_AddNumberToObject(obj, "lastLongUs", rf_diag_last_long_us);
+    cJSON_AddNumberToObject(obj, "lastJitterPercent", (double)rf_diag_last_jitter_pct_x10 / 10.0);
+    cJSON_AddNumberToObject(obj, "lastRepeatCount", rf_diag_last_repeat_count);
+    cJSON_AddNumberToObject(obj, "lastDecodeAgeMs", last_age_ms);
+    cJSON_AddNumberToObject(obj, "lastCode", rf_diag_last_code);
 
     return obj;
 }

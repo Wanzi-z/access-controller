@@ -55,8 +55,8 @@ static uint8_t s_blob_buffer[LOG_STORE_BUFFER_SIZE];
 static uint32_t s_dirty_entries = 0;
 static uint64_t s_last_flush_timestamp = 0;
 
-#define LOG_STORE_FLUSH_THRESHOLD 1
-#define LOG_STORE_FLUSH_INTERVAL_MS 60000ULL
+#define LOG_STORE_FLUSH_THRESHOLD 8
+#define LOG_STORE_FLUSH_INTERVAL_MS 15000ULL
 
 static esp_err_t open_handle(nvs_handle_t *handle) {
     return nvs_open(LOG_STORE_NAMESPACE, NVS_READWRITE, handle);
@@ -396,4 +396,3 @@ int log_store_flush_now(void) {
     xSemaphoreGive(s_mutex);
     return (err == ESP_OK) ? 0 : -1;
 }
-

@@ -56,7 +56,11 @@ extern cJSON *fob_state_snapshot(void);
 extern cJSON *keypad_state_snapshot(void);
 extern cJSON *motion_state_snapshot(void);
 extern cJSON *wiegand_state_snapshot(void);
+extern cJSON *wiegand_state_summary_snapshot(void);
 extern cJSON *system_logs_snapshot(void);
+extern cJSON *rf_receiver_diagnostics_snapshot(void);
+extern cJSON *rf_receiver_diagnostics_summary_snapshot(void);
+extern cJSON *rf_receiver_line_test_snapshot(void);
 extern void buzzer_set_quiet_test_mode(bool enabled);
 extern bool buzzer_get_quiet_test_mode(void);
 extern void beep_keypad_force(int beeps, int channel);
@@ -466,18 +470,18 @@ static cJSON *build_state_snapshot(void) {
     }
     cJSON_AddItemToObject(root, "motions", motions);
 
-    cJSON *wiegand = wiegand_state_snapshot();
+    cJSON *wiegand = wiegand_state_summary_snapshot();
     if (!wiegand) {
         wiegand = cJSON_CreateObject();
     }
     cJSON_AddItemToObject(root, "wiegand", wiegand);
 
-    cJSON *rf = rf_state_snapshot();
+    cJSON *rf = rf_state_summary_snapshot();
     if (!rf) {
         rf = cJSON_CreateObject();
     }
     if (rf) {
-        cJSON *receiver = rf_receiver_diagnostics_snapshot();
+        cJSON *receiver = rf_receiver_diagnostics_summary_snapshot();
         if (receiver) {
             cJSON_AddItemToObject(rf, "receiver", receiver);
         }
@@ -1167,7 +1171,27 @@ static esp_err_t api_server_post_handler(httpd_req_t *req) {
 }
 
 static esp_err_t api_wifi_get_handler(httpd_req_t *req) {
-    return send_full_state_response(req);
+    cJSON *wifi = cJSON_CreateObject();
+    if (!wifi) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to build Wi-Fi state");
+    }
+
+    char ssid[32] = {0};
+    char pwd[64] = {0};
+    load_wifi_credentials_from_flash(ssid, pwd);
+    cJSON_AddStringToObject(wifi, "active_ssid", ssid);
+
+    cJSON *network = network_state_snapshot();
+    if (network) {
+        cJSON_AddItemToObject(wifi, "network", network);
+    }
+
+    cJSON *list = wifi_list_snapshot();
+    if (list) {
+        cJSON_AddItemToObject(wifi, "networks", list);
+    }
+
+    return send_json_response(req, wifi);
 }
 
 static esp_err_t api_wifi_list_get_handler(httpd_req_t *req) {
@@ -1665,6 +1689,27 @@ static esp_err_t api_enrollment_get_handler(httpd_req_t *req) {
     return send_json_response(req, enrollment_state_snapshot());
 }
 
+static cJSON *build_enrollment_update_snapshot(void) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        return NULL;
+    }
+
+    cJSON *enrollment = enrollment_state_snapshot();
+    cJSON_AddItemToObject(root, "enrollment", enrollment ? enrollment : cJSON_CreateObject());
+
+    cJSON *rf = rf_state_summary_snapshot();
+    if (rf) {
+        cJSON *receiver = rf_receiver_diagnostics_summary_snapshot();
+        if (receiver) {
+            cJSON_AddItemToObject(rf, "receiver", receiver);
+        }
+    }
+    cJSON_AddItemToObject(root, "rf", rf ? rf : cJSON_CreateObject());
+
+    return root;
+}
+
 static esp_err_t api_enrollment_start_post_handler(httpd_req_t *req) {
     cJSON *payload = NULL;
     esp_err_t err = read_json_body(req, &payload);
@@ -1683,7 +1728,7 @@ static esp_err_t api_enrollment_start_post_handler(httpd_req_t *req) {
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to start enrollment");
     }
-    return send_json_response(req, build_state_snapshot());
+    return send_json_response(req, build_enrollment_update_snapshot());
 }
 
 static esp_err_t api_enrollment_stop_post_handler(httpd_req_t *req) {
@@ -1693,12 +1738,12 @@ static esp_err_t api_enrollment_stop_post_handler(httpd_req_t *req) {
 
     err = enrollment_stop();
     if (err == ESP_ERR_INVALID_STATE) {
-        return send_json_response(req, build_state_snapshot());
+        return send_json_response(req, build_enrollment_update_snapshot());
     }
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to stop enrollment");
     }
-    return send_json_response(req, build_state_snapshot());
+    return send_json_response(req, build_enrollment_update_snapshot());
 }
 
 void register_api_routes(httpd_handle_t server) {
