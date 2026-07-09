@@ -109,19 +109,32 @@ static cJSON *serialize_user(const wiegand_user_t *user) {
     if (user->last_used_ms > 0) {
         cJSON *last_used = cJSON_CreateObject();
         if (last_used) {
+            bool age_known = false;
             uint64_t age_ms = 0;
             uint64_t now = current_time_ms();
-            if (now >= user->last_used_ms) {
-                age_ms = now - user->last_used_ms;
-            }
             int64_t unix_time = user->last_used_unix_time;
+            int64_t now_unix_time = automation_unix_time_for_timestamp_ms(now);
+
+            if (unix_time > 0 && now_unix_time > 0 && now_unix_time >= unix_time) {
+                age_ms = (uint64_t)(now_unix_time - unix_time) * 1000ULL;
+                age_known = true;
+            } else if (now >= user->last_used_ms) {
+                age_ms = now - user->last_used_ms;
+                age_known = true;
+            }
+
             if (unix_time <= 0) {
                 unix_time = automation_unix_time_for_timestamp_ms(user->last_used_ms);
             }
-            cJSON_AddNumberToObject(last_used, "used_ms", (double)user->last_used_ms);
-            cJSON_AddNumberToObject(last_used, "unixTime", (double)unix_time);
-            cJSON_AddNumberToObject(last_used, "age_ms", (double)age_ms);
-            cJSON_AddItemToObject(obj, "lastUsed", last_used);
+
+            if (age_known) {
+                cJSON_AddNumberToObject(last_used, "used_ms", (double)user->last_used_ms);
+                cJSON_AddNumberToObject(last_used, "unixTime", (double)unix_time);
+                cJSON_AddNumberToObject(last_used, "age_ms", (double)age_ms);
+                cJSON_AddItemToObject(obj, "lastUsed", last_used);
+            } else {
+                cJSON_Delete(last_used);
+            }
         }
     }
     return obj;

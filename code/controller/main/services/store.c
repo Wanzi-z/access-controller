@@ -32,6 +32,15 @@ static const char* STORE_TAG = "storage.c";
 #define SERVER_REQUIRE_REACHABLE_KEY "srv_req_reach"
 
 static bool spiffs_mounted = false;
+static portMUX_TYPE settings_cache_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool server_cache_loaded = false;
+static char cached_server_url[SERVER_URL_MAX_LEN] = DEFAULT_SERVER_URL;
+static char cached_server_host[32] = DEFAULT_SERVER_HOST;
+static char cached_server_port[8] = DEFAULT_SERVER_PORT;
+static bool cached_server_require_reachable = true;
+static bool wifi_credentials_cache_loaded = false;
+static char cached_wifi_ssid[32] = "";
+static char cached_wifi_password[64] = "";
 
 static void get_user_file_path(uint32_t file_index, char *path, size_t path_size) {
     if (!path || path_size == 0) {
@@ -355,16 +364,35 @@ esp_err_t initialize_spiffs(void) {
 }
 
 void load_wifi_credentials_from_flash(char *ssid, char *password) {
+    bool loaded;
+    portENTER_CRITICAL(&settings_cache_mux);
+    loaded = wifi_credentials_cache_loaded;
+    if (loaded) {
+        snprintf(ssid, 32, "%s", cached_wifi_ssid);
+        snprintf(password, 64, "%s", cached_wifi_password);
+    }
+    portEXIT_CRITICAL(&settings_cache_mux);
+
+    if (loaded) {
+        return;
+    }
+
     char *ssid_str = get_char("wifi_ssid");
     char *password_str = get_char("wifi_password");
 
     if (strcmp(ssid_str, "")==0 || strcmp(password_str, "")==0) {
-        strcpy(ssid, "");
-        strcpy(password, "");
+        snprintf(ssid, 32, "%s", "");
+        snprintf(password, 64, "%s", "");
     } else {
-        strcpy(ssid, ssid_str);
-        strcpy(password, password_str);
+        snprintf(ssid, 32, "%s", ssid_str);
+        snprintf(password, 64, "%s", password_str);
     }
+
+    portENTER_CRITICAL(&settings_cache_mux);
+    snprintf(cached_wifi_ssid, sizeof(cached_wifi_ssid), "%s", ssid);
+    snprintf(cached_wifi_password, sizeof(cached_wifi_password), "%s", password);
+    wifi_credentials_cache_loaded = true;
+    portEXIT_CRITICAL(&settings_cache_mux);
 
     free(ssid_str);
     free(password_str);
@@ -476,64 +504,85 @@ static void parse_server_url(const char *server_url,
     }
 }
 
+static void cache_server_settings(const char *url, const char *host, const char *port, bool require_reachable) {
+    portENTER_CRITICAL(&settings_cache_mux);
+    snprintf(cached_server_url, sizeof(cached_server_url), "%s", url && url[0] ? url : DEFAULT_SERVER_URL);
+    snprintf(cached_server_host, sizeof(cached_server_host), "%s", host && host[0] ? host : DEFAULT_SERVER_HOST);
+    snprintf(cached_server_port, sizeof(cached_server_port), "%s", port && port[0] ? port : DEFAULT_SERVER_PORT);
+    cached_server_require_reachable = require_reachable;
+    server_cache_loaded = true;
+    portEXIT_CRITICAL(&settings_cache_mux);
+}
+
+static bool read_server_settings_cache(char *url, size_t url_size, char *host, size_t host_size, char *port, size_t port_size, bool *require_reachable) {
+    bool loaded;
+    portENTER_CRITICAL(&settings_cache_mux);
+    loaded = server_cache_loaded;
+    if (loaded) {
+        if (url && url_size > 0) snprintf(url, url_size, "%s", cached_server_url);
+        if (host && host_size > 0) snprintf(host, host_size, "%s", cached_server_host);
+        if (port && port_size > 0) snprintf(port, port_size, "%s", cached_server_port);
+        if (require_reachable) *require_reachable = cached_server_require_reachable;
+    }
+    portEXIT_CRITICAL(&settings_cache_mux);
+    return loaded;
+}
+
+static void ensure_server_settings_cache(void) {
+    if (read_server_settings_cache(NULL, 0, NULL, 0, NULL, 0, NULL)) {
+        return;
+    }
+
+    char url[SERVER_URL_MAX_LEN] = DEFAULT_SERVER_URL;
+    char host[32] = DEFAULT_SERVER_HOST;
+    char port[8] = DEFAULT_SERVER_PORT;
+    bool require_reachable = get_bool(SERVER_REQUIRE_REACHABLE_KEY, true);
+
+    char *url_str = get_char("server_url");
+    if (url_str && url_str[0] != '\0') {
+        trim_copy(url_str, url, sizeof(url));
+        if (strcmp(url, OLD_DEFAULT_SERVER_URL) == 0 ||
+            strcmp(url, "http://" OLD_DEFAULT_SERVER_URL) == 0) {
+            snprintf(url, sizeof(url), "%s", DEFAULT_SERVER_URL);
+        }
+    } else {
+        char *ip_str = get_char("server_ip");
+        char *port_str = get_char("server_port");
+        if (ip_str && ip_str[0] != '\0') {
+            if (port_str && port_str[0] != '\0' && strcmp(port_str, DEFAULT_SERVER_PORT) != 0) {
+                snprintf(url, sizeof(url), "%s:%s", ip_str, port_str);
+            } else {
+                snprintf(url, sizeof(url), "%s", ip_str);
+            }
+        }
+        free(ip_str);
+        free(port_str);
+    }
+    free(url_str);
+
+    parse_server_url(url, host, sizeof(host), port, sizeof(port));
+    cache_server_settings(url, host, port, require_reachable);
+}
+
 void load_server_url_from_flash(char *server_url, size_t size) {
     if (!server_url || size == 0) {
         return;
     }
-    server_url[0] = '\0';
-
-    char *url_str = get_char("server_url");
-    if (url_str && url_str[0] != '\0') {
-        trim_copy(url_str, server_url, size);
-        if (strcmp(server_url, OLD_DEFAULT_SERVER_URL) == 0 ||
-            strcmp(server_url, "http://" OLD_DEFAULT_SERVER_URL) == 0) {
-            snprintf(server_url, size, "%s", DEFAULT_SERVER_URL);
-        }
-        free(url_str);
-        return;
-    }
-    free(url_str);
-
-    char *ip_str = get_char("server_ip");
-    char *port_str = get_char("server_port");
-    if (ip_str && ip_str[0] != '\0') {
-        if (port_str && port_str[0] != '\0' && strcmp(port_str, DEFAULT_SERVER_PORT) != 0) {
-            snprintf(server_url, size, "%s:%s", ip_str, port_str);
-        } else {
-            snprintf(server_url, size, "%s", ip_str);
-        }
-    } else {
-        snprintf(server_url, size, "%s", DEFAULT_SERVER_URL);
-    }
-    free(ip_str);
-    free(port_str);
+    ensure_server_settings_cache();
+    read_server_settings_cache(server_url, size, NULL, 0, NULL, 0, NULL);
 }
 
 void load_server_info_from_flash(char *server_ip, char *server_port) {
-    ESP_LOGI(STORE_TAG, "Loading Server info from flash");
-    char *ip_str = get_char("server_ip");
-    char *port_str = get_char("server_port");
-
-    if (strcmp(ip_str, OLD_DEFAULT_SERVER_HOST) == 0 &&
-        (strcmp(port_str, "") == 0 || strcmp(port_str, OLD_DEFAULT_SERVER_PORT) == 0)) {
-        ESP_LOGI(STORE_TAG, "Legacy default server host found in flash, using new default server URL.");
-        parse_server_url(DEFAULT_SERVER_URL, server_ip, 32, server_port, 8);
-    } else if (strcmp(ip_str, "") != 0 && strcmp(port_str, "") != 0) {
-        snprintf(server_ip, 32, "%s", ip_str);
-        snprintf(server_port, 8, "%s", port_str);
-    } else {
-        char server_url[SERVER_URL_MAX_LEN];
-        ESP_LOGI(STORE_TAG, "No legacy server host/port found in flash, using server URL.");
-        load_server_url_from_flash(server_url, sizeof(server_url));
-        parse_server_url(server_url, server_ip, 32, server_port, 8);
-    }
-    
-    free(ip_str);
-    free(port_str);
+    ensure_server_settings_cache();
+    read_server_settings_cache(NULL, 0, server_ip, 32, server_port, 8, NULL);
 }
 
 esp_err_t store_server_require_reachable(bool required) {
     set_bool(SERVER_REQUIRE_REACHABLE_KEY, required);
+    ensure_server_settings_cache();
+    portENTER_CRITICAL(&settings_cache_mux);
+    cached_server_require_reachable = required;
+    portEXIT_CRITICAL(&settings_cache_mux);
     automation_record_log(required
         ? "Server reachability required for station mode"
         : "Server reachability not required for station mode");
@@ -541,7 +590,10 @@ esp_err_t store_server_require_reachable(bool required) {
 }
 
 bool load_server_require_reachable(void) {
-    return get_bool(SERVER_REQUIRE_REACHABLE_KEY, true);
+    bool require_reachable = true;
+    ensure_server_settings_cache();
+    read_server_settings_cache(NULL, 0, NULL, 0, NULL, 0, &require_reachable);
+    return require_reachable;
 }
 
 /* ---------- WiFi list management ---------- */
@@ -1050,6 +1102,15 @@ esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_p
     }
 
     if (err_ip == ESP_OK && err_port == ESP_OK) {
+        char server_url[SERVER_URL_MAX_LEN];
+        if (server_ip && server_ip[0] != '\0' && server_port && server_port[0] != '\0' && strcmp(server_port, DEFAULT_SERVER_PORT) != 0) {
+            snprintf(server_url, sizeof(server_url), "%s:%s", server_ip, server_port);
+        } else if (server_ip && server_ip[0] != '\0') {
+            snprintf(server_url, sizeof(server_url), "%s", server_ip);
+        } else {
+            snprintf(server_url, sizeof(server_url), "%s", DEFAULT_SERVER_URL);
+        }
+        cache_server_settings(server_url, server_ip, server_port, cached_server_require_reachable);
         char log_msg[LOG_STORE_MESSAGE_MAX];
         snprintf(log_msg, sizeof(log_msg), "Server settings updated (IP=%s, port=%s)", server_ip, server_port);
         automation_record_log(log_msg);
@@ -1078,6 +1139,10 @@ esp_err_t store_server_url_to_flash(const char *server_url) {
     esp_err_t err_info = store_server_url_fields_to_flash(normalized);
     esp_err_t err_url = store_char("server_url", normalized);
     if (err_url == ESP_OK && err_info == ESP_OK) {
+        char server_host[32];
+        char server_port[8];
+        parse_server_url(normalized, server_host, sizeof(server_host), server_port, sizeof(server_port));
+        cache_server_settings(normalized, server_host, server_port, cached_server_require_reachable);
         char log_msg[LOG_STORE_MESSAGE_MAX];
         snprintf(log_msg, sizeof(log_msg), "Server URL updated (%.72s)", normalized);
         automation_record_log(log_msg);
@@ -1107,6 +1172,7 @@ esp_err_t store_server_url_fields_to_flash(const char *server_url) {
     esp_err_t err_ip = store_char("server_ip", server_host);
     esp_err_t err_port = store_char("server_port", server_port);
     if (err_ip == ESP_OK && err_port == ESP_OK) {
+        cache_server_settings(normalized, server_host, server_port, cached_server_require_reachable);
         return ESP_OK;
     }
 
@@ -1123,6 +1189,11 @@ esp_err_t store_wifi_credentials_to_flash(const char *ssid, const char *password
     esp_err_t err_pass = store_char("wifi_password", password);
 
     if (err_ssid == ESP_OK && err_pass == ESP_OK) {
+        portENTER_CRITICAL(&settings_cache_mux);
+        snprintf(cached_wifi_ssid, sizeof(cached_wifi_ssid), "%s", ssid ? ssid : "");
+        snprintf(cached_wifi_password, sizeof(cached_wifi_password), "%s", password ? password : "");
+        wifi_credentials_cache_loaded = true;
+        portEXIT_CRITICAL(&settings_cache_mux);
         size_t pass_len = strlen(password);
         char mask_buf[LOG_STORE_MESSAGE_MAX];
         if (pass_len == 0) {

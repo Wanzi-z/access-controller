@@ -63,6 +63,21 @@ struct async_resp_arg {
 struct async_resp_arg ws_clients[MAX_WS_CLIENTS];
 int active_clients = 0;
 SemaphoreHandle_t ws_mutex = NULL;
+static TaskHandle_t ws_service_task_handle = NULL;
+
+static void ws_service(void *pvParameter);
+
+static void ensure_ws_service_started(void)
+{
+    if (ws_service_task_handle != NULL) {
+        return;
+    }
+
+    if (xTaskCreate(ws_service, "ws_service", 4096, NULL, 8, &ws_service_task_handle) != pdPASS) {
+        ESP_LOGE(WS_TAG, "Failed to start websocket service task");
+        ws_service_task_handle = NULL;
+    }
+}
 
 bool ws_has_active_clients(void) {
     if (!ws_mutex) {
@@ -82,6 +97,7 @@ static esp_err_t echo_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
         ESP_LOGI(WS_TAG, "Handshake done, the new connection was opened");
+        ensure_ws_service_started();
         return ESP_OK;
     }
     httpd_ws_frame_t ws_pkt;
@@ -161,8 +177,7 @@ static const httpd_uri_t echo = {
         .is_websocket = true
 };
 
-static void
-ws_service (void *pvParameter)
+static void ws_service(void *pvParameter)
 {
   while (1) {
         if (clientMessage.queueCount > 0) {
@@ -264,5 +279,5 @@ void start_ws_server(httpd_handle_t server)
 {
 	ESP_LOGI(WS_TAG, "Registering WS URI handlers");
 	httpd_register_uri_handler(server, &echo);
-	xTaskCreate(ws_service, "ws_service", 5000, NULL, 10, NULL);
+	ESP_LOGI(WS_TAG, "Websocket service task will start on first client");
 }

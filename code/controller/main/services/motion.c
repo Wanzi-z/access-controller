@@ -1,6 +1,7 @@
 #define MOTION_MCP_IO_1 A6  // Reverted back to correct pin
 #define MOTION_MCP_IO_2 B6  // Reverted back to correct pin
 #define NUM_OF_MOTIONS				  2
+#define MOTION_SETTINGS_STORE_DEBOUNCE_MS 5000
 
 // MCP23017 constants and function declarations
 #define MCP_OUTPUT 0
@@ -81,7 +82,7 @@ static const char *motion_current_mode(struct motionButton *mot)
 static void scheduleMotionSettingsStore(void)
 {
 	motion_settings_dirty = true;
-	motion_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+	motion_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(MOTION_SETTINGS_STORE_DEBOUNCE_MS);
 }
 
 static void flushMotionSettingsIfDue(void)

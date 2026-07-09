@@ -12,6 +12,7 @@ const App = {
   systemUptimeBaseMs: 0,
   rfAutoSavedIds: new Set(),
   rfAutoSavingIds: new Set(),
+  credentialAutoSaveTimers: new Map(),
   toastTimer: null,
   elements: {},
   pageBoot: {
@@ -44,14 +45,25 @@ const binaryToHex = (binaryStr) => {
 };
 
 const fetchJSON = async (path, options = {}) => {
+  const { timeoutMs = 8000, ...fetchOptions } = options;
   const href = window.location.href;
   const baseHref = href.endsWith('/') ? href : `${href}/`;
   const url = new URL(path, baseHref);
-  const response = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    ...options,
-  });
+  const controller = new AbortController();
+  const timeout = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  const signal = fetchOptions.signal || controller.signal;
+
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      ...fetchOptions,
+      signal,
+    });
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const message = await response.text();
@@ -101,7 +113,7 @@ const showToast = (message) => {
 };
 
 const handleError = (error, fallbackMessage) => {
-  console.error(error);
+  console.warn(error);
   showToast(fallbackMessage || error.message || 'Something went wrong');
 };
 
@@ -238,6 +250,15 @@ const formatRfReceivedTitle = (unixTime, receivedMs) => {
   return uptimeSeconds > 0 ? `${uptimeSeconds}s since boot` : '';
 };
 
+const formatLastUsedLabel = (unixTime, usedMs) => {
+  const unix = Number(unixTime) || 0;
+  if (unix > 0) {
+    return formatCompactDateTime(new Date(unix * 1000));
+  }
+  const uptimeSeconds = Math.round((Number(usedMs) || 0) / 1000);
+  return uptimeSeconds > 0 ? `${uptimeSeconds}s since boot` : 'Used';
+};
+
 const updateActivityHighlight = (card, ageMs, hasActivity = true) => {
   if (!card) return;
   const age = Number(ageMs);
@@ -286,19 +307,16 @@ const buildLastUsedMetric = (lastUsed, emptyText = 'Not used yet') => {
   if (!lastUsed) {
     return buildRfUserMetric('Last used', emptyText, true);
   }
-  const ageMs = Number(lastUsed.age_ms) || 0;
   const usedMs = Number(lastUsed.used_ms) || 0;
   const unixTime = Number(lastUsed.unixTime) || 0;
   const title = formatRfReceivedTitle(unixTime, usedMs);
   return `
     <div class="rf-card-metric">
       <span class="label">Last used</span>
-      <span class="value rf-last-received"
+      <span class="value credential-last-used"
         data-unix-time="${unixTime}"
         data-received-ms="${usedMs}"
-        data-age-ms="${ageMs}"
-        data-rendered-at-ms="${Date.now()}"
-        title="${escapeHtml(title)}">${formatRfReceivedLabel(unixTime, usedMs, ageMs)}</span>
+        title="${escapeHtml(title)}">${formatLastUsedLabel(unixTime, usedMs)}</span>
     </div>
   `;
 };
@@ -325,18 +343,20 @@ const bindNavigation = () => {
   });
 };
 
+const getActivePageId = () => document.querySelector('.page.active')?.id?.replace(/^page-/, '') || 'device';
+
 const onPageActivated = (targetId) => {
   if (!targetId) return;
 
   if (targetId === 'device') {
     if (!App.pageBoot.device) {
       App.pageBoot.device = true;
-      // Loaded on-demand to avoid spiking the ESP32 heap when opening via tunnel.
-      loadKeypadUsers();
-      loadCredentialDetails().catch((error) => {
-        console.warn('Failed to load credential details', error);
-      });
     }
+    scheduleDeviceCredentialLoad();
+    startSignalPolling();
+  } else {
+    stopSignalPolling();
+    stopWiegandPolling();
   }
 
   if (targetId === 'system') {
@@ -478,8 +498,6 @@ const setEnableButtonState = (button, enabled) => {
   button.classList.toggle('is-disabled', !enabled);
   button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
   button.title = enabled ? 'Disable' : 'Enable';
-  const text = button.querySelector('.card-enable-text');
-  if (text) text.textContent = enabled ? 'Enabled' : 'Disabled';
 };
 
 const setCardEnabledState = (enableId, enabled) => {
@@ -650,11 +668,65 @@ const renderCredentialEnableButton = (enabled, action, id) => `
     data-action="${action}"
     data-id="${escapeHtml(id || '')}"
     aria-pressed="${enabled ? 'true' : 'false'}"
+    aria-label="${enabled ? 'Disable' : 'Enable'}"
     title="${enabled ? 'Disable' : 'Enable'}">
     <span class="card-enable-icon" aria-hidden="true"></span>
-    <span class="card-enable-text">${enabled ? 'Enabled' : 'Disabled'}</span>
   </button>
 `;
+
+const renderCredentialIconButton = (action, id, label, iconClass, extraAttrs = '') => `
+  <button type="button"
+    class="credential-icon-button ${iconClass}"
+    data-action="${action}"
+    data-id="${escapeHtml(id || '')}"
+    aria-label="${escapeHtml(label)}"
+    title="${escapeHtml(label)}"
+    ${extraAttrs}>
+    <span aria-hidden="true"></span>
+  </button>
+`;
+
+const renderCredentialAlertToggle = (className, checked, label = 'Alert beep') => `
+  <label class="credential-icon-button credential-alert-toggle${checked ? ' is-active' : ''}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">
+    <input type="checkbox" class="${className}" aria-label="${escapeHtml(label)}" ${checked ? 'checked' : ''}>
+    <span class="credential-speaker-icon" aria-hidden="true"></span>
+  </label>
+`;
+
+const setupCredentialIconControls = () => {
+  const removeButtons = [
+    { button: App.elements.wiegandRemoveAllBtn, label: 'Remove all RFID cards' },
+    { button: App.elements.keypadRemoveAllBtn, label: 'Remove all PIN users' },
+    { button: App.elements.rfRemoveAllBtn, label: 'Remove all remotes' },
+  ];
+
+  removeButtons.forEach(({ button, label }) => {
+    if (!button) return;
+    button.classList.add('credential-icon-button', 'credential-remove-icon', 'credential-section-remove');
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.innerHTML = '<span aria-hidden="true"></span>';
+  });
+};
+
+const scheduleCredentialNameSave = (input, saveHandler) => {
+  const container = input?.closest('.user-row');
+  if (!container || !input.value.trim()) return;
+  const existing = App.credentialAutoSaveTimers.get(container);
+  if (existing) clearTimeout(existing);
+
+  const timer = setTimeout(async () => {
+    App.credentialAutoSaveTimers.delete(container);
+    if (!container.isConnected) return;
+    try {
+      await saveHandler(container);
+    } catch (error) {
+      // The save handler already surfaces the failure.
+    }
+  }, 650);
+
+  App.credentialAutoSaveTimers.set(container, timer);
+};
 
 const buildWiegandUserRow = (user, existingValue) => {
   if (!user) return '';
@@ -683,7 +755,11 @@ const buildWiegandUserRow = (user, existingValue) => {
           <span class="credential-kind">RFID</span>
           <span class="user-code">${escapeHtml(hexCode)}</span>
         </div>
-        ${renderCredentialEnableButton(enabled, 'toggle-wiegand-enabled', user.id || '')}
+        <div class="credential-card-actions">
+          ${renderCredentialEnableButton(enabled, 'toggle-wiegand-enabled', user.id || '')}
+          ${renderCredentialAlertToggle('wiegand-alert-checkbox', alert, 'Toggle RFID alert beep')}
+          ${renderCredentialIconButton('delete-wiegand', user.id || '', 'Delete RFID card', 'credential-remove-icon')}
+        </div>
       </div>
       <div class="user-info">
         <label class="stacked">
@@ -704,23 +780,14 @@ const buildWiegandUserRow = (user, existingValue) => {
         </label>
         ${metrics}
       </div>
-      <div class="credential-card-footer">
-        <label class="form-switch credential-alert-switch">
-          <input type="checkbox" class="wiegand-alert-checkbox" ${alert ? 'checked' : ''}>
-          <span>Alert (beep)</span>
-        </label>
-        <div class="user-actions">
-          <button type="button" class="secondary" data-action="rename" data-id="${userId}">Save</button>
-          <button type="button" class="secondary danger" data-action="delete-wiegand" data-id="${userId}">Delete</button>
-        </div>
-      </div>
     </div>
   `;
 };
 
 const startWiegandPolling = () => {
-  if (App.wiegandPollTimer) return;
+  if (App.wiegandPollTimer || !isDevicePageActive() || document.hidden) return;
   App.wiegandPollTimer = setInterval(async () => {
+    if (!isDevicePageActive() || document.hidden) return;
     try {
       const wiegand = await fetchJSON('api/wiegand');
       if (App.data) {
@@ -731,7 +798,7 @@ const startWiegandPolling = () => {
       console.warn('Failed to refresh Wiegand state', error);
       stopWiegandPolling();
     }
-  }, 2500);
+  }, 10000);
 };
 
 const stopWiegandPolling = () => {
@@ -741,20 +808,109 @@ const stopWiegandPolling = () => {
   }
 };
 
-const loadCredentialDetails = async () => {
-  const [wiegandResult, rfResult] = await Promise.allSettled([
-    fetchJSON(`api/wiegand?t=${Date.now()}`),
-    fetchJSON(`api/rf?t=${Date.now()}`),
-  ]);
+const isDevicePageActive = () => document.getElementById('page-device')?.classList.contains('active');
 
+let deviceCredentialDetailsInFlight = null;
+let deviceCredentialRetryTimer = null;
+let deviceCredentialLoadTimer = null;
+
+const mergeCredentialStateFromSummary = (previous = {}, incoming = {}) => {
+  if (!incoming || typeof incoming !== 'object') {
+    return previous || {};
+  }
+
+  const merged = { ...(previous || {}), ...incoming };
+  const previousUsers = Array.isArray(previous?.users) ? previous.users : null;
+  const incomingUsers = Array.isArray(incoming.users) ? incoming.users : null;
+  const incomingIsEmptyPlaceholder =
+    !incomingUsers ||
+    incoming.busy === true ||
+    incoming.summary === true ||
+    incomingUsers.length === 0;
+
+  if (previousUsers && incomingIsEmptyPlaceholder) {
+    merged.users = previousUsers;
+  }
+
+  return merged;
+};
+
+const mergeStateCredentialDetails = (previous = {}, incoming = {}) => ({
+  ...incoming,
+  wiegand: mergeCredentialStateFromSummary(previous?.wiegand, incoming?.wiegand),
+  rf: mergeCredentialStateFromSummary(previous?.rf, incoming?.rf),
+  keypadUsers: Array.isArray(incoming?.keypadUsers)
+    ? incoming.keypadUsers
+    : (Array.isArray(previous?.keypadUsers) ? previous.keypadUsers : incoming?.keypadUsers),
+});
+
+const scheduleDeviceCredentialRetry = () => {
+  if (deviceCredentialRetryTimer || !isDevicePageActive()) return;
+  deviceCredentialRetryTimer = setTimeout(() => {
+    deviceCredentialRetryTimer = null;
+    if (!isDevicePageActive()) return;
+    loadDeviceCredentialDetails();
+  }, 1500);
+};
+
+const scheduleDeviceCredentialLoad = () => {
+  if (deviceCredentialLoadTimer || deviceCredentialDetailsInFlight) return;
+  deviceCredentialLoadTimer = setTimeout(() => {
+    deviceCredentialLoadTimer = null;
+    if (!isDevicePageActive()) return;
+    loadDeviceCredentialDetails().catch((error) => {
+      console.warn('Failed to load credential details', error);
+      scheduleDeviceCredentialRetry();
+    });
+  }, 1200);
+};
+
+const loadDeviceCredentialDetails = async () => {
+  if (deviceCredentialDetailsInFlight) return deviceCredentialDetailsInFlight;
+  deviceCredentialDetailsInFlight = (async () => {
+    await loadCredentialDetails();
+    await sleep(150);
+    await loadKeypadUsers();
+  })().finally(() => {
+    deviceCredentialDetailsInFlight = null;
+  });
+  return deviceCredentialDetailsInFlight;
+};
+
+const loadCredentialDetails = async () => {
   if (!App.data) App.data = {};
+  let wiegandResult;
+  let rfResult;
+
+  try {
+    wiegandResult = { status: 'fulfilled', value: await fetchJSON(`api/wiegand?t=${Date.now()}`) };
+  } catch (error) {
+    wiegandResult = { status: 'rejected', reason: error };
+  }
+
   if (wiegandResult.status === 'fulfilled') {
     App.data.wiegand = wiegandResult.value;
     renderWiegand(wiegandResult.value);
   }
+
+  await sleep(150);
+
+  try {
+    rfResult = { status: 'fulfilled', value: await fetchJSON(`api/rf?t=${Date.now()}`) };
+  } catch (error) {
+    rfResult = { status: 'rejected', reason: error };
+  }
+
   if (rfResult.status === 'fulfilled') {
     App.data.rf = rfResult.value;
     renderRf(rfResult.value);
+  }
+  if (wiegandResult.status !== 'fulfilled' || rfResult.status !== 'fulfilled') {
+    console.warn('Failed to load credential details', {
+      wiegand: wiegandResult.status === 'rejected' ? wiegandResult.reason : null,
+      rf: rfResult.status === 'rejected' ? rfResult.reason : null,
+    });
+    scheduleDeviceCredentialRetry();
   }
 };
 
@@ -949,7 +1105,11 @@ const buildRfUserRow = (user, existingValue) => {
           <span class="credential-kind">Remote</span>
           <span class="user-code">${code}</span>
         </div>
-        ${renderCredentialEnableButton(enabled, 'toggle-rf-enabled', user.id || '')}
+        <div class="credential-card-actions">
+          ${renderCredentialEnableButton(enabled, 'toggle-rf-enabled', user.id || '')}
+          ${renderCredentialAlertToggle('rf-alert-checkbox', alert, 'Toggle remote alert beep')}
+          ${renderCredentialIconButton('delete-rf', user.id || '', 'Delete remote', 'credential-remove-icon')}
+        </div>
       </div>
       <div class="user-info">
         <label class="stacked">
@@ -980,16 +1140,8 @@ const buildRfUserRow = (user, existingValue) => {
             <span>Exit duration (s)</span>
             <input type="number" class="rf-exit-seconds" min="1" step="1" value="${exitSeconds}">
           </label>
-          <label class="form-switch">
-            <input type="checkbox" class="rf-alert-checkbox" ${alert ? 'checked' : ''}>
-            <span>Alert (beep)</span>
-          </label>
         </div>
         ${metrics}
-      </div>
-      <div class="user-actions">
-        <button type="button" class="secondary" data-action="save-rf" data-id="${escapeHtml(user.id || '')}">Save</button>
-        <button type="button" class="secondary danger" data-action="delete-rf" data-id="${escapeHtml(user.id || '')}">Delete</button>
       </div>
     </div>
   `;
@@ -1285,6 +1437,9 @@ const DEVICE_STATE_TOAST_BACKOFF_MS = 120000;
 let wifiNetworksCache = null;
 let wifiScanCache = null;
 let signalsInFlight = null;
+let signalPollFailures = 0;
+let signalPollRetryTimer = null;
+let signalPollStartTimer = null;
 
 const loadState = async () => {
   if (stateInFlight) return stateInFlight;
@@ -1292,7 +1447,7 @@ const loadState = async () => {
   stateInFlight = (async () => {
   try {
     const data = await fetchJSON(`api/state?t=${Date.now()}`);
-    App.data = data;
+    App.data = mergeStateCredentialDetails(App.data || {}, data);
     consecutiveStateFailures = 0;
     nextStateToastAt = 0;
     if (wifiNetworksCache) {
@@ -1303,7 +1458,7 @@ const loadState = async () => {
       App.data.wifi = App.data.wifi || {};
       App.data.wifi.scanned = wifiScanCache;
     }
-    renderState(data);
+    renderState(App.data);
     if (App.elements.toast && !App.elements.toast.hidden) {
       App.elements.toast.hidden = true;
       App.elements.toast.classList.remove('show');
@@ -1331,10 +1486,22 @@ const pollSignals = async () => {
 
   signalsInFlight = (async () => {
     try {
-      const data = await fetchJSON(`api/signals?t=${Date.now()}`);
+      const data = await fetchJSON(`api/signals?t=${Date.now()}`, { timeoutMs: 2500 });
+      signalPollFailures = 0;
       applyFastSignalState(data || {});
     } catch (error) {
+      signalPollFailures++;
       console.warn('Failed to load signal state', error);
+      if (signalPollFailures >= 2) {
+        stopSignalPolling();
+        if (!signalPollRetryTimer && !document.hidden) {
+          signalPollRetryTimer = setTimeout(() => {
+            signalPollRetryTimer = null;
+            signalPollFailures = 0;
+            startSignalPolling();
+          }, 10000);
+        }
+      }
     }
   })().finally(() => {
     signalsInFlight = null;
@@ -1344,15 +1511,29 @@ const pollSignals = async () => {
 };
 
 const startSignalPolling = () => {
-  if (App.signalPollTimer) return;
-  pollSignals();
-  App.signalPollTimer = setInterval(pollSignals, 500);
+  if (!isDevicePageActive()) return;
+  if (App.signalPollTimer || signalPollStartTimer) return;
+  signalPollStartTimer = setTimeout(() => {
+    signalPollStartTimer = null;
+    if (!isDevicePageActive() || document.hidden) return;
+    pollSignals();
+    App.signalPollTimer = setInterval(pollSignals, 5000);
+  }, 3000);
 };
 
 const stopSignalPolling = () => {
-  if (!App.signalPollTimer) return;
-  clearInterval(App.signalPollTimer);
-  App.signalPollTimer = null;
+  if (signalPollStartTimer) {
+    clearTimeout(signalPollStartTimer);
+    signalPollStartTimer = null;
+  }
+  if (App.signalPollTimer) {
+    clearInterval(App.signalPollTimer);
+    App.signalPollTimer = null;
+  }
+  if ((!isDevicePageActive() || document.hidden) && signalPollRetryTimer) {
+    clearTimeout(signalPollRetryTimer);
+    signalPollRetryTimer = null;
+  }
 };
 
 let wifiListInFlight = null;
@@ -1403,6 +1584,7 @@ const loadKeypadUsers = async () => {
     } catch (error) {
       // Don't toast spam; state load already covers connectivity issues.
       console.warn('Failed to load keypad users', error);
+      scheduleDeviceCredentialRetry();
     }
   })().finally(() => {
     keypadUsersInFlight = null;
@@ -2017,7 +2199,6 @@ const setupWiegandHandlers = () => {
 
     listEl.addEventListener('click', async (event) => {
       const toggleEnabledBtn = event.target.closest('button[data-action="toggle-wiegand-enabled"]');
-      const renameBtn = event.target.closest('button[data-action="rename"]');
       const deleteBtn = event.target.closest('button[data-action="delete-wiegand"]');
 
       if (toggleEnabledBtn) {
@@ -2037,16 +2218,6 @@ const setupWiegandHandlers = () => {
           setEnableButtonState(toggleEnabledBtn, previousEnabled);
         }
         return;
-      }
-
-      if (renameBtn) {
-        const container = renameBtn.closest('.user-row');
-        if (!container) return;
-        try {
-          await saveWiegandCard(container, renameBtn);
-        } catch (error) {
-          // saveWiegandCard already surfaced the error.
-        }
       }
 
       if (deleteBtn) {
@@ -2069,6 +2240,12 @@ const setupWiegandHandlers = () => {
       }
     });
 
+    listEl.addEventListener('input', (event) => {
+      const nameInput = event.target.closest('.user-name-input');
+      if (!nameInput) return;
+      scheduleCredentialNameSave(nameInput, (container) => saveWiegandCard(container, null, { quiet: true }));
+    });
+
     listEl.addEventListener('change', async (event) => {
       const alertInput = event.target.closest('.wiegand-alert-checkbox');
       const modeInput = event.target.closest('.wiegand-mode-select');
@@ -2077,20 +2254,22 @@ const setupWiegandHandlers = () => {
       if (!container) return;
 
       const control = alertInput || modeInput;
-      const previous = alertInput ? !alertInput.checked : modeInput.dataset.previousValue || 'momentary';
+      const previous = alertInput ? !alertInput.checked : modeInput?.dataset.previousValue || '';
       control.disabled = true;
       try {
         await saveWiegandCard(container, control, { quiet: true });
         if (alertInput) {
+          alertInput.closest('.credential-alert-toggle')?.classList.toggle('is-active', alertInput.checked);
           showToast(`RFID alert ${alertInput.checked ? 'enabled' : 'disabled'}.`);
-        } else {
+        } else if (modeInput) {
           modeInput.dataset.previousValue = modeInput.value;
           showToast(`RFID mode set to ${modeInput.options[modeInput.selectedIndex].text}.`);
         }
       } catch (error) {
         if (alertInput) {
           alertInput.checked = previous;
-        } else {
+          alertInput.closest('.credential-alert-toggle')?.classList.toggle('is-active', alertInput.checked);
+        } else if (modeInput) {
           modeInput.value = previous;
         }
       } finally {
@@ -2205,7 +2384,6 @@ const setupRfHandlers = () => {
 
     listEl.addEventListener('click', async (event) => {
       const toggleEnabledBtn = event.target.closest('button[data-action="toggle-rf-enabled"]');
-      const saveBtn = event.target.closest('button[data-action="save-rf"]');
       const deleteBtn = event.target.closest('button[data-action="delete-rf"]');
 
       if (toggleEnabledBtn) {
@@ -2227,15 +2405,6 @@ const setupRfHandlers = () => {
         return;
       }
 
-      if (saveBtn) {
-        const container = saveBtn.closest('.user-row');
-        try {
-          await saveRfCard(container, saveBtn);
-        } catch (error) {
-          // saveRfCard already surfaced the error.
-        }
-      }
-
       if (deleteBtn) {
         const id = deleteBtn.getAttribute('data-id');
         if (!id) return;
@@ -2255,6 +2424,40 @@ const setupRfHandlers = () => {
         } finally {
           deleteBtn.disabled = false;
         }
+      }
+    });
+
+    listEl.addEventListener('input', (event) => {
+      const nameInput = event.target.closest('.user-name-input');
+      if (!nameInput) return;
+      scheduleCredentialNameSave(nameInput, (container) => saveRfCard(container, null, { quiet: true }));
+    });
+
+    listEl.addEventListener('change', async (event) => {
+      const control = event.target.closest('.rf-mode-select, .rf-channel-select, .rf-exit-seconds, .rf-alert-checkbox');
+      if (!control) return;
+
+      const container = control.closest('.user-row');
+      if (!container) return;
+
+      const isAlert = control.classList.contains('rf-alert-checkbox');
+      const previousChecked = isAlert ? !control.checked : null;
+      control.disabled = true;
+      try {
+        await saveRfCard(container, control, { quiet: true });
+        if (isAlert) {
+          control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
+          showToast(`Remote alert ${control.checked ? 'enabled' : 'disabled'}.`);
+        }
+      } catch (error) {
+        if (isAlert) {
+          control.checked = previousChecked;
+          control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
+        } else {
+          await loadState();
+        }
+      } finally {
+        control.disabled = false;
       }
     });
   }
@@ -2309,8 +2512,20 @@ const buildKeypadUserRow = (user, index, existingValue) => {
   return `
     <div class="user-row credential-card credential-card--pin" data-uuid="${escapeHtml(user.uuid || '')}">
       <div class="credential-card-header">
-        <span class="credential-kind">User</span>
-        <span class="user-code">${pinLabel}</span>
+        <div class="credential-card-title">
+          <span class="credential-kind">User</span>
+          <span class="user-code">${pinLabel}</span>
+        </div>
+        <div class="credential-card-actions">
+          <button type="button"
+            class="credential-icon-button credential-remove-icon"
+            data-action="delete-pin"
+            data-uuid="${escapeHtml(user.uuid || '')}"
+            aria-label="Delete PIN user"
+            title="Delete PIN user">
+            <span aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
       <div class="user-info">
         <label class="stacked">
@@ -2318,10 +2533,6 @@ const buildKeypadUserRow = (user, index, existingValue) => {
           <input type="text" class="user-name-input" value="${name}" placeholder="Enter name...">
         </label>
         <span class="user-channel">Use enrollment to add RFID cards, PINs, or remotes.</span>
-      </div>
-      <div class="user-actions">
-        <button type="button" class="secondary" data-action="save-pin" data-uuid="${escapeHtml(user.uuid || '')}">Save</button>
-        <button type="button" class="secondary danger" data-action="delete-pin" data-uuid="${escapeHtml(user.uuid || '')}">Delete</button>
       </div>
     </div>
   `;
@@ -2583,36 +2794,36 @@ const setupKeypadPinHandlers = () => {
   }
 
   if (listEl) {
-    listEl.addEventListener('click', async (event) => {
-      const saveBtn = event.target.closest('button[data-action="save-pin"]');
-      const deleteBtn = event.target.closest('button[data-action="delete-pin"]');
+    const savePinUser = async (container, trigger, { quiet = false } = {}) => {
+      const input = container?.querySelector('.user-name-input');
+      const uuid = container?.getAttribute('data-uuid');
+      const name = input?.value.trim();
 
-      if (saveBtn) {
-        const container = saveBtn.closest('.user-row');
-        const input = container?.querySelector('.user-name-input');
-        const uuid = saveBtn.getAttribute('data-uuid');
-        const name = input?.value.trim();
-
-        if (!uuid || !name) {
-          showToast('Please provide a name.');
-          return;
-        }
-
-        saveBtn.disabled = true;
-        try {
-          const users = await fetchJSON('api/keypad/user', {
-            method: 'PUT',
-            body: JSON.stringify({ uuid, name }),
-          });
-          renderKeypadUsers(Array.isArray(users) ? users : []);
-          showToast('PIN user updated.');
-          if (App.data) App.data.keypadUsers = Array.isArray(users) ? users : [];
-        } catch (error) {
-          handleError(error, 'Failed to update user');
-        } finally {
-          saveBtn.disabled = false;
-        }
+      if (!uuid || !name) {
+        showToast('Please provide a name.');
+        return null;
       }
+
+      if (trigger) trigger.disabled = true;
+      try {
+        const users = await fetchJSON('api/keypad/user', {
+          method: 'PUT',
+          body: JSON.stringify({ uuid, name }),
+        });
+        renderKeypadUsers(Array.isArray(users) ? users : []);
+        if (!quiet) showToast('PIN user updated.');
+        if (App.data) App.data.keypadUsers = Array.isArray(users) ? users : [];
+        return users;
+      } catch (error) {
+        handleError(error, 'Failed to update user');
+        throw error;
+      } finally {
+        if (trigger) trigger.disabled = false;
+      }
+    };
+
+    listEl.addEventListener('click', async (event) => {
+      const deleteBtn = event.target.closest('button[data-action="delete-pin"]');
 
       if (deleteBtn) {
         const uuid = deleteBtn.getAttribute('data-uuid');
@@ -2634,6 +2845,12 @@ const setupKeypadPinHandlers = () => {
           deleteBtn.disabled = false;
         }
       }
+    });
+
+    listEl.addEventListener('input', (event) => {
+      const input = event.target.closest('.user-name-input');
+      if (!input) return;
+      scheduleCredentialNameSave(input, (container) => savePinUser(container, null, { quiet: true }));
     });
   }
 };
@@ -2901,6 +3118,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   bindNavigation();
+  setupCredentialIconControls();
   setupControlCardChrome();
   setupLockHandlers();
   setupExitHandlers();
@@ -2915,13 +3133,11 @@ document.addEventListener('DOMContentLoaded', () => {
   setupOtaHandlers();
   setupEditableLabels();
 
-  loadState();
   // Defer heavy endpoints until their tabs are opened; tunneling adds overhead
   // and these requests can clobber the ESP32 heap when fired all at once.
-  onPageActivated('device');
   const startStatePolling = () => {
     if (App.stateTimer) return;
-    App.stateTimer = setInterval(loadState, 20000);
+    App.stateTimer = setInterval(loadState, 30000);
   };
   const stopStatePolling = () => {
     if (App.stateTimer) {
@@ -2935,16 +3151,20 @@ document.addEventListener('DOMContentLoaded', () => {
       stopStatePolling();
       stopEnrollmentPolling();
       stopSignalPolling();
+      stopWiegandPolling();
       stopUptimeClock();
     } else {
-      loadState();
-      startStatePolling();
-      startSignalPolling();
-      startUptimeClock();
+      loadState().finally(() => {
+        onPageActivated(getActivePageId());
+        startStatePolling();
+        startUptimeClock();
+      });
     }
   });
 
-  startStatePolling();
-  startSignalPolling();
-  startUptimeClock();
+  loadState().finally(() => {
+    onPageActivated('device');
+    startStatePolling();
+    startUptimeClock();
+  });
 });

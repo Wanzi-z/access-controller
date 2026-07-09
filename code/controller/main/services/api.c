@@ -347,14 +347,10 @@ static void add_partition_info(cJSON *parent, const char *field, const esp_parti
     cJSON_AddItemToObject(parent, field, object);
 }
 
-static void add_firmware_info(cJSON *system) {
-    if (!system) {
-        return;
-    }
-
+static cJSON *build_firmware_info_object(void) {
     cJSON *firmware = cJSON_CreateObject();
     if (!firmware) {
-        return;
+        return NULL;
     }
 
     const esp_app_desc_t *desc = esp_app_get_description();
@@ -396,7 +392,31 @@ static void add_firmware_info(cJSON *system) {
     cJSON_AddBoolToObject(firmware, "rollbackPossible", esp_ota_check_rollback_is_possible());
     cJSON_AddNumberToObject(firmware, "maxUploadBytes", next ? next->size : 0);
 
-    cJSON_AddItemToObject(system, "firmware", firmware);
+    return firmware;
+}
+
+static void add_firmware_info(cJSON *system) {
+    static cJSON *cached_firmware = NULL;
+    static int64_t cached_at_us = 0;
+    const int64_t now_us = esp_timer_get_time();
+
+    if (!system) {
+        return;
+    }
+
+    if (!cached_firmware || now_us - cached_at_us > 1000000LL) {
+        cJSON *fresh = build_firmware_info_object();
+        if (fresh) {
+            cJSON_Delete(cached_firmware);
+            cached_firmware = fresh;
+            cached_at_us = now_us;
+        }
+    }
+
+    cJSON *firmware = cached_firmware ? cJSON_Duplicate(cached_firmware, true) : build_firmware_info_object();
+    if (firmware) {
+        cJSON_AddItemToObject(system, "firmware", firmware);
+    }
 }
 
 static cJSON *build_state_snapshot(void) {
@@ -501,10 +521,6 @@ static cJSON *build_state_snapshot(void) {
         char pwd[64] = {0};
         load_wifi_credentials_from_flash(ssid, pwd);
         cJSON_AddStringToObject(wifi, "active_ssid", ssid);
-        cJSON *list = wifi_list_snapshot();
-        if (list) {
-            cJSON_AddItemToObject(wifi, "networks", list);
-        }
         cJSON_AddItemToObject(root, "wifi", wifi);
     }
 
@@ -639,10 +655,16 @@ static esp_err_t api_signals_get_handler(httpd_req_t *req) {
     cJSON *motions = motion_state_snapshot();
     cJSON_AddItemToObject(root, "motions", motions ? motions : cJSON_CreateArray());
 
-    cJSON *wiegand = wiegand_state_snapshot();
+    cJSON *wiegand = wiegand_state_summary_snapshot();
     cJSON_AddItemToObject(root, "wiegand", wiegand ? wiegand : cJSON_CreateObject());
 
-    cJSON *rf = rf_state_snapshot();
+    cJSON *rf = rf_state_summary_snapshot();
+    if (rf) {
+        cJSON *receiver = rf_receiver_diagnostics_summary_snapshot();
+        if (receiver) {
+            cJSON_AddItemToObject(rf, "receiver", receiver);
+        }
+    }
     cJSON_AddItemToObject(root, "rf", rf ? rf : cJSON_CreateObject());
 
     httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");

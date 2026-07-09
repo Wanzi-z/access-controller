@@ -9,6 +9,7 @@
     "test:api": "node runner.mjs --api-only",
     "test:physical": "node runner.mjs --physical-only",
     "test:ui": "node runner.mjs --ui-only",
+    "test:ui-credentials": "node runner.mjs --ui-credential-resilience",
     "test:quick": "node runner.mjs --quick",
     "test:stress": "node runner.mjs --stress",
     "test:soak": "node runner.mjs --soak",

@@ -31,6 +31,7 @@ static bool s_wifi_driver_ready = false;
 static bool s_wifi_started = false;
 static bool s_sta_netif_ready = false;
 static bool s_sta_handlers_ready = false;
+static bool s_sta_watchdog_started = false;
 
 static void time_sync_notification_cb(struct timeval *tv) {
     time_t now = 0;
@@ -51,15 +52,14 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         char message[96];
         snprintf(message, sizeof(message), "WiFi disconnected (reason=%d)", reason);
         automation_record_log(message);
+        if (s_wifi_event_group) {
+            xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        }
 
         if (s_connected_once) {
-            if (s_disconnect_retry < EXAMPLE_ESP_MAXIMUM_RETRY) {
-                s_disconnect_retry++;
-                esp_wifi_connect();
-                ESP_LOGI(TAG, "Reconnect attempt %d after disconnect", s_disconnect_retry);
-            } else {
-                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-            }
+            s_disconnect_retry++;
+            esp_wifi_connect();
+            ESP_LOGI(TAG, "Reconnect attempt %d after disconnect", s_disconnect_retry);
             return;
         }
 
@@ -87,6 +87,44 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             s_sntp_started = true;
             ESP_LOGI(TAG, "SNTP initialised");
         }
+    }
+}
+
+static void station_reconnect_watchdog(void *arg) {
+    (void)arg;
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(5000));
+
+        if (!s_wifi_started || !s_connected_once) {
+            continue;
+        }
+
+        wifi_mode_t mode = WIFI_MODE_NULL;
+        if (esp_wifi_get_mode(&mode) != ESP_OK ||
+            (mode != WIFI_MODE_STA && mode != WIFI_MODE_APSTA)) {
+            continue;
+        }
+
+        wifi_ap_record_t ap_info;
+        memset(&ap_info, 0, sizeof(ap_info));
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            continue;
+        }
+
+        ESP_LOGW(TAG, "STA watchdog detected disconnected WiFi; reconnecting");
+        automation_record_log("WiFi watchdog reconnecting station");
+        esp_wifi_connect();
+    }
+}
+
+static void station_start_reconnect_watchdog(void) {
+    if (s_sta_watchdog_started) {
+        return;
+    }
+    if (xTaskCreate(station_reconnect_watchdog, "wifi_watch", 3072, NULL, 4, NULL) == pdPASS) {
+        s_sta_watchdog_started = true;
+    } else {
+        ESP_LOGE(TAG, "Failed to start WiFi reconnect watchdog");
     }
 }
 
@@ -141,6 +179,7 @@ static esp_err_t station_ensure_initialized(void) {
                                                         NULL,
                                                         &instance_got_ip));
     s_sta_handlers_ready = true;
+    station_start_reconnect_watchdog();
     return ESP_OK;
 }
 

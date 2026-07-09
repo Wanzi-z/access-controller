@@ -205,7 +205,7 @@ async function settingsWorker(baseUrl, metrics, done, workerId = 0) {
     for (let j = 0; j < updates.length; j++) {
       const [path, name] = updates[(j + offset) % updates.length];
       try {
-        await postJson(baseUrl, path, { channel, enable: false, mode, latch, delay, alert: false }, metrics, name);
+        await postJson(baseUrl, path, { channel, enable: false, mode, latch, delay }, metrics, name);
       } catch {}
       await sleep(numberEnv('SOAK_SETTINGS_STEP_MS', 50));
     }
@@ -306,10 +306,10 @@ const serviceState = (state, key) => Array.isArray(state?.[key]) ? state[key] : 
 async function applyNonActuatingSettings(baseUrl, metrics) {
   for (const channel of [1, 2]) {
     await Promise.allSettled([
-      postJson(baseUrl, '/api/exit', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/exit'),
-      postJson(baseUrl, '/api/fob', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/fob'),
-      postJson(baseUrl, '/api/keypad', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/keypad'),
-      postJson(baseUrl, '/api/motion', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/motion'),
+      postJson(baseUrl, '/api/exit', { channel, enable: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/exit'),
+      postJson(baseUrl, '/api/fob', { channel, enable: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/fob'),
+      postJson(baseUrl, '/api/keypad', { channel, enable: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/keypad'),
+      postJson(baseUrl, '/api/motion', { channel, enable: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'prepare /api/motion'),
     ]);
   }
   await sleep(1200);
@@ -341,10 +341,10 @@ async function restoreSettings(baseUrl, metrics, initialState) {
 async function restoreDefaults(baseUrl, metrics) {
   for (const channel of [1, 2]) {
     await Promise.allSettled([
-      postJson(baseUrl, '/api/exit', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/exit'),
-      postJson(baseUrl, '/api/fob', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/fob'),
-      postJson(baseUrl, '/api/keypad', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/keypad'),
-      postJson(baseUrl, '/api/motion', { channel, enable: false, alert: false, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/motion'),
+      postJson(baseUrl, '/api/exit', { channel, enable: false, alert: true, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/exit'),
+      postJson(baseUrl, '/api/fob', { channel, enable: false, alert: true, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/fob'),
+      postJson(baseUrl, '/api/keypad', { channel, enable: false, alert: true, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/keypad'),
+      postJson(baseUrl, '/api/motion', { channel, enable: false, alert: true, mode: 'momentary', latch: false, delay: 4 }, metrics, 'restore /api/motion'),
     ]);
   }
 }
@@ -466,9 +466,8 @@ export default async function run(api, report) {
   const hasUnexpectedFailures = totals.fail > 0 || metrics.reboots > config.otaRepeats;
   if (hasUnexpectedFailures && boolEnv('SOAK_AUDIBLE_ALERT', true)) {
     await audibleFailureAlert(baseUrl, metrics);
-  } else {
-    await setQuietTestMode(baseUrl, metrics, false);
   }
+  await setQuietTestMode(baseUrl, metrics, false);
 
   if (totals.fail === 0) {
     report.pass('Soak completed without request failures', `${totals.ok}/${totals.count} ok; ${artifacts.mdPath}`, Date.now() - startedAt);

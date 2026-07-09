@@ -922,6 +922,8 @@ cJSON *wiegand_state_summary_snapshot(void) {
     if (duplicate && duplicate[0] != '\0') {
         cJSON_AddStringToObject(root, "lastDuplicateCode", duplicate);
     }
+    cJSON_AddBoolToObject(root, "summary", true);
+    cJSON_AddNumberToObject(root, "userCount", (double)wiegand_registry_count());
     cJSON_AddItemToObject(root, "users", cJSON_CreateArray());
     return root;
 }

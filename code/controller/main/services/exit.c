@@ -1,6 +1,7 @@
 #define EXIT_BUTTON_MCP_IO_1         A5
 #define EXIT_BUTTON_MCP_IO_2         B5
 #define NUM_OF_EXITS						 2
+#define EXIT_SETTINGS_STORE_DEBOUNCE_MS 5000
 
 char exit_service_message[2000];
 bool exit_service_message_ready = false;
@@ -76,7 +77,7 @@ static const char *exit_current_mode(struct exitButton *ext)
 static void scheduleExitSettingsStore(void)
 {
 	exit_settings_dirty = true;
-	exit_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+	exit_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(EXIT_SETTINGS_STORE_DEBOUNCE_MS);
 }
 
 static void flushExitSettingsIfDue(void)

@@ -98,6 +98,7 @@ async function main() {
   const bulkRemoveOnly = args.includes('--bulk-remove');
   const serverRouteOnly = args.includes('--server-route-only');
   const soakOnly = args.includes('--soak');
+  const uiCredentialResilienceOnly = args.includes('--ui-credential-resilience');
 
   console.log('╔══════════════════════════════════════════════════════════╗');
   console.log('║       Access Controller - Comprehensive Test Suite      ║');
@@ -108,6 +109,13 @@ async function main() {
 
   if (serverRouteOnly) {
     const mod = await import('./suites/server-route.mjs');
+    await mod.default(null, report);
+    report.finish();
+    process.exit(report.results.fail > 0 ? 1 : 0);
+  }
+
+  if (uiCredentialResilienceOnly) {
+    const mod = await import('./suites/ui-credential-resilience.mjs');
     await mod.default(null, report);
     report.finish();
     process.exit(report.results.fail > 0 ? 1 : 0);

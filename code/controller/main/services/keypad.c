@@ -6,6 +6,7 @@
 #define KEYPAD_MCP_IO_1         A3
 #define KEYPAD_MCP_IO_2         B3
 #define NUM_OF_KEYPADS          2
+#define KEYPAD_SETTINGS_STORE_DEBOUNCE_MS 5000
 
 char keypad_service_message[2000];
 bool keypad_service_message_ready = false;
@@ -83,7 +84,7 @@ static const char *keypad_current_mode(struct keypadButton *pad)
 static void scheduleKeypadSettingsStore(void)
 {
 	keypad_settings_dirty = true;
-	keypad_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+	keypad_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(KEYPAD_SETTINGS_STORE_DEBOUNCE_MS);
 }
 
 static void flushKeypadSettingsIfDue(void)

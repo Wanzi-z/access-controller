@@ -22,6 +22,8 @@
 #include "esp_vfs.h"
 #include "esp_spiffs.h"
 #include "esp_http_server.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 /* Max length a file path can have on storage */
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
@@ -48,6 +50,56 @@ static const char *FILE_TAG = "file_server";
 
 extern void register_api_routes(httpd_handle_t server);
 
+static esp_err_t send_embedded_asset(httpd_req_t *req,
+                                     const unsigned char *start,
+                                     size_t size,
+                                     const char *content_type,
+                                     const char *cache_control,
+                                     const char *content_encoding)
+{
+    httpd_resp_set_type(req, content_type);
+    httpd_resp_set_hdr(req, "Cache-Control", cache_control);
+    httpd_resp_set_hdr(req, "Connection", "close");
+    if (content_encoding && content_encoding[0] != '\0') {
+        httpd_resp_set_hdr(req, "Content-Encoding", content_encoding);
+        httpd_resp_set_hdr(req, "Vary", "Accept-Encoding");
+    }
+
+    if (size <= 32768) {
+        return httpd_resp_send(req, (const char *)start, size);
+    }
+
+    const size_t chunk_size = 4096;
+    size_t offset = 0;
+    while (offset < size) {
+        size_t remaining = size - offset;
+        size_t to_send = remaining > chunk_size ? chunk_size : remaining;
+        if (httpd_resp_send_chunk(req, (const char *)(start + offset), to_send) != ESP_OK) {
+            ESP_LOGW(FILE_TAG, "Embedded asset send failed after %u/%u bytes",
+                     (unsigned int)offset,
+                     (unsigned int)size);
+            return ESP_FAIL;
+        }
+        offset += to_send;
+        vTaskDelay(1);
+    }
+
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
+static bool request_accepts_gzip(httpd_req_t *req)
+{
+    char accept_encoding[128] = {0};
+    size_t len = httpd_req_get_hdr_value_len(req, "Accept-Encoding");
+    if (len == 0 || len >= sizeof(accept_encoding)) {
+        return false;
+    }
+    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", accept_encoding, sizeof(accept_encoding)) != ESP_OK) {
+        return false;
+    }
+    return strstr(accept_encoding, "gzip") != NULL;
+}
+
 /* Handler to redirect incoming GET request for /index.html to /
  * This can be overridden by uploading file with same name */
 static esp_err_t index_html_get_handler(httpd_req_t *req)
@@ -68,43 +120,63 @@ static esp_err_t favicon_get_handler(httpd_req_t *req)
     extern const unsigned char favicon_ico_start[] asm("_binary_favicon_ico_start");
     extern const unsigned char favicon_ico_end[]   asm("_binary_favicon_ico_end");
     const size_t favicon_ico_size = (favicon_ico_end - favicon_ico_start);
-    httpd_resp_set_type(req, "image/x-icon");
-    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400, immutable");
-    httpd_resp_set_hdr(req, "Connection", "close");
-    return httpd_resp_send(req, (const char *)favicon_ico_start, favicon_ico_size);
+    return send_embedded_asset(req,
+                               favicon_ico_start,
+                               favicon_ico_size,
+                               "image/x-icon",
+                               "public, max-age=86400, immutable",
+                               NULL);
 }
 
 static esp_err_t script_get_handler(httpd_req_t *req)
 {
     extern const unsigned char script_js_start[] asm("_binary_script_js_start");
     extern const unsigned char script_js_end[]   asm("_binary_script_js_end");
+    extern const unsigned char script_js_gz_start[] asm("_binary_script_js_gz_start");
+    extern const unsigned char script_js_gz_end[]   asm("_binary_script_js_gz_end");
+    const bool gzip = request_accepts_gzip(req);
     const size_t script_js_size = (script_js_end - script_js_start);
-    httpd_resp_set_type(req, "application/javascript");
-    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400, immutable");
-    httpd_resp_set_hdr(req, "Connection", "close");
-    return httpd_resp_send(req, (const char *)script_js_start, script_js_size);
+    const size_t script_js_gz_size = (script_js_gz_end - script_js_gz_start);
+    return send_embedded_asset(req,
+                               gzip ? script_js_gz_start : script_js_start,
+                               gzip ? script_js_gz_size : script_js_size,
+                               "application/javascript",
+                               "public, max-age=86400, immutable",
+                               gzip ? "gzip" : NULL);
 }
 
 static esp_err_t style_get_handler(httpd_req_t *req)
 {
     extern const unsigned char style_css_start[] asm("_binary_style_css_start");
     extern const unsigned char style_css_end[]   asm("_binary_style_css_end");
+    extern const unsigned char style_css_gz_start[] asm("_binary_style_css_gz_start");
+    extern const unsigned char style_css_gz_end[]   asm("_binary_style_css_gz_end");
+    const bool gzip = request_accepts_gzip(req);
     const size_t style_css_size = (style_css_end - style_css_start);
-    httpd_resp_set_type(req, "text/css");
-    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400, immutable");
-    httpd_resp_set_hdr(req, "Connection", "close");
-    return httpd_resp_send(req, (const char *)style_css_start, style_css_size);
+    const size_t style_css_gz_size = (style_css_gz_end - style_css_gz_start);
+    return send_embedded_asset(req,
+                               gzip ? style_css_gz_start : style_css_start,
+                               gzip ? style_css_gz_size : style_css_size,
+                               "text/css",
+                               "public, max-age=86400, immutable",
+                               gzip ? "gzip" : NULL);
 }
 
 static esp_err_t index_get_handler(httpd_req_t *req)
 {
     extern const unsigned char index_html_start[] asm("_binary_index_html_start");
     extern const unsigned char index_html_end[]   asm("_binary_index_html_end");
+    extern const unsigned char index_html_gz_start[] asm("_binary_index_html_gz_start");
+    extern const unsigned char index_html_gz_end[]   asm("_binary_index_html_gz_end");
+    const bool gzip = request_accepts_gzip(req);
     const size_t index_html_size = (index_html_end - index_html_start);
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-    httpd_resp_set_hdr(req, "Connection", "close");
-    return httpd_resp_send(req, (const char *)index_html_start, index_html_size);
+    const size_t index_html_gz_size = (index_html_gz_end - index_html_gz_start);
+    return send_embedded_asset(req,
+                               gzip ? index_html_gz_start : index_html_start,
+                               gzip ? index_html_gz_size : index_html_size,
+                               "text/html",
+                               "no-store",
+                               gzip ? "gzip" : NULL);
 }
 
 /* Send HTTP response with a run-time generated html consisting of
@@ -116,10 +188,12 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 	extern const unsigned char index_html_start[] asm("_binary_index_html_start");
 	extern const unsigned char index_html_end[]   asm("_binary_index_html_end");
 	const size_t index_html_size = (index_html_end - index_html_start);
-	httpd_resp_set_type(req, "text/html");
-	httpd_resp_set_hdr(req, "Cache-Control", "no-store");
-	httpd_resp_set_hdr(req, "Connection", "close");
-	return httpd_resp_send(req, (const char *)index_html_start, index_html_size);
+	return send_embedded_asset(req,
+	                           index_html_start,
+	                           index_html_size,
+	                           "text/html",
+	                           "no-store",
+	                           NULL);
 }
 
 #define IS_FILE_EXT(filename, ext) \
@@ -445,11 +519,13 @@ esp_err_t start_file_server(const char *base_path)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 58; // allow API, websocket, OTA, upload, and embedded asset routes
     config.max_open_sockets = 7;
+    config.backlog_conn = 4;
     config.lru_purge_enable = true;
     config.task_priority = 8;
     config.stack_size = 12288;
     config.recv_wait_timeout = 5;
-    config.send_wait_timeout = 5;
+    config.send_wait_timeout = 10;
+    config.keep_alive_enable = false;
 
     /* Use the URI wildcard matching function in order to
      * allow the same handler to respond to multiple different

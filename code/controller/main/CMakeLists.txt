@@ -35,7 +35,14 @@ endif()
 
 idf_component_register(SRCS "main.c" "services/log_store.c"
                       INCLUDE_DIRS "."
-                      EMBED_FILES "public/favicon.ico" "public/index.html" "public/script.js" "public/style.css")
+                      EMBED_FILES
+                        "public/favicon.ico"
+                        "public/index.html"
+                        "public/script.js"
+                        "public/style.css"
+                        "public/index.html.gz"
+                        "public/script.js.gz"
+                        "public/style.css.gz")
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   BUILD_GIT_COMMIT="${BUILD_GIT_COMMIT}"

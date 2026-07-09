@@ -2,6 +2,7 @@
 #define FOB_MCP_IO_2         B7
 #define NUM_OF_FOBS			    2
 #define MOMENTARY		  1
+#define FOB_SETTINGS_STORE_DEBOUNCE_MS 5000
 
 char fob_service_message[2000];
 bool fob_service_message_ready = false;
@@ -78,7 +79,7 @@ static const char *fob_current_mode(struct fob *fb)
 static void scheduleFobSettingsStore(void)
 {
 	fob_settings_dirty = true;
-	fob_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(750);
+	fob_settings_due = xTaskGetTickCount() + pdMS_TO_TICKS(FOB_SETTINGS_STORE_DEBOUNCE_MS);
 }
 
 static void flushFobSettingsIfDue(void)
