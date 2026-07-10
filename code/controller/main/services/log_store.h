@@ -14,7 +14,7 @@ typedef struct {
     char *message;
 } stored_log_entry_t;
 
-#define LOG_STORE_CAPACITY 100
+#define LOG_STORE_CAPACITY 32
 #define LOG_STORE_MESSAGE_MAX 96
 
 int log_store_init(void);

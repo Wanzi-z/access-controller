@@ -175,6 +175,7 @@ static esp_err_t flush_ring_locked(void) {
     size_t target_count = s_ring.count;
     size_t original_count = target_count;
     esp_err_t set_err = ESP_FAIL;
+    bool erased_existing_blob = false;
 
     while (target_count > 0) {
         size_t buffer_size = sizeof(persisted_log_header_t) + target_count * sizeof(persisted_log_entry_t);
@@ -200,6 +201,15 @@ static esp_err_t flush_ring_locked(void) {
         }
 
         if (set_err == ESP_ERR_NVS_NOT_ENOUGH_SPACE) {
+            if (!erased_existing_blob) {
+                esp_err_t erase_err = erase_persisted_ring(handle);
+                erased_existing_blob = true;
+                if (erase_err == ESP_OK) {
+                    ESP_LOGW(TAG, "NVS full while persisting logs; erased old log blob before retry");
+                    continue;
+                }
+                ESP_LOGW(TAG, "Failed to erase old log blob while recovering NVS space (%s)", esp_err_to_name(erase_err));
+            }
             size_t drop = (target_count > 10) ? (target_count / 4) : 1;
             if (drop > target_count) {
                 drop = target_count;
