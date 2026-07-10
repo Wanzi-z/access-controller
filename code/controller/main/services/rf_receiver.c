@@ -601,8 +601,12 @@ static void rf_process_capture(size_t count, bool had_sync, int64_t now_us)
     rf_diag_last_capture_pulses = (uint32_t)count;
     rf_diag_last_had_sync = had_sync;
 
-    /* Process any plausible 24-bit OOK burst; sync polarity varies by remote/module. */
-    if (count >= 48 && count >= RF_MIN_VALID_PULSES && count <= RF_CAPTURE_SIZE) {
+    /*
+     * Only process complete, single EV1527/PT2262-sized captures. Letting the
+     * decoder scan a full noise buffer can synthesize a 24-bit code from
+     * unrelated GPIO activity, which shows up as phantom remote fobs.
+     */
+    if (had_sync && count >= RF_MIN_VALID_PULSES && count <= RF_MAX_VALID_PULSES) {
         uint32_t decode_start = 0;
         uint32_t code = rf_try_decode(count, &decode_start);
 

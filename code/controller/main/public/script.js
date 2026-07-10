@@ -618,6 +618,19 @@ const applyMotionState = (motions = []) => {
   });
 };
 
+const pinEntriesHaveActiveCode = (entries = []) =>
+  Array.isArray(entries) && entries.some((entry) => entry?.active && String(entry.code || '').length > 0);
+
+const signalStateHasCredentialActivity = (state = {}) => {
+  const anyActive = (items = [], field = 'signal') =>
+    Array.isArray(items) && items.some((item) => !!item?.[field]);
+  return anyActive(state.exits) ||
+    anyActive(state.fobs) ||
+    anyActive(state.keypads) ||
+    anyActive(state.motions) ||
+    pinEntriesHaveActiveCode(state.wiegand?.pinEntries);
+};
+
 const applyFastSignalState = (state = {}) => {
   (state.locks || []).forEach((lock) => {
     const ch = lock.channel;
@@ -631,6 +644,28 @@ const applyFastSignalState = (state = {}) => {
   (state.fobs || []).forEach((fob) => applySignalDot(`fobSignal_${fob.channel}`, fob.signal));
   (state.keypads || []).forEach((pad) => applySignalDot(`keypadSignal_${pad.channel}`, pad.signal));
   (state.motions || []).forEach((motion) => applySignalDot(`motionSignal_${motion.channel}`, motion.signal));
+  const previousPinActive = pinEntriesHaveActiveCode(App.data?.wiegand?.pinEntries);
+  const nextPinActive = pinEntriesHaveActiveCode(state.wiegand?.pinEntries);
+  if (App.data) {
+    App.data.wiegand = {
+      ...(App.data.wiegand || {}),
+      ...(state.wiegand || {}),
+    };
+  }
+  renderLivePinEntries(state.wiegand?.pinEntries || []);
+  if (Array.isArray(App.data?.keypadUsers)) {
+    renderKeypadUsers(App.data.keypadUsers);
+  }
+  if (previousPinActive && !nextPinActive) {
+    loadKeypadUsers().catch((error) => {
+      console.warn('Failed to refresh PIN codes after keypad submit', error);
+    });
+  }
+  if (signalStateHasCredentialActivity(state)) {
+    refreshCredentialActivityData().catch((error) => {
+      console.warn('Failed to refresh credential activity data', error);
+    });
+  }
   applyCredentialActivityState(state);
 };
 
@@ -659,6 +694,9 @@ const applyCredentialActivityState = (state = {}) => {
       updateActivityHighlight(card, ageMs, !!user.lastRx);
     }
   });
+  if (Array.isArray(App.data?.keypadUsers)) {
+    applyPinCredentialActivityState(App.data.keypadUsers);
+  }
   refreshActivityHighlights();
 };
 
@@ -696,7 +734,7 @@ const renderCredentialAlertToggle = (className, checked, label = 'Alert beep') =
 const setupCredentialIconControls = () => {
   const removeButtons = [
     { button: App.elements.wiegandRemoveAllBtn, label: 'Remove all RFID cards' },
-    { button: App.elements.keypadRemoveAllBtn, label: 'Remove all PIN users' },
+    { button: App.elements.keypadRemoveAllBtn, label: 'Remove all PIN codes' },
     { button: App.elements.rfRemoveAllBtn, label: 'Remove all remotes' },
   ];
 
@@ -928,17 +966,27 @@ const applyEnrollmentUpdate = (update = {}) => {
     App.data.wiegand = update.wiegand;
     renderWiegand(update.wiegand);
   }
+  if (Array.isArray(update.keypadUsers)) {
+    App.data.keypadUsers = update.keypadUsers;
+    renderKeypadUsers(update.keypadUsers);
+  }
 };
 
 const refreshEnrollmentState = async () => {
-  const [enrollmentResult, rfResult] = await Promise.allSettled([
+  const [enrollmentResult, wiegandResult, rfResult, keypadUsersResult] = await Promise.allSettled([
     fetchJSON(`api/enrollment?t=${Date.now()}`),
+    fetchJSON(`api/wiegand?t=${Date.now()}`),
     fetchJSON(`api/rf?t=${Date.now()}`),
+    fetchJSON(`api/keypad/users?t=${Date.now()}`),
   ]);
 
   const update = {};
   if (enrollmentResult.status === 'fulfilled') update.enrollment = enrollmentResult.value;
+  if (wiegandResult.status === 'fulfilled') update.wiegand = wiegandResult.value;
   if (rfResult.status === 'fulfilled') update.rf = rfResult.value;
+  if (keypadUsersResult.status === 'fulfilled' && Array.isArray(keypadUsersResult.value)) {
+    update.keypadUsers = keypadUsersResult.value;
+  }
   applyEnrollmentUpdate(update);
 
   if (enrollmentResult.status !== 'fulfilled') {
@@ -955,7 +1003,7 @@ const startEnrollmentPolling = () => {
       console.warn('Failed to refresh enrollment state', error);
       stopEnrollmentPolling();
     }
-  }, 1800);
+  }, 900);
 };
 
 const stopEnrollmentPolling = () => {
@@ -985,6 +1033,7 @@ const renderWiegand = (wiegand = {}) => {
     registrationPending = 0,
     lastDuplicateCode = '',
     users = [],
+    pinEntries = [],
   } = wiegand;
 
   if (App.data) {
@@ -1039,6 +1088,7 @@ const renderWiegand = (wiegand = {}) => {
   if (App.elements.wiegandRemoveAllBtn) {
     App.elements.wiegandRemoveAllBtn.disabled = registrationActive || !users.length;
   }
+  renderLivePinEntries(pinEntries);
 
   if (listEl) {
     if (!users || users.length === 0) {
@@ -1068,6 +1118,7 @@ const renderWiegand = (wiegand = {}) => {
       listEl.innerHTML = users
         .map((user) => buildWiegandUserRow(user, existingValues[user.id]))
         .join('');
+      applyCredentialActivityState({ wiegand });
 
       // Restore focus if user was editing
       if (focusedId) {
@@ -1517,8 +1568,8 @@ const startSignalPolling = () => {
     signalPollStartTimer = null;
     if (!isDevicePageActive() || document.hidden) return;
     pollSignals();
-    App.signalPollTimer = setInterval(pollSignals, 5000);
-  }, 3000);
+    App.signalPollTimer = setInterval(pollSignals, 750);
+  }, 500);
 };
 
 const stopSignalPolling = () => {
@@ -1590,6 +1641,34 @@ const loadKeypadUsers = async () => {
     keypadUsersInFlight = null;
   });
   return keypadUsersInFlight;
+};
+
+let credentialActivityRefreshInFlight = null;
+const refreshCredentialActivityData = async () => {
+  if (credentialActivityRefreshInFlight) return credentialActivityRefreshInFlight;
+  credentialActivityRefreshInFlight = (async () => {
+    const [wiegandResult, rfResult, keypadUsersResult] = await Promise.allSettled([
+      fetchJSON(`api/wiegand?t=${Date.now()}`),
+      fetchJSON(`api/rf?t=${Date.now()}`),
+      fetchJSON(`api/keypad/users?t=${Date.now()}`),
+    ]);
+
+    if (wiegandResult.status === 'fulfilled') {
+      if (App.data) App.data.wiegand = wiegandResult.value;
+      renderWiegand(wiegandResult.value);
+    }
+    if (rfResult.status === 'fulfilled') {
+      if (App.data) App.data.rf = rfResult.value;
+      renderRf(rfResult.value);
+    }
+    if (keypadUsersResult.status === 'fulfilled' && Array.isArray(keypadUsersResult.value)) {
+      if (App.data) App.data.keypadUsers = keypadUsersResult.value;
+      renderKeypadUsers(keypadUsersResult.value);
+    }
+  })().finally(() => {
+    credentialActivityRefreshInFlight = null;
+  });
+  return credentialActivityRefreshInFlight;
 };
 
 let logsInFlight = null;
@@ -2501,30 +2580,120 @@ const renderLogs = (logs = []) => {
 };
 
 // Keypad PIN Management
+const getPinUserDefaults = (user = {}) => ({
+  id: user.uuid || '',
+  name: user.name || 'PIN User',
+  pin: Array.isArray(user.pins) && user.pins.length ? String(user.pins[0] || '') : String(user.pin || ''),
+  mode: user.mode || 'momentary',
+  channel_mask: Number(user.channel_mask || user.channel || 1) || 1,
+  exit_seconds: Number(user.exit_seconds || user.delay || 4) || 4,
+  alert: user.alert ?? true,
+  enabled: user.enabled !== false,
+});
+
+const expandPinUserCredentials = (users = []) => {
+  const credentials = [];
+  (Array.isArray(users) ? users : []).forEach((user, userIndex) => {
+    const pins = Array.isArray(user.pins)
+      ? user.pins.map((pin) => String(pin || '')).filter(Boolean)
+      : [];
+    const sourcePins = pins.length ? pins : (user.pin ? [String(user.pin)] : []);
+
+    if (!sourcePins.length) {
+      credentials.push({
+        ...user,
+        credentialId: `${user.uuid || `user-${userIndex}`}:pin:none`,
+        pinIndex: -1,
+        pin: '',
+        pins: [],
+      });
+      return;
+    }
+
+    sourcePins.forEach((pin, pinIndex) => {
+      credentials.push({
+        ...user,
+        credentialId: `${user.uuid || `user-${userIndex}`}:pin:${pinIndex}`,
+        pinIndex,
+        pin,
+        pins: [pin],
+      });
+    });
+  });
+  return credentials;
+};
+
+const livePinCredentialRows = () => {
+  const enrollmentActive = !!App.data?.enrollment?.active;
+  const entries = App.data?.wiegand?.pinEntries || [];
+  if (!enrollmentActive || !Array.isArray(entries)) {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry?.active && entry.code)
+    .map((entry) => ({
+      pending: true,
+      credentialId: `pending-pin-ch${Number(entry.channel) || 0}`,
+      uuid: '',
+      name: `CH${Number(entry.channel) || 0} PIN`,
+      pin: String(entry.code || ''),
+      pinIndex: -1,
+      mode: 'typing',
+      channel_mask: Number(entry.channel) === 2 ? 2 : 1,
+      exit_seconds: 4,
+      alert: true,
+      enabled: true,
+    }));
+};
+
+const buildPendingPinRow = (entry) => `
+  <div class="user-row credential-card credential-card--pin credential-card--pending" data-id="${escapeHtml(entry.credentialId)}" data-pending="true">
+    <div class="credential-card-header">
+      <div class="credential-card-title">
+        <span class="credential-kind">PIN</span>
+        <span class="user-code">${escapeHtml(entry.pin)}</span>
+      </div>
+      <div class="credential-card-actions">
+        <span class="status-chip pending">Typing</span>
+      </div>
+    </div>
+    <div class="user-info">
+      <div class="credential-meta-row">
+        <span class="user-channel">${escapeHtml(entry.name)}</span>
+        <span class="status-chip pending">Press # to save</span>
+      </div>
+    </div>
+  </div>
+`;
+
 const buildKeypadUserRow = (user, index, existingValue) => {
-  // Use existing input value if user was editing, otherwise use stored name
-  const name = escapeHtml(existingValue !== undefined ? existingValue : (user.name || `User ${index + 1}`));
-  const pinCount = Array.isArray(user.pins)
-    ? user.pins.length
-    : (user.pin ? 1 : 0);
-  const pinLabel = pinCount === 1 ? '1 PIN' : `${pinCount} PINs`;
+  if (user?.pending) {
+    return buildPendingPinRow(user);
+  }
+  const defaults = getPinUserDefaults(user);
+  const preserved = existingValue && typeof existingValue === 'object' ? existingValue : {};
+  const name = escapeHtml(preserved.name !== undefined ? preserved.name : (defaults.name || `User ${index + 1}`));
+  const pin = escapeHtml(preserved.pin !== undefined ? preserved.pin : defaults.pin);
+  const mode = preserved.mode || defaults.mode || 'momentary';
+  const channelMask = Number(preserved.channel_mask ?? defaults.channel_mask) || 1;
+  const exitSeconds = Number(preserved.exit_seconds ?? defaults.exit_seconds) || 4;
+  const alert = preserved.alert !== undefined ? !!preserved.alert : !!defaults.alert;
+  const enabled = preserved.enabled !== undefined ? !!preserved.enabled : !!defaults.enabled;
+  const uuid = escapeHtml(user.uuid || '');
+  const credentialId = escapeHtml(user.credentialId || user.uuid || '');
+  const pinIndex = Number.isInteger(user.pinIndex) ? user.pinIndex : -1;
   
   return `
-    <div class="user-row credential-card credential-card--pin" data-uuid="${escapeHtml(user.uuid || '')}">
+    <div class="user-row credential-card credential-card--pin ${enabled ? '' : 'is-card-disabled'}" data-id="${credentialId}" data-uuid="${uuid}" data-pin-index="${pinIndex}" data-enabled="${enabled ? 'true' : 'false'}">
       <div class="credential-card-header">
         <div class="credential-card-title">
-          <span class="credential-kind">User</span>
-          <span class="user-code">${pinLabel}</span>
+          <span class="credential-kind">PIN</span>
+          <span class="user-code">${pin || 'No PIN'}</span>
         </div>
         <div class="credential-card-actions">
-          <button type="button"
-            class="credential-icon-button credential-remove-icon"
-            data-action="delete-pin"
-            data-uuid="${escapeHtml(user.uuid || '')}"
-            aria-label="Delete PIN user"
-            title="Delete PIN user">
-            <span aria-hidden="true"></span>
-          </button>
+          ${renderCredentialEnableButton(enabled, 'toggle-pin-enabled', user.uuid || '')}
+          ${renderCredentialAlertToggle('pin-alert-checkbox', alert, 'Toggle PIN alert beep')}
+          ${renderCredentialIconButton('delete-pin', user.uuid || '', 'Delete PIN code', 'credential-remove-icon', `data-pin-index="${pinIndex}"`)}
         </div>
       </div>
       <div class="user-info">
@@ -2532,10 +2701,73 @@ const buildKeypadUserRow = (user, index, existingValue) => {
           <span>Name</span>
           <input type="text" class="user-name-input" value="${name}" placeholder="Enter name...">
         </label>
-        <span class="user-channel">Use enrollment to add RFID cards, PINs, or remotes.</span>
+        <label class="stacked">
+          <span>PIN Code</span>
+          <input type="text" class="pin-code-input" value="${pin}" maxlength="8" pattern="[0-9]*" inputmode="numeric" placeholder="1234">
+        </label>
+        <div class="user-config">
+          <label class="stacked">
+            <span>Mode</span>
+            <select class="pin-mode-select">
+              <option value="toggle" ${mode === 'toggle' ? 'selected' : ''}>Toggle</option>
+              <option value="momentary" ${mode === 'momentary' ? 'selected' : ''}>Momentary</option>
+              <option value="latch" ${mode === 'latch' ? 'selected' : ''}>Latch</option>
+              <option value="exit" ${mode === 'exit' ? 'selected' : ''}>Exit pulse</option>
+              <option value="power_on" ${mode === 'power_on' ? 'selected' : ''}>Power ON</option>
+              <option value="power_off" ${mode === 'power_off' ? 'selected' : ''}>Power OFF</option>
+            </select>
+          </label>
+          <label class="stacked">
+            <span>Channel</span>
+            <select class="pin-channel-select">
+              <option value="1" ${channelMask === 1 ? 'selected' : ''}>Channel 1</option>
+              <option value="2" ${channelMask === 2 ? 'selected' : ''}>Channel 2</option>
+              <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both</option>
+            </select>
+          </label>
+          <label class="stacked">
+            <span>Exit duration (s)</span>
+            <input type="number" class="pin-exit-seconds" min="1" step="1" value="${exitSeconds}">
+          </label>
+        </div>
       </div>
     </div>
   `;
+};
+
+const applyPinCredentialActivityState = (users = []) => {
+  expandPinUserCredentials(users).forEach((user) => {
+    const card = findCredentialCard('keypadUserList', user.credentialId || user.uuid || '');
+    if (!card) return;
+    const lastUsed = user.lastUsed || null;
+    const lastUsedPin = String(lastUsed?.pin || user.last_used_pin || '');
+    const credentialPin = String(user.pin || '');
+    const matchesPin = !lastUsedPin || !credentialPin || lastUsedPin === credentialPin;
+    const ageMs = Number(lastUsed?.age_ms);
+    updateActivityHighlight(card, ageMs, !!lastUsed && matchesPin);
+  });
+};
+
+const renderLivePinEntries = (entries = []) => {
+  const el = App.elements.livePinEntries;
+  if (!el) return;
+  const list = Array.isArray(entries) ? entries : [];
+  if (!list.length) {
+    el.innerHTML = '';
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = list.map((entry) => {
+    const active = !!entry.active && entry.code;
+    const code = active ? String(entry.code) : '';
+    return `
+      <div class="live-pin-entry ${active ? 'is-active' : ''}">
+        <span>CH${Number(entry.channel) || 0}</span>
+        <strong>${escapeHtml(active ? code : 'Idle')}</strong>
+      </div>
+    `;
+  }).join('');
 };
 
 const renderKeypadUsers = (users = []) => {
@@ -2545,35 +2777,61 @@ const renderKeypadUsers = (users = []) => {
     App.elements.keypadRemoveAllBtn.disabled = !users.length;
   }
   if (!listEl) return;
+  const credentialRows = [
+    ...livePinCredentialRows(),
+    ...expandPinUserCredentials(users),
+  ];
 
-  if (!users || users.length === 0) {
+  if (!credentialRows.length) {
     listEl.innerHTML = '<p class="empty-state muted">No PIN codes configured yet.</p>';
   } else {
     // Preserve input values that user may be editing
     const existingValues = {};
+    let focusedUuid = null;
+    let focusedSelector = null;
     listEl.querySelectorAll('.user-row').forEach((row) => {
-      const uuid = row.getAttribute('data-uuid');
-      const input = row.querySelector('.user-name-input');
-      if (uuid && input && document.activeElement === input) {
-        existingValues[uuid] = input.value;
+      if (row.dataset.pending === 'true') return;
+      const credentialId = row.getAttribute('data-id');
+      if (!credentialId) return;
+      const nameInput = row.querySelector('.user-name-input');
+      const pinInput = row.querySelector('.pin-code-input');
+      const modeInput = row.querySelector('.pin-mode-select');
+      const channelInput = row.querySelector('.pin-channel-select');
+      const exitInput = row.querySelector('.pin-exit-seconds');
+      const alertInput = row.querySelector('.pin-alert-checkbox');
+      existingValues[credentialId] = {
+        name: nameInput ? nameInput.value : undefined,
+        pin: pinInput ? pinInput.value : undefined,
+        mode: modeInput ? modeInput.value : undefined,
+        channel_mask: channelInput ? Number(channelInput.value) : undefined,
+        exit_seconds: exitInput ? Number(exitInput.value) : undefined,
+        alert: alertInput ? alertInput.checked : undefined,
+        enabled: row.dataset.enabled !== 'false',
+      };
+      if (document.activeElement && row.contains(document.activeElement)) {
+        focusedUuid = credentialId;
+        if (document.activeElement.classList.contains('pin-code-input')) focusedSelector = '.pin-code-input';
+        else if (document.activeElement.classList.contains('user-name-input')) focusedSelector = '.user-name-input';
+        else if (document.activeElement.classList.contains('pin-exit-seconds')) focusedSelector = '.pin-exit-seconds';
       }
     });
 
-    listEl.innerHTML = users
-      .map((user, idx) => buildKeypadUserRow(user, idx, existingValues[user.uuid]))
+    listEl.innerHTML = credentialRows
+      .map((user, idx) => buildKeypadUserRow(user, idx, existingValues[user.credentialId || user.uuid]))
       .join('');
+    applyPinCredentialActivityState(users);
 
-    // Restore focus if user was editing
-    Object.keys(existingValues).forEach((uuid) => {
-      const row = listEl.querySelector(`.user-row[data-uuid="${uuid}"]`);
-      if (row) {
-        const input = row.querySelector('.user-name-input');
-        if (input) {
-          input.focus();
+    if (focusedUuid && focusedSelector) {
+      const row = Array.from(listEl.querySelectorAll('.user-row'))
+        .find((candidate) => candidate.getAttribute('data-id') === focusedUuid);
+      const input = row?.querySelector(focusedSelector);
+      if (input) {
+        input.focus();
+        if (typeof input.setSelectionRange === 'function') {
           input.setSelectionRange(input.value.length, input.value.length);
         }
       }
-    });
+    }
   }
 };
 
@@ -2769,7 +3027,7 @@ const setupKeypadPinHandlers = () => {
     removeAllBtn.addEventListener('click', async () => {
       const users = App.data?.keypadUsers || [];
       if (!users.length) {
-        showToast('No users to remove.');
+        showToast('No PIN codes to remove.');
         return;
       }
 
@@ -2784,7 +3042,7 @@ const setupKeypadPinHandlers = () => {
         if (App.data) App.data.keypadUsers = list;
         await loadKeypadUsers();
         await loadState();
-        showToast(`Removed ${users.length} user${users.length === 1 ? '' : 's'}.`);
+        showToast(`Removed ${users.length} PIN code${users.length === 1 ? '' : 's'}.`);
       } catch (error) {
         handleError(error, 'Failed to remove users');
       } finally {
@@ -2795,12 +3053,28 @@ const setupKeypadPinHandlers = () => {
 
   if (listEl) {
     const savePinUser = async (container, trigger, { quiet = false } = {}) => {
-      const input = container?.querySelector('.user-name-input');
+      const nameInput = container?.querySelector('.user-name-input');
+      const pinInput = container?.querySelector('.pin-code-input');
+      const modeInput = container?.querySelector('.pin-mode-select');
+      const channelInput = container?.querySelector('.pin-channel-select');
+      const exitInput = container?.querySelector('.pin-exit-seconds');
+      const alertInput = container?.querySelector('.pin-alert-checkbox');
       const uuid = container?.getAttribute('data-uuid');
-      const name = input?.value.trim();
+      const pinIndex = Number(container?.dataset.pinIndex ?? -1);
+      const name = nameInput?.value.trim();
+      const pin = pinInput?.value.trim();
+      const mode = modeInput?.value || 'momentary';
+      const channelMask = Number(channelInput?.value || 1);
+      const exitSeconds = Number(exitInput?.value || 4);
+      const enabled = container?.dataset.enabled !== 'false';
+      const alert = alertInput ? alertInput.checked : true;
 
       if (!uuid || !name) {
         showToast('Please provide a name.');
+        return null;
+      }
+      if (!/^\d{4,8}$/.test(pin || '')) {
+        showToast('PIN must be 4-8 digits.');
         return null;
       }
 
@@ -2808,10 +3082,20 @@ const setupKeypadPinHandlers = () => {
       try {
         const users = await fetchJSON('api/keypad/user', {
           method: 'PUT',
-          body: JSON.stringify({ uuid, name }),
+          body: JSON.stringify({
+            uuid,
+            name,
+            pin,
+            pinIndex,
+            mode,
+            channel_mask: channelMask,
+            exit_seconds: exitSeconds > 0 ? exitSeconds : 4,
+            alert,
+            enabled,
+          }),
         });
         renderKeypadUsers(Array.isArray(users) ? users : []);
-        if (!quiet) showToast('PIN user updated.');
+        if (!quiet) showToast('PIN code updated.');
         if (App.data) App.data.keypadUsers = Array.isArray(users) ? users : [];
         return users;
       } catch (error) {
@@ -2823,17 +3107,40 @@ const setupKeypadPinHandlers = () => {
     };
 
     listEl.addEventListener('click', async (event) => {
+      const toggleEnabledBtn = event.target.closest('button[data-action="toggle-pin-enabled"]');
       const deleteBtn = event.target.closest('button[data-action="delete-pin"]');
 
+      if (toggleEnabledBtn) {
+        const container = toggleEnabledBtn.closest('.credential-card--pin');
+        if (!container) return;
+        const previousEnabled = container.dataset.enabled !== 'false';
+        const nextEnabled = !previousEnabled;
+        container.dataset.enabled = nextEnabled ? 'true' : 'false';
+        container.classList.toggle('is-card-disabled', !nextEnabled);
+        toggleEnabledBtn.classList.toggle('is-enabled', nextEnabled);
+        toggleEnabledBtn.classList.toggle('is-disabled', !nextEnabled);
+        toggleEnabledBtn.setAttribute('aria-pressed', nextEnabled ? 'true' : 'false');
+        try {
+          await savePinUser(container, toggleEnabledBtn, { quiet: true });
+          showToast(`PIN code ${nextEnabled ? 'enabled' : 'disabled'}.`);
+        } catch (error) {
+          container.dataset.enabled = previousEnabled ? 'true' : 'false';
+          container.classList.toggle('is-card-disabled', !previousEnabled);
+        }
+        return;
+      }
+
       if (deleteBtn) {
-        const uuid = deleteBtn.getAttribute('data-uuid');
+        const container = deleteBtn.closest('.credential-card--pin');
+        const uuid = container?.getAttribute('data-uuid') || deleteBtn.getAttribute('data-id');
+        const pinIndex = Number(container?.dataset.pinIndex ?? deleteBtn.getAttribute('data-pin-index') ?? -1);
         if (!uuid) return;
 
         deleteBtn.disabled = true;
         try {
           const users = await fetchJSON('api/keypad/user', {
             method: 'DELETE',
-            body: JSON.stringify({ uuid }),
+            body: JSON.stringify({ uuid, pinIndex }),
           });
           renderKeypadUsers(Array.isArray(users) ? users : []);
           showToast('PIN code deleted.');
@@ -2848,9 +3155,25 @@ const setupKeypadPinHandlers = () => {
     });
 
     listEl.addEventListener('input', (event) => {
-      const input = event.target.closest('.user-name-input');
+      const input = event.target.closest('.user-name-input, .pin-code-input, .pin-exit-seconds');
       if (!input) return;
       scheduleCredentialNameSave(input, (container) => savePinUser(container, null, { quiet: true }));
+    });
+
+    listEl.addEventListener('change', (event) => {
+      const control = event.target.closest('.pin-mode-select, .pin-channel-select, .pin-exit-seconds, .pin-alert-checkbox');
+      if (!control) return;
+      const container = control.closest('.credential-card--pin');
+      if (!container) return;
+      if (control.classList.contains('pin-alert-checkbox')) {
+        control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
+      }
+      savePinUser(container, control, { quiet: true }).catch(() => {
+        if (control.classList.contains('pin-alert-checkbox')) {
+          control.checked = !control.checked;
+          control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
+        }
+      });
     });
   }
 };
@@ -3097,6 +3420,7 @@ document.addEventListener('DOMContentLoaded', () => {
     enrollStartBtn: document.getElementById('enrollStartBtn'),
     enrollStopBtn: document.getElementById('enrollStopBtn'),
     keypadUserList: document.getElementById('keypadUserList'),
+    livePinEntries: document.getElementById('livePinEntries'),
     keypadAddBtn: document.getElementById('keypadAddBtn'),
     keypadAddForm: document.getElementById('keypadAddForm'),
     keypadCancelBtn: document.getElementById('keypadCancelBtn'),

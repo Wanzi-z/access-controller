@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -12,6 +13,8 @@
 
 static const char *LOG_TAG_WIEGAND_REGISTRY = "wiegand_registry";
 static const char *NVS_KEY = "wiegand_users";
+static const char *REGISTRY_FILE_PATH = "/spiffs/wiegand_users.json";
+static const char *REGISTRY_TMP_FILE_PATH = "/spiffs/wiegand_users.tmp";
 
 static wiegand_user_t *s_users = NULL;
 static size_t s_user_count = 0;
@@ -213,7 +216,7 @@ static uint32_t next_sequence(void) {
     return max_seq + 1;
 }
 
-static void persist_locked(void);
+static esp_err_t persist_locked(void);
 
 void wiegand_registry_init(void) {
     ensure_mutex();
@@ -279,11 +282,86 @@ const wiegand_user_t *wiegand_registry_find_by_id(const char *id) {
     return &s_users[idx];
 }
 
-static void persist_locked(void) {
+static esp_err_t read_registry_file(char **out_json) {
+    if (!out_json) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *out_json = NULL;
+
+    FILE *file = fopen(REGISTRY_FILE_PATH, "r");
+    if (!file) {
+        return errno == ENOENT ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ESP_FAIL;
+    }
+    long length = ftell(file);
+    if (length < 0) {
+        fclose(file);
+        return ESP_FAIL;
+    }
+    rewind(file);
+
+    char *buffer = malloc((size_t)length + 1);
+    if (!buffer) {
+        fclose(file);
+        return ESP_ERR_NO_MEM;
+    }
+
+    size_t read = fread(buffer, 1, (size_t)length, file);
+    fclose(file);
+    buffer[read] = '\0';
+    *out_json = buffer;
+    return ESP_OK;
+}
+
+static esp_err_t write_registry_file(const char *json) {
+    if (!json) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *file = fopen(REGISTRY_TMP_FILE_PATH, "w");
+    if (!file) {
+        ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY,
+                 "Failed to open %s for writing: errno=%d",
+                 REGISTRY_TMP_FILE_PATH,
+                 errno);
+        return ESP_FAIL;
+    }
+
+    size_t len = strlen(json);
+    size_t written = fwrite(json, 1, len, file);
+    int close_result = fclose(file);
+    if (written != len || close_result != 0) {
+        ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY,
+                 "Failed to write registry file (%u/%u bytes, close=%d)",
+                 (unsigned)written,
+                 (unsigned)len,
+                 close_result);
+        remove(REGISTRY_TMP_FILE_PATH);
+        return ESP_FAIL;
+    }
+
+    remove(REGISTRY_FILE_PATH);
+    if (rename(REGISTRY_TMP_FILE_PATH, REGISTRY_FILE_PATH) != 0) {
+        ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY,
+                 "Failed to replace %s: errno=%d",
+                 REGISTRY_FILE_PATH,
+                 errno);
+        remove(REGISTRY_TMP_FILE_PATH);
+        return ESP_FAIL;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t persist_locked(void) {
     cJSON *array = cJSON_CreateArray();
     if (!array) {
         ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY, "Failed to allocate array for persistence");
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
     for (size_t i = 0; i < s_user_count; i++) {
@@ -297,17 +375,38 @@ static void persist_locked(void) {
     cJSON_Delete(array);
     if (!json) {
         ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY, "Failed to serialise registry");
-        return;
+        return ESP_ERR_NO_MEM;
     }
 
-    if (store_char(NVS_KEY, json) != ESP_OK) {
-        ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY, "Failed to persist Wiegand registry");
+    esp_err_t err = write_registry_file(json);
+    if (err == ESP_OK) {
+        ESP_LOGI(LOG_TAG_WIEGAND_REGISTRY,
+                 "Persisted %u Wiegand users to SPIFFS (%u bytes)",
+                 (unsigned)s_user_count,
+                 (unsigned)strlen(json));
+    } else {
+        ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY,
+                 "Failed to persist Wiegand registry to SPIFFS (%s)",
+                 esp_err_to_name(err));
     }
     free(json);
+    return err;
 }
 
 static esp_err_t load_locked(void) {
-    char *json_str = get_char(NVS_KEY);
+    bool loaded_from_legacy_nvs = false;
+    char *json_str = NULL;
+    esp_err_t read_err = read_registry_file(&json_str);
+    if (read_err == ESP_ERR_NOT_FOUND) {
+        json_str = get_char(NVS_KEY);
+        loaded_from_legacy_nvs = true;
+    } else if (read_err != ESP_OK) {
+        ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY,
+                 "Failed to read Wiegand registry file (%s)",
+                 esp_err_to_name(read_err));
+        return read_err;
+    }
+
     if (!json_str) {
         return ESP_ERR_NO_MEM;
     }
@@ -359,6 +458,18 @@ static esp_err_t load_locked(void) {
 
     cJSON_Delete(array);
     sort_users();
+    if (loaded_from_legacy_nvs && s_user_count > 0) {
+        esp_err_t migrate_err = persist_locked();
+        if (migrate_err == ESP_OK) {
+            ESP_LOGI(LOG_TAG_WIEGAND_REGISTRY,
+                     "Migrated %u Wiegand users from NVS string to SPIFFS",
+                     (unsigned)s_user_count);
+        } else {
+            ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY,
+                     "Failed to migrate Wiegand users to SPIFFS (%s)",
+                     esp_err_to_name(migrate_err));
+        }
+    }
     return ESP_OK;
 }
 
@@ -383,9 +494,9 @@ esp_err_t wiegand_registry_save(void) {
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
-    persist_locked();
+    esp_err_t result = persist_locked();
     xSemaphoreGive(s_mutex);
-    return ESP_OK;
+    return result;
 }
 
 static void generate_id(char *buffer, size_t len) {
@@ -458,7 +569,24 @@ esp_err_t wiegand_registry_add_for_user(const char *code,
 
     s_users[s_user_count++] = user;
     sort_users();
-    persist_locked();
+    esp_err_t persist_err = persist_locked();
+    if (persist_err != ESP_OK) {
+        ssize_t rollback_idx = find_index_by_id(user.id);
+        if (rollback_idx >= 0) {
+            for (size_t i = (size_t)rollback_idx; i + 1 < s_user_count; i++) {
+                s_users[i] = s_users[i + 1];
+            }
+            if (s_user_count > 0) {
+                s_user_count--;
+            }
+        }
+        ESP_LOGE(LOG_TAG_WIEGAND_REGISTRY,
+                 "Rejected Wiegand user %s because persistence failed (%s)",
+                 user.id,
+                 esp_err_to_name(persist_err));
+        xSemaphoreGive(s_mutex);
+        return persist_err;
+    }
     xSemaphoreGive(s_mutex);
 
     if (out_user) {
@@ -475,10 +603,14 @@ static esp_err_t update_user_locked(size_t idx, const wiegand_user_t *replacemen
     if (idx >= s_user_count || !replacement) {
         return ESP_ERR_INVALID_ARG;
     }
+    wiegand_user_t previous = s_users[idx];
     s_users[idx] = *replacement;
     s_users[idx].updated_at_ms = current_time_ms();
-    persist_locked();
-    return ESP_OK;
+    esp_err_t err = persist_locked();
+    if (err != ESP_OK) {
+        s_users[idx] = previous;
+    }
+    return err;
 }
 
 esp_err_t wiegand_registry_update_name(const char *id, const char *name) {
@@ -497,9 +629,10 @@ esp_err_t wiegand_registry_update_name(const char *id, const char *name) {
         return ESP_ERR_NOT_FOUND;
     }
 
-    strlcpy(s_users[idx].name, name, sizeof(s_users[idx].name));
-    assign_defaults(&s_users[idx]);
-    esp_err_t result = update_user_locked((size_t)idx, &s_users[idx]);
+    wiegand_user_t updated = s_users[idx];
+    strlcpy(updated.name, name, sizeof(updated.name));
+    assign_defaults(&updated);
+    esp_err_t result = update_user_locked((size_t)idx, &updated);
     xSemaphoreGive(s_mutex);
     return result;
 }
@@ -523,12 +656,13 @@ esp_err_t wiegand_registry_update_config(const char *id, const char *name, const
         return ESP_ERR_NOT_FOUND;
     }
 
-    strlcpy(s_users[idx].name, name, sizeof(s_users[idx].name));
-    strlcpy(s_users[idx].mode, mode, sizeof(s_users[idx].mode));
-    s_users[idx].channel = channel;
-    s_users[idx].alert = alert;
-    assign_defaults(&s_users[idx]);
-    esp_err_t result = update_user_locked((size_t)idx, &s_users[idx]);
+    wiegand_user_t updated = s_users[idx];
+    strlcpy(updated.name, name, sizeof(updated.name));
+    strlcpy(updated.mode, mode, sizeof(updated.mode));
+    updated.channel = channel;
+    updated.alert = alert;
+    assign_defaults(&updated);
+    esp_err_t result = update_user_locked((size_t)idx, &updated);
     xSemaphoreGive(s_mutex);
     return result;
 }
@@ -550,12 +684,13 @@ esp_err_t wiegand_registry_record_use(const char *id) {
     }
 
     uint64_t used_ms = current_time_ms();
-    s_users[idx].last_used_ms = used_ms;
-    s_users[idx].last_used_unix_time = automation_unix_time_for_timestamp_ms(used_ms);
-    s_users[idx].updated_at_ms = used_ms;
-    persist_locked();
+    wiegand_user_t updated = s_users[idx];
+    updated.last_used_ms = used_ms;
+    updated.last_used_unix_time = automation_unix_time_for_timestamp_ms(used_ms);
+    updated.updated_at_ms = used_ms;
+    esp_err_t result = update_user_locked((size_t)idx, &updated);
     xSemaphoreGive(s_mutex);
-    return ESP_OK;
+    return result;
 }
 
 esp_err_t wiegand_registry_update_status(const char *id, wiegand_user_status_t status) {
@@ -571,9 +706,10 @@ esp_err_t wiegand_registry_update_status(const char *id, wiegand_user_status_t s
         return ESP_ERR_NOT_FOUND;
     }
 
-    s_users[idx].status = status;
-    assign_defaults(&s_users[idx]);
-    esp_err_t result = update_user_locked((size_t)idx, &s_users[idx]);
+    wiegand_user_t updated = s_users[idx];
+    updated.status = status;
+    assign_defaults(&updated);
+    esp_err_t result = update_user_locked((size_t)idx, &updated);
     xSemaphoreGive(s_mutex);
     return result;
 }
@@ -598,9 +734,9 @@ esp_err_t wiegand_registry_remove(const char *id) {
     if (s_user_count > 0) {
         s_user_count--;
     }
-    persist_locked();
+    esp_err_t result = persist_locked();
     xSemaphoreGive(s_mutex);
-    return ESP_OK;
+    return result;
 }
 
 esp_err_t wiegand_registry_clear(void) {
@@ -611,9 +747,9 @@ esp_err_t wiegand_registry_clear(void) {
     }
 
     s_user_count = 0;
-    persist_locked();
+    esp_err_t result = persist_locked();
     xSemaphoreGive(s_mutex);
-    return ESP_OK;
+    return result;
 }
 
 cJSON *wiegand_registry_snapshot(void) {
@@ -661,13 +797,14 @@ esp_err_t wiegand_registry_promote_all_pending(size_t *out_promoted) {
             promoted++;
         }
     }
+    esp_err_t result = ESP_OK;
     if (promoted > 0) {
-        persist_locked();
+        result = persist_locked();
     }
 
     xSemaphoreGive(s_mutex);
     if (out_promoted) {
         *out_promoted = promoted;
     }
-    return ESP_OK;
+    return result;
 }

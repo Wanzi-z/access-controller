@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
   <header class="app-bar">
@@ -352,13 +352,14 @@
       <div class="card" id="keypad-card">
         <div class="card-header">
           <div>
-            <h2>Users and PIN Codes</h2>
-            <p class="subtitle">Users available for enrollment.</p>
+            <h2>PIN Codes</h2>
+            <p class="subtitle">Registered keypad PIN credentials.</p>
           </div>
           <div class="card-actions">
-            <button type="button" class="secondary danger" id="keypadRemoveAllBtn">Remove All Users</button>
+            <button type="button" class="secondary danger" id="keypadRemoveAllBtn">Remove All PINs</button>
           </div>
         </div>
+        <div id="livePinEntries" class="live-pin-entries" aria-live="polite"></div>
         <div id="keypadUserList" class="user-list">
           <p class="empty-state muted">No PIN codes configured yet.</p>
         </div>
@@ -586,6 +587,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=25"></script>
+  <script src="script.js?v=27"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -22,7 +23,7 @@ struct wiegand;
 void start_wiegand_timer(struct wiegand *ctx, bool val);
 void start_keypress_timer(struct wiegand *ctx, bool val);
 static bool handleKeyCode(struct wiegand *ctx);
-int is_pin_authorized(const char *incomingPin);
+int is_pin_authorized(const char *incomingPin, pin_user_match_t *matched_user);
 void arm_lock(int channel, bool arm, bool alert);
 void beep_keypad(int beeps, int channel);
 
@@ -83,6 +84,9 @@ typedef struct {
 static const char *LOG_TAG_WIEGAND = "wiegand";
 static struct wiegand wg[NUM_OF_WIEGANDS];
 static bool wiegand_card_toggle_state[NUM_OF_WIEGANDS] = {false, false};
+static bool pin_user_toggle_state[NUM_OF_WIEGANDS] = {false, false};
+static TimerHandle_t pin_user_momentary_timers[NUM_OF_WIEGANDS] = {0};
+static TimerHandle_t pin_user_exit_timers[NUM_OF_WIEGANDS] = {0};
 static QueueHandle_t gpio_evt_queue = NULL;
 static portMUX_TYPE registrationMutex = portMUX_INITIALIZER_UNLOCKED;
 static wiegand_registration_session_t registration_session = {0};
@@ -483,6 +487,92 @@ static void wiegand_timer(void *pvParameter) {
   }
 }
 
+static void pin_user_rearm_callback(TimerHandle_t timer) {
+    intptr_t ch = (intptr_t)pvTimerGetTimerID(timer);
+    int channel = (int)ch;
+    if (channel < 1 || channel > NUM_OF_WIEGANDS) {
+        return;
+    }
+    lock_set_action_source("wg_pin_auto");
+    arm_lock(channel, true, false);
+    ESP_LOGI(LOG_TAG_WIEGAND, "PIN user re-armed channel %d after timer", channel);
+}
+
+static void pin_user_start_rearm_timer(TimerHandle_t *timer_slot, int channel, int seconds) {
+    if (channel < 1 || channel > NUM_OF_WIEGANDS) {
+        return;
+    }
+    if (seconds <= 0) {
+        seconds = 4;
+    }
+    int idx = channel - 1;
+    if (!timer_slot[idx]) {
+        timer_slot[idx] = xTimerCreate("pin_rearm",
+                                       pdMS_TO_TICKS(seconds * 1000),
+                                       pdFALSE,
+                                       (void *)(intptr_t)channel,
+                                       pin_user_rearm_callback);
+    }
+    if (timer_slot[idx]) {
+        xTimerStop(timer_slot[idx], 0);
+        xTimerChangePeriod(timer_slot[idx], pdMS_TO_TICKS(seconds * 1000), 0);
+        xTimerStart(timer_slot[idx], 0);
+    }
+}
+
+static void apply_pin_user_action(const pin_user_match_t *user) {
+    if (!user) {
+        return;
+    }
+
+    for (int bit = 0; bit < NUM_OF_WIEGANDS; bit++) {
+        if ((user->channel_mask & (1 << bit)) == 0) {
+            continue;
+        }
+        int channel = bit + 1;
+
+        if (strcmp(user->mode, "toggle") == 0) {
+            pin_user_toggle_state[bit] = !pin_user_toggle_state[bit];
+            lock_set_action_source("wg_pin_toggle");
+            arm_lock(channel, pin_user_toggle_state[bit], false);
+            ESP_LOGI(LOG_TAG_WIEGAND, "PIN user %s toggled channel %d -> %s",
+                     user->name, channel, pin_user_toggle_state[bit] ? "armed" : "disarmed");
+        } else if (strcmp(user->mode, "latch") == 0) {
+            lock_set_action_source("wg_pin_latch");
+            arm_lock(channel, false, false);
+            ESP_LOGI(LOG_TAG_WIEGAND, "PIN user %s latched channel %d off", user->name, channel);
+        } else if (strcmp(user->mode, "exit") == 0) {
+            lock_set_action_source("wg_pin_exit");
+            arm_lock(channel, false, false);
+            pin_user_start_rearm_timer(pin_user_exit_timers, channel, user->exit_seconds);
+            ESP_LOGI(LOG_TAG_WIEGAND, "PIN user %s exit pulse on channel %d for %ds",
+                     user->name, channel, user->exit_seconds);
+        } else if (strcmp(user->mode, "power_on") == 0) {
+            lock_set_action_source("wg_pin_on");
+            arm_lock(channel, true, false);
+            ESP_LOGI(LOG_TAG_WIEGAND, "PIN user %s powered channel %d on", user->name, channel);
+        } else if (strcmp(user->mode, "power_off") == 0) {
+            lock_set_action_source("wg_pin_off");
+            arm_lock(channel, false, false);
+            ESP_LOGI(LOG_TAG_WIEGAND, "PIN user %s powered channel %d off", user->name, channel);
+        } else {
+            lock_set_action_source("wg_pin");
+            arm_lock(channel, false, false);
+            pin_user_start_rearm_timer(pin_user_momentary_timers, channel, user->exit_seconds);
+            ESP_LOGI(LOG_TAG_WIEGAND, "PIN user %s momentary unlock on channel %d for %ds",
+                     user->name, channel, user->exit_seconds);
+        }
+
+        if (user->alert) {
+            beep_keypad(1, channel);
+        }
+    }
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "PIN %s mode=%s chmask=0x%x", user->name, user->mode, user->channel_mask);
+    automation_record_log(msg);
+}
+
 static bool handleKeyCode(struct wiegand *ctx) {
     static const uint8_t key[NUM_OF_KEYS] = {
         0b00000000, 0b11000000, 0b00110000, 0b11110000,
@@ -586,14 +676,16 @@ static bool handleKeyCode(struct wiegand *ctx) {
             if (enrollment_on_pin(ctx->code, ctx->channel)) {
                 beep_keypad(1, ctx->channel);
                 ESP_LOGI(LOG_TAG_WIEGAND, "PIN captured for unified enrollment on channel %d", ctx->channel);
-            } else if (is_pin_authorized(ctx->code)) {
-                lock_set_action_source("wg_pin");
-                arm_lock(ctx->channel, false, ctx->alert);
-                start_wiegand_timer(ctx, true);
-                ESP_LOGI(LOG_TAG_WIEGAND, "PIN accepted on channel %d (%s)", ctx->channel, ctx->code);
             } else {
-                beep_keypad(2, ctx->channel);
-                ESP_LOGW(LOG_TAG_WIEGAND, "PIN rejected on channel %d (%s)", ctx->channel, ctx->code);
+                pin_user_match_t pin_user;
+                if (is_pin_authorized(ctx->code, &pin_user)) {
+                    apply_pin_user_action(&pin_user);
+                    ESP_LOGI(LOG_TAG_WIEGAND, "PIN accepted on reader channel %d (%s, user=%s)",
+                             ctx->channel, ctx->code, pin_user.name);
+                } else {
+                    beep_keypad(2, ctx->channel);
+                    ESP_LOGW(LOG_TAG_WIEGAND, "PIN rejected on channel %d (%s)", ctx->channel, ctx->code);
+                }
             }
         } else {
             ESP_LOGD(LOG_TAG_WIEGAND, "Ignoring # key with empty PIN on channel %d", ctx->channel);
@@ -879,6 +971,28 @@ size_t wiegand_registration_pending_count(void) {
     return registration_pending_count();
 }
 
+static cJSON *wiegand_pin_entries_snapshot(void) {
+    cJSON *array = cJSON_CreateArray();
+    if (!array) {
+        return NULL;
+    }
+
+    for (int i = 0; i < NUM_OF_WIEGANDS; i++) {
+        cJSON *entry = cJSON_CreateObject();
+        if (!entry) {
+            continue;
+        }
+        bool active = wg[i].enable && !wg[i].keypressExpired && wg[i].code[0] != '\0';
+        cJSON_AddNumberToObject(entry, "channel", wg[i].channel);
+        cJSON_AddBoolToObject(entry, "active", active);
+        cJSON_AddStringToObject(entry, "code", active ? wg[i].code : "");
+        cJSON_AddNumberToObject(entry, "length", active ? (double)strlen(wg[i].code) : 0);
+        cJSON_AddItemToArray(array, entry);
+    }
+
+    return array;
+}
+
 cJSON *wiegand_state_snapshot(void) {
     cJSON *root = cJSON_CreateObject();
     if (!root) {
@@ -902,6 +1016,8 @@ cJSON *wiegand_state_snapshot(void) {
         users = cJSON_CreateArray();
     }
     cJSON_AddItemToObject(root, "users", users);
+    cJSON *pin_entries = wiegand_pin_entries_snapshot();
+    cJSON_AddItemToObject(root, "pinEntries", pin_entries ? pin_entries : cJSON_CreateArray());
     return root;
 }
 
@@ -925,5 +1041,7 @@ cJSON *wiegand_state_summary_snapshot(void) {
     cJSON_AddBoolToObject(root, "summary", true);
     cJSON_AddNumberToObject(root, "userCount", (double)wiegand_registry_count());
     cJSON_AddItemToObject(root, "users", cJSON_CreateArray());
+    cJSON *pin_entries = wiegand_pin_entries_snapshot();
+    cJSON_AddItemToObject(root, "pinEntries", pin_entries ? pin_entries : cJSON_CreateArray());
     return root;
 }

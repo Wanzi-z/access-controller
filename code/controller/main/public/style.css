@@ -651,20 +651,24 @@ button.secondary.danger:hover {
 }
 
 .credential-card .user-name-input,
+.credential-card .pin-code-input,
 .credential-card select,
-.credential-card .rf-exit-seconds {
+.credential-card .rf-exit-seconds,
+.credential-card .pin-exit-seconds {
   width: 100%;
   min-width: 0;
 }
 
-.credential-card .user-name-input {
+.credential-card .user-name-input,
+.credential-card .pin-code-input {
   padding: 0 12px;
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: #091017;
 }
 
-.credential-card .user-name-input:focus {
+.credential-card .user-name-input:focus,
+.credential-card .pin-code-input:focus {
   border-bottom-color: var(--color-border);
 }
 
@@ -674,8 +678,45 @@ button.secondary.danger:hover {
   gap: 10px;
 }
 
-.credential-card .rf-exit-seconds {
+.credential-card .rf-exit-seconds,
+.credential-card .pin-exit-seconds {
   max-width: 9rem;
+}
+
+.live-pin-entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.live-pin-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel-2);
+}
+
+.live-pin-entry span {
+  color: var(--color-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.live-pin-entry strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.94rem;
+}
+
+.live-pin-entry.is-active {
+  border-color: rgba(53, 240, 194, 0.42);
+  background: rgba(53, 240, 194, 0.08);
 }
 
 .credential-card .form-switch {

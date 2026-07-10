@@ -81,8 +81,8 @@ class ApiClient {
   async addKeypadUser(name, pin) {
     return this.post('/api/keypad/user', { name, pin });
   }
-  async updateKeypadUser(uuid, name) {
-    return this.put('/api/keypad/user', { uuid, name });
+  async updateKeypadUser(uuid, name, updates = {}) {
+    return this.put('/api/keypad/user', { uuid, name, ...updates });
   }
   async deleteKeypadUser(uuid) {
     return this.del('/api/keypad/user', { uuid });

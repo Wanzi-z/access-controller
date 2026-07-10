@@ -237,26 +237,22 @@ bool enrollment_on_pin(const char *pin, int channel) {
     strlcpy(user_name, s_enrollment.user_name, sizeof(user_name));
     xSemaphoreGive(s_enrollment_mutex);
 
-    char existing_name[ENROLLMENT_USER_NAME_MAX] = {0};
-    if (!enrollment_load_user_name(user_uuid, existing_name, sizeof(existing_name))) {
-        store_user_to_flash(user_uuid, user_name[0] ? user_name : "Default User", "");
-    }
-
     bool added = false;
-    esp_err_t err = append_user_pin_to_flash(user_uuid, pin, &added);
+    esp_err_t err = upsert_user_pin_to_flash(user_uuid, user_name[0] ? user_name : "Default User", pin, &added);
 
     xSemaphoreTake(s_enrollment_mutex, portMAX_DELAY);
     if (err == ESP_OK && added) {
         s_enrollment.pin_count++;
         enrollment_set_last_locked("pin", "****", "added");
+        ESP_LOGI(ENROLLMENT_TAG, "PIN credential saved for user %s", user_uuid);
     } else if (err == ESP_OK) {
         enrollment_set_last_locked("pin", "****", "duplicate");
+        ESP_LOGI(ENROLLMENT_TAG, "Duplicate PIN ignored for user %s", user_uuid);
     } else {
         enrollment_set_last_locked("pin", "****", "failed");
         ESP_LOGW(ENROLLMENT_TAG, "Failed to save PIN credential (%s)", esp_err_to_name(err));
     }
     xSemaphoreGive(s_enrollment_mutex);
-    ESP_LOGI(ENROLLMENT_TAG, "PIN credential saved for user %s", user_uuid);
     return true;
 }
 

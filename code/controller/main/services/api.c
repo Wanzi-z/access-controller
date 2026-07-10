@@ -76,7 +76,7 @@ extern char device_id[100];
 extern uint32_t get_u32(const char *key, uint32_t default_value);
 extern uint32_t get_user_count_from_flash(void);
 extern cJSON *load_user_from_flash(uint32_t user_id);
-extern void store_user_to_flash(char *uuid, char *name, char *pin);
+extern esp_err_t store_user_to_flash(char *uuid, char *name, char *pin);
 extern esp_err_t delete_user_from_flash(const char *uuid);
 extern esp_err_t delete_all_users_from_flash(void);
 extern void modify_user_from_flash(const char *uuid, const char *newName, const char *newPin);
@@ -1328,6 +1328,32 @@ static bool keypad_user_is_empty_default(cJSON *user) {
     return cJSON_IsString(name) && name->valuestring && strcmp(name->valuestring, "Default User") == 0;
 }
 
+static bool pin_string_is_valid(const char *pin) {
+    if (!pin) {
+        return false;
+    }
+    size_t len = strlen(pin);
+    if (len < 4 || len > 8) {
+        return false;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (pin[i] < '0' || pin[i] > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool pin_mode_is_valid(const char *mode) {
+    return mode &&
+        (strcmp(mode, "toggle") == 0 ||
+         strcmp(mode, "momentary") == 0 ||
+         strcmp(mode, "latch") == 0 ||
+         strcmp(mode, "exit") == 0 ||
+         strcmp(mode, "power_on") == 0 ||
+         strcmp(mode, "power_off") == 0);
+}
+
 static void prune_empty_default_keypad_users(void) {
     bool pruned = false;
 
@@ -1371,10 +1397,30 @@ static cJSON *keypad_users_snapshot(void) {
     cJSON *array = cJSON_CreateArray();
     if (!array) return NULL;
 
+    uint64_t now_ms = esp_timer_get_time() / 1000ULL;
     uint32_t user_count = get_user_count_from_flash();
     for (uint32_t i = 0; i < user_count; i++) {
         cJSON *user = load_user_from_flash(i + 1);
         if (user) {
+            const cJSON *last_used_ms = cJSON_GetObjectItemCaseSensitive(user, "last_used_ms");
+            if (cJSON_IsNumber(last_used_ms) && last_used_ms->valuedouble > 0) {
+                uint64_t used_ms = (uint64_t)last_used_ms->valuedouble;
+                uint64_t age_ms = now_ms >= used_ms ? now_ms - used_ms : 0;
+                const cJSON *last_used_unix_time = cJSON_GetObjectItemCaseSensitive(user, "last_used_unix_time");
+                const cJSON *last_used_pin = cJSON_GetObjectItemCaseSensitive(user, "last_used_pin");
+                cJSON *last_used = cJSON_CreateObject();
+                if (last_used) {
+                    cJSON_AddNumberToObject(last_used, "used_ms", (double)used_ms);
+                    cJSON_AddNumberToObject(last_used, "unixTime",
+                                            cJSON_IsNumber(last_used_unix_time) ? last_used_unix_time->valuedouble : 0);
+                    cJSON_AddNumberToObject(last_used, "age_ms", (double)age_ms);
+                    if (cJSON_IsString(last_used_pin) && last_used_pin->valuestring) {
+                        cJSON_AddStringToObject(last_used, "pin", last_used_pin->valuestring);
+                    }
+                    cJSON_DeleteItemFromObject(user, "lastUsed");
+                    cJSON_AddItemToObject(user, "lastUsed", last_used);
+                }
+            }
             cJSON_AddItemToArray(array, user);
         }
     }
@@ -1409,7 +1455,7 @@ static esp_err_t api_keypad_user_post_handler(httpd_req_t *req) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Name required");
     }
 
-    if (pin && pin[0] != '\0' && (strlen(pin) < 4 || strlen(pin) > 8)) {
+    if (pin && pin[0] != '\0' && !pin_string_is_valid(pin)) {
         cJSON_Delete(payload);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "PIN must be 4-8 digits");
     }
@@ -1418,8 +1464,11 @@ static esp_err_t api_keypad_user_post_handler(httpd_req_t *req) {
     generate_uuid(uuid, sizeof(uuid));
 
     ESP_LOGI(API_TAG, "Adding keypad user: name=%s, pin=****", name);
-    store_user_to_flash(uuid, (char *)name, (char *)(pin ? pin : ""));
+    err = store_user_to_flash(uuid, (char *)name, (char *)(pin ? pin : ""));
     cJSON_Delete(payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save PIN user");
+    }
 
     return send_json_response(req, keypad_users_snapshot());
 }
@@ -1433,15 +1482,17 @@ static esp_err_t api_keypad_user_delete_handler(httpd_req_t *req) {
     }
 
     const cJSON *uuid_item = cJSON_GetObjectItemCaseSensitive(payload, "uuid");
+    const cJSON *pin_index_item = cJSON_GetObjectItemCaseSensitive(payload, "pinIndex");
     const char *uuid = cJSON_IsString(uuid_item) ? uuid_item->valuestring : NULL;
+    int pin_index = cJSON_IsNumber(pin_index_item) ? (int)pin_index_item->valuedouble : -1;
 
     if (!uuid || uuid[0] == '\0') {
         cJSON_Delete(payload);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "UUID required");
     }
 
-    ESP_LOGI(API_TAG, "Deleting keypad user: uuid=%s", uuid);
-    err = delete_user_from_flash(uuid);
+    ESP_LOGI(API_TAG, "Deleting keypad user: uuid=%s pinIndex=%d", uuid, pin_index);
+    err = pin_index >= 0 ? delete_user_pin_from_flash(uuid, pin_index) : delete_user_from_flash(uuid);
     cJSON_Delete(payload);
 
     if (err == ESP_ERR_NOT_FOUND) {
@@ -1474,7 +1525,7 @@ static esp_err_t api_keypad_users_delete_all_post_handler(httpd_req_t *req) {
     return send_json_response(req, users);
 }
 
-// PUT /api/keypad/user - Update PIN user name
+// PUT /api/keypad/user - Update PIN user config
 static esp_err_t api_keypad_user_put_handler(httpd_req_t *req) {
     cJSON *payload = NULL;
     esp_err_t err = read_json_body(req, &payload);
@@ -1484,18 +1535,52 @@ static esp_err_t api_keypad_user_put_handler(httpd_req_t *req) {
 
     const cJSON *uuid_item = cJSON_GetObjectItemCaseSensitive(payload, "uuid");
     const cJSON *name_item = cJSON_GetObjectItemCaseSensitive(payload, "name");
+    const cJSON *pin_item = cJSON_GetObjectItemCaseSensitive(payload, "pin");
+    const cJSON *pin_index_item = cJSON_GetObjectItemCaseSensitive(payload, "pinIndex");
+    const cJSON *mode_item = cJSON_GetObjectItemCaseSensitive(payload, "mode");
+    const cJSON *channel_item = cJSON_GetObjectItemCaseSensitive(payload, "channel_mask");
+    const cJSON *exit_item = cJSON_GetObjectItemCaseSensitive(payload, "exit_seconds");
+    const cJSON *alert_item = cJSON_GetObjectItemCaseSensitive(payload, "alert");
+    const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
 
     const char *uuid = cJSON_IsString(uuid_item) ? uuid_item->valuestring : NULL;
     const char *name = cJSON_IsString(name_item) ? name_item->valuestring : NULL;
+    const char *pin = cJSON_IsString(pin_item) ? pin_item->valuestring : NULL;
+    int pin_index = cJSON_IsNumber(pin_index_item) ? (int)pin_index_item->valuedouble : -1;
+    const char *mode = cJSON_IsString(mode_item) ? mode_item->valuestring : "momentary";
+    int channel_mask = cJSON_IsNumber(channel_item) ? (int)channel_item->valuedouble : 1;
+    int exit_seconds = cJSON_IsNumber(exit_item) ? (int)exit_item->valuedouble : 4;
+    bool alert = alert_item ? cJSON_IsTrue(alert_item) : true;
+    bool enabled = enabled_item ? cJSON_IsTrue(enabled_item) : true;
 
     if (!uuid || !name) {
         cJSON_Delete(payload);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "UUID and name required");
     }
+    if (pin && pin[0] != '\0' && !pin_string_is_valid(pin)) {
+        cJSON_Delete(payload);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "PIN must be 4-8 digits");
+    }
+    if (!pin_mode_is_valid(mode) || channel_mask <= 0 || channel_mask > 3) {
+        cJSON_Delete(payload);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid mode/channel");
+    }
+    if (exit_seconds <= 0) {
+        exit_seconds = 4;
+    }
 
-    ESP_LOGI(API_TAG, "Updating keypad user: uuid=%s, name=%s", uuid, name);
-    modify_user_from_flash(uuid, name, NULL);
+    ESP_LOGI(API_TAG, "Updating keypad user: uuid=%s, name=%s, mode=%s, channel_mask=%d", uuid, name, mode, channel_mask);
+    err = update_pin_user_in_flash(uuid, name, pin, pin_index, mode, channel_mask, exit_seconds, alert, enabled);
     cJSON_Delete(payload);
+    if (err == ESP_ERR_NOT_FOUND) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "User not found");
+    }
+    if (err == ESP_ERR_INVALID_ARG) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid PIN user config");
+    }
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to update user");
+    }
 
     cJSON *users = keypad_users_snapshot();
     return send_json_response(req, users);
@@ -1720,6 +1805,9 @@ static cJSON *build_enrollment_update_snapshot(void) {
     cJSON *enrollment = enrollment_state_snapshot();
     cJSON_AddItemToObject(root, "enrollment", enrollment ? enrollment : cJSON_CreateObject());
 
+    cJSON *wiegand = wiegand_state_snapshot();
+    cJSON_AddItemToObject(root, "wiegand", wiegand ? wiegand : cJSON_CreateObject());
+
     cJSON *rf = rf_state_summary_snapshot();
     if (rf) {
         cJSON *receiver = rf_receiver_diagnostics_summary_snapshot();
@@ -1728,6 +1816,9 @@ static cJSON *build_enrollment_update_snapshot(void) {
         }
     }
     cJSON_AddItemToObject(root, "rf", rf ? rf : cJSON_CreateObject());
+
+    cJSON *keypad_users = keypad_users_snapshot();
+    cJSON_AddItemToObject(root, "keypadUsers", keypad_users ? keypad_users : cJSON_CreateArray());
 
     return root;
 }

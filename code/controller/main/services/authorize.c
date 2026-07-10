@@ -1,3 +1,5 @@
+#include "store.h"
+
 #define MAX_UIDS		400
 #define MAX_UID_SIZE	50
 
@@ -57,17 +59,40 @@ static void pin_strip_star(const char *in, char *out, size_t out_size) {
     out[j] = '\0';
 }
 
-int is_pin_authorized(const char *incomingPin) {
-    char* name = find_pin_in_flash(incomingPin);
-    if (!name && incomingPin) {
+int is_pin_authorized(const char *incomingPin, pin_user_match_t *matched_user) {
+    pin_user_match_t match;
+    esp_err_t match_err = find_pin_user_in_flash(incomingPin, &match);
+    if (match_err != ESP_OK && incomingPin) {
         char stripped[MAX_PIN_SIZE];
         pin_strip_star(incomingPin, stripped, sizeof(stripped));
-        if (stripped[0] != '\0')
-            name = find_pin_in_flash(stripped);
+        if (stripped[0] != '\0') {
+            match_err = find_pin_user_in_flash(stripped, &match);
+        }
     }
     char log_msg[1000];
 
-    if (name) {
+    if (match_err == ESP_OK) {
+        if (!match.enabled) {
+            snprintf(log_msg, sizeof(log_msg),
+                 "{\"event_type\":\"log\",\"payload\":"
+                 "{\"service_id\":\"ac_1\", "
+                 "\"type\":\"access-control\", "
+                 "\"description\":\"Disabled pin attempted for %s.\", "
+                 "\"event\":\"authentication\", "
+                 "\"value\":\"%s\"}"
+                 "}", match.name, incomingPin);
+            addServerMessageToQueue(log_msg);
+            ESP_LOGI(TAG, "Disabled PIN user %s attempted %s\n", match.name, incomingPin);
+            return 0;
+        }
+
+        if (matched_user) {
+            *matched_user = match;
+        }
+        esp_err_t record_err = record_pin_user_use_in_flash(match.uuid, match.pin);
+        if (record_err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to record PIN use for %s (%s)", match.uuid, esp_err_to_name(record_err));
+        }
         snprintf(log_msg, sizeof(log_msg), 
              "{\"event_type\":\"log\",\"payload\":"
              "{\"service_id\":\"ac_1\", "
@@ -75,11 +100,9 @@ int is_pin_authorized(const char *incomingPin) {
              "\"description\":\"%s was authorized using pin %s.\", "
              "\"event\":\"authentication\", "
              "\"value\":\"%s\"}"
-             "}", name, incomingPin, incomingPin);
+             "}", match.name, incomingPin, incomingPin);
         addServerMessageToQueue(log_msg);
-        ESP_LOGI(TAG, "%s was authorized using %s\n", name, incomingPin);
-
-        free(name);
+        ESP_LOGI(TAG, "%s was authorized using %s\n", match.name, incomingPin);
 
         return 1;
     }
@@ -94,10 +117,6 @@ int is_pin_authorized(const char *incomingPin) {
             "}", incomingPin, incomingPin);
     addServerMessageToQueue(log_msg);
     ESP_LOGI(TAG, "Not Authorized: %s\n", incomingPin);
-
-    if (name) {
-        free(name);
-    }
 
     return 0;
 }

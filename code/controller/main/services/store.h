@@ -7,18 +7,39 @@
 #include "cJSON.h"
 #include "esp_err.h"
 
-void store_user_to_flash(char *uuid, char *name, char *pin);
+#define PIN_USER_UUID_MAX 40
+#define PIN_USER_NAME_MAX 64
+#define PIN_USER_PIN_MAX 10
+#define PIN_USER_MODE_MAX 12
+
+typedef struct {
+    char uuid[PIN_USER_UUID_MAX];
+    char name[PIN_USER_NAME_MAX];
+    char pin[PIN_USER_PIN_MAX];
+    char mode[PIN_USER_MODE_MAX];
+    int channel_mask;
+    int exit_seconds;
+    bool alert;
+    bool enabled;
+} pin_user_match_t;
+
+esp_err_t store_user_to_flash(char *uuid, char *name, char *pin);
 cJSON *load_user_from_flash(uint32_t user_id);
 uint32_t get_user_count_from_flash(void);
 esp_err_t delete_user_from_flash(const char *uuid_to_delete);
+esp_err_t delete_user_pin_from_flash(const char *uuid, int pin_index);
 esp_err_t delete_all_users_from_flash(void);
 void modify_user_from_flash(const char *uuid, const char *newName, const char *newPin);
 esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_added);
+esp_err_t upsert_user_pin_to_flash(const char *uuid, const char *name, const char *pin, bool *out_added);
+esp_err_t record_pin_user_use_in_flash(const char *uuid, const char *pin);
+esp_err_t update_pin_user_in_flash(const char *uuid, const char *name, const char *pin, int pin_index, const char *mode, int channel_mask, int exit_seconds, bool alert, bool enabled);
 esp_err_t store_char(const char *key, const char *value);
 char *get_char(const char *key);
 uint32_t get_u32(const char *key, uint32_t default_value);
 void store_u32(const char *key, uint32_t value);
 char *find_pin_in_flash(const char *pin);
+esp_err_t find_pin_user_in_flash(const char *pin, pin_user_match_t *out_user);
 esp_err_t store_wifi_credentials_to_flash(const char *ssid, const char *password);
 void load_wifi_credentials_from_flash(char *ssid, char *password);
 esp_err_t store_server_info_to_flash(const char *server_ip, const char *server_port);
