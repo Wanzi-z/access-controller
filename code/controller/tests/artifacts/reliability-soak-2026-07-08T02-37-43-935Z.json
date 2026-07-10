@@ -1,0 +1,319 @@
+{
+  "config": {
+    "startedAt": "2026-07-08T02:35:39.933Z",
+    "baseUrl": "http://192.168.1.131",
+    "durationMs": 120000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 1062,
+    "ok": 1053,
+    "fail": 9
+  },
+  "rows": [
+    {
+      "name": "browser console",
+      "count": 3,
+      "ok": 0,
+      "fail": 3,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    {
+      "name": "browser refresh",
+      "count": 25,
+      "ok": 25,
+      "fail": 0,
+      "p50": 435,
+      "p95": 2383,
+      "p99": 2954,
+      "max": 2954
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 25,
+      "ok": 22,
+      "fail": 3,
+      "p50": 1247,
+      "p95": 1263,
+      "p99": 1266,
+      "max": 1266
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 13,
+      "ok": 13,
+      "fail": 0,
+      "p50": 234,
+      "p95": 807,
+      "p99": 807,
+      "max": 807
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 13,
+      "ok": 13,
+      "fail": 0,
+      "p50": 262,
+      "p95": 1141,
+      "p99": 1141,
+      "max": 1141
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 13,
+      "ok": 13,
+      "fail": 0,
+      "p50": 325,
+      "p95": 1268,
+      "p99": 1268,
+      "max": 1268
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 249,
+      "ok": 248,
+      "fail": 1,
+      "p50": 141,
+      "p95": 1091,
+      "p99": 1524,
+      "max": 5000
+    },
+    {
+      "name": "GET /api/state",
+      "count": 249,
+      "ok": 248,
+      "fail": 1,
+      "p50": 326,
+      "p95": 1276,
+      "p99": 5789,
+      "max": 8000
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 234,
+      "p95": 234,
+      "p99": 234,
+      "max": 234
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 13,
+      "ok": 13,
+      "fail": 0,
+      "p50": 301,
+      "p95": 2274,
+      "p99": 2274,
+      "max": 2274
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 13,
+      "ok": 13,
+      "fail": 0,
+      "p50": 293,
+      "p95": 2250,
+      "p99": 2250,
+      "max": 2250
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 24,
+      "p95": 24,
+      "p99": 24,
+      "max": 24
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 107,
+      "ok": 106,
+      "fail": 1,
+      "p50": 251,
+      "p95": 1130,
+      "p99": 6009,
+      "max": 10002
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 107,
+      "ok": 107,
+      "fail": 0,
+      "p50": 256,
+      "p95": 1250,
+      "p99": 5952,
+      "max": 6030
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 107,
+      "ok": 107,
+      "fail": 0,
+      "p50": 274,
+      "p95": 1312,
+      "p99": 5962,
+      "max": 6044
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 107,
+      "ok": 107,
+      "fail": 0,
+      "p50": 327,
+      "p95": 1507,
+      "p99": 6064,
+      "max": 7192
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 54,
+      "p95": 79,
+      "p99": 79,
+      "max": 79
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 54,
+      "p95": 82,
+      "p99": 82,
+      "max": 82
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 63,
+      "p95": 84,
+      "p99": 84,
+      "max": 84
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 82,
+      "p95": 105,
+      "p99": 105,
+      "max": 105
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 25,
+      "p95": 83,
+      "p99": 83,
+      "max": 83
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 50,
+      "p95": 75,
+      "p99": 75,
+      "max": 75
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 68,
+      "p95": 68,
+      "p99": 68,
+      "max": 68
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 61,
+      "p95": 101,
+      "p99": 101,
+      "max": 101
+    }
+  ],
+  "heap": {
+    "samples": 248,
+    "minFree": 17756,
+    "minLargest": 5888,
+    "lastFree": 25756,
+    "lastLargest": 7680
+  },
+  "events": [
+    {
+      "time": "2026-07-08T02:35:39.934Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-08T02:35:39.933Z\",\"baseUrl\":\"http://192.168.1.131\",\"durationMs\":120000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-08T02:36:31.301Z",
+      "name": "browser uptime tick",
+      "detail": "uptime did not tick: — -> —"
+    },
+    {
+      "time": "2026-07-08T02:36:34.462Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T02:36:37.937Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONTENT_LENGTH_MISMATCH"
+    },
+    {
+      "time": "2026-07-08T02:36:37.937Z",
+      "name": "browser console",
+      "detail": "TypeError: Failed to fetch\n    at fetchJSON (http://192.168.1.131/script.js?v=22:65:31)\n    at async http://192.168.1.131/script.js?v=22:1198:18"
+    },
+    {
+      "time": "2026-07-08T02:37:15.077Z",
+      "name": "browser uptime tick",
+      "detail": "uptime did not tick: — -> —"
+    },
+    {
+      "time": "2026-07-08T02:37:19.519Z",
+      "name": "GET /api/state",
+      "detail": "terminated"
+    },
+    {
+      "time": "2026-07-08T02:37:22.292Z",
+      "name": "browser console",
+      "detail": "TypeError: Failed to fetch\n    at fetchJSON (http://192.168.1.131/script.js?v=22:50:26)\n    at http://192.168.1.131/script.js?v=22:1198:24\n    at loadState (http://192.168.1.131/script.js?v=22:1226:5)\n    at HTMLDocument.<anonymous> (http:/"
+    },
+    {
+      "time": "2026-07-08T02:37:26.815Z",
+      "name": "browser uptime tick",
+      "detail": "uptime did not tick: — -> —"
+    },
+    {
+      "time": "2026-07-08T02:37:41.025Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    }
+  ]
+}

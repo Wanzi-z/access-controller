@@ -1,0 +1,28 @@
+[Unit]
+Description=ESP32 Access Controller Reverse HTTP Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=andy
+WorkingDirectory=/home/andy/projects/access-controller/code/tunnel
+Environment=NODE_ENV=production
+Environment=TUNNEL_BIND=0.0.0.0
+Environment=TUNNEL_PORT=9111
+Environment=HTTP_BIND=172.17.0.1
+Environment=HTTP_PORT=9110
+Environment=REQUEST_TIMEOUT_MS=30000
+Environment=HEARTBEAT_INTERVAL_MS=20000
+Environment=MAX_REQUEST_BODY_BYTES=5242880
+Environment=LOG_LEVEL=info
+ExecStart=/usr/local/bin/node /home/andy/projects/access-controller/code/tunnel/src/server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

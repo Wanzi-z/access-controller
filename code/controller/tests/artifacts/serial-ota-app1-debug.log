@@ -1,0 +1,389 @@
+I (44887) api_server: Wiegand state requested
+I (47027) storage.c: Loading Server info from flash
+I (47027) storage.c: No legacy server host/port found in flash, using server URL.
+W (47027) storage.c: Bool key srv_req_reach not found, returning default
+I (52537) esp_image: segment 0: paddr=00210020 vaddr=3c0d0020 size=6f680h (456320) map
+I (52597) esp_image: segment 1: paddr=0027f6a8 vaddr=3fc9c600 size=00970h (  2416) 
+I (52597) esp_image: segment 2: paddr=00280020 vaddr=42000020 size=c67e4h (813028) map
+I (52697) esp_image: segment 3: paddr=0034680c vaddr=3fc9cf70 size=0430ch ( 17164) 
+I (52707) esp_image: segment 4: paddr=0034ab20 vaddr=40374000 size=18554h ( 99668) 
+I (52717) esp_image: segment 5: paddr=0036307c vaddr=600fe000 size=00020h (    32) 
+I (52717) esp_image: segment 0: paddr=00210020 vaddr=3c0d0020 size=6f680h (456320) map
+I (52777) esp_image: segment 1: paddr=0027f6a8 vaddr=3fc9c600 size=00970h (  2416) 
+I (52777) esp_image: segment 2: paddr=00280020 vaddr=42000020 size=c67e4h (813028) map
+I (52887) esp_image: segment 3: paddr=0034680c vaddr=3fc9cf70 size=0430ch ( 17164) 
+I (52887) esp_image: segment 4: paddr=0034ab20 vaddr=40374000 size=18554h ( 99668) 
+I (52897) esp_image: segment 5: paddr=0036307c vaddr=600fe000 size=00020h (    32) 
+I (52967) api_server: Wiegand state requested
+I (52977) api_server: Wiegand state requested
+I (52987) api_server: Wiegand state requested
+I (54447) wifi:state: run -> init (0x0)
+I (54457) wifi:pm stop, total sleep time: 0 us / 53671348 us
+
+I (54457) wifi:<ba-del>idx:1, tid:0
+I (54457) wifi:<ba-del>idx:0, tid:6
+I (54457) wifi:new:<6,0>, old:<6,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+W (54467) httpd_txrx: httpd_sock_err: error in recv : 113
+W (54467) open-automation: Station disconnected (reason=8)
+W (54467) httpd_txrx: httpd_sock_err: error in recv : 113
+I (54477) open-automation: Reconnect attempt 1 after disconnect
+W (54477) httpd_txrx: httpd_sock_err: error in recv : 113
+W (54487) httpd_txrx: httpd_sock_err: error in recv : 113
+I (54507) wifi:flush txq
+I (54507) wifi:stop sw txq
+I (54507) wifi:lmac stop hw txq
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0xa (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037d599
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x1598
+load:0x403c8700,len:0xd20
+load:0x403cb700,len:0x2f9c
+entry 0x403c8924
+I (29) boot: ESP-IDF v6.0-dev-1002-gbfe5caf58f 2nd stage bootloader
+I (29) boot: compile time Jul  8 2026 15:22:06
+I (29) boot: Multicore bootloader
+I (31) boot: chip revision: v0.2
+I (34) boot: efuse block revision: v1.3
+I (37) boot.esp32s3: Boot SPI Speed : 80MHz
+I (41) boot.esp32s3: SPI Mode       : DIO
+I (45) boot.esp32s3: SPI Flash Size : 16MB
+I (49) boot: Enabling RNG early entropy source...
+I (53) boot: Partition Table:
+I (56) boot: ## Label            Usage          Type ST Offset   Length
+I (62) boot:  0 nvs              WiFi data        01 02 00009000 00005000
+I (69) boot:  1 otadata          OTA data         01 00 0000e000 00002000
+I (75) boot:  2 app0             OTA app          00 10 00010000 00200000
+I (82) boot:  3 app1             OTA app          00 11 00210000 00200000
+I (88) boot:  4 spiffs           Unknown data     01 82 00410000 00b00000
+I (95) boot: End of partition table
+I (112) esp_image: segment 0: paddr=00210020 vaddr=3c0d0020 size=6f680h (456320) map
+I (193) esp_image: segment 1: paddr=0027f6a8 vaddr=3fc9c600 size=00970h (  2416) load
+I (194) esp_image: segment 2: paddr=00280020 vaddr=42000020 size=c67e4h (813028) map
+I (340) esp_image: segment 3: paddr=0034680c vaddr=3fc9cf70 size=0430ch ( 17164) load
+I (344) esp_image: segment 4: paddr=0034ab20 vaddr=40374000 size=18554h ( 99668) load
+I (366) esp_image: segment 5: paddr=0036307c vaddr=600fe000 size=00020h (    32) load
+I (376) boot: Loaded app from partition at offset 0x210000
+I (376) boot: Disabling RNG early entropy source...
+I (387) cpu_start: Multicore app
+I (396) cpu_start: Pro cpu start user code
+I (396) cpu_start: cpu freq: 160000000 Hz
+I (396) app_init: Application information:
+I (396) app_init: Project name:     controller
+I (400) app_init: App version:      2b8fb29-dirty
+I (405) app_init: Compile time:     Jul  9 2026 09:38:10
+I (410) app_init: ELF file SHA256:  1992f40dd...
+I (414) app_init: ESP-IDF:          v6.0-dev-1002-gbfe5caf58f
+I (420) efuse_init: Min chip rev:     v0.0
+I (423) efuse_init: Max chip rev:     v0.99 
+I (427) efuse_init: Chip rev:         v0.2
+I (431) heap_init: Initializing. RAM available for dynamic allocation:
+I (438) heap_init: At 3FCB9538 len 000301D8 (192 KiB): RAM
+I (443) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (448) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (453) heap_init: At 600FE020 len 00001FC8 (7 KiB): RTCRAM
+I (459) spi_flash: detected chip: generic
+I (462) spi_flash: flash io: dio
+W (465) i2c: This driver is an old driver, please migrate your application code to adapt `driver/i2c_master.h`
+I (475) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (481) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (488) main_task: Started on CPU0
+I (518) main_task: Calling app_main()
+I (628) open-automation: Device UUID: acce5501-b8f8-42cb-9aa0-05c0085e08b7
+I (628) open-automation: Trying saved WiFi network 1/1: 'HelloWorld'
+I (628) pp: pp rom version: e7ae62f
+I (638) net80211: net80211 rom version: e7ae62f
+I (648) wifi:wifi driver task: 3fced620, prio:23, stack:6656, core=0
+I (658) wifi:wifi firmware version: 956d811
+I (658) wifi:wifi certification version: v7.0
+I (658) wifi:config NVS flash: enabled
+I (658) wifi:config nano formatting: disabled
+I (668) wifi:Init data frame dynamic rx buffer num: 32
+I (668) wifi:Init static rx mgmt buffer num: 5
+I (668) wifi:Init management short buffer num: 32
+I (678) wifi:Init dynamic tx buffer num: 32
+I (678) wifi:Init static tx FG buffer num: 2
+I (688) wifi:Init static rx buffer size: 1600
+I (688) wifi:Init static rx buffer num: 10
+I (688) wifi:Init dynamic rx buffer num: 32
+I (698) wifi_init: rx ba win: 6
+I (698) wifi_init: accept mbox: 6
+I (698) wifi_init: tcpip mbox: 32
+I (708) wifi_init: udp mbox: 6
+I (708) wifi_init: tcp mbox: 6
+I (708) wifi_init: tcp tx win: 5760
+I (718) wifi_init: tcp rx win: 5760
+I (718) wifi_init: tcp mss: 1440
+I (718) wifi_init: WiFi IRAM OP enabled
+I (728) wifi_init: WiFi RX IRAM OP enabled
+W (728) wifi:Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+I (738) phy_init: phy_version 701,f4f1da3a,Mar  3 2025,15:50:10
+I (778) wifi:mode : sta (b8:f8:62:cb:9a:a0)
+I (778) wifi:enable tsf
+I (778) wifi:Set ps type: 0, coexist: 0
+
+I (778) open-automation: WiFi power save disabled for low-latency controller traffic
+I (788) open-automation: wifi_init_sta finished.
+I (798) wifi:new:<6,0>, old:<1,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+I (798) wifi:state: init -> auth (0xb0)
+I (808) wifi:state: auth -> assoc (0x0)
+I (818) wifi:state: assoc -> run (0x10)
+I (848) wifi:connected with HelloWorld, aid = 2, channel 6, BW20, bssid = 80:2a:a8:41:64:cd
+I (848) wifi:security: WPA2-PSK, phy: bgn, rssi: -51
+I (848) wifi:pm start, type: 0
+
+I (858) wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+I (858) wifi:set rx beacon pti, rx_bcn_pti: 0, bcn_timeout: 25000, mt_pti: 0, mt_time: 10000
+I (878) wifi:<ba-add>idx:0 (ifx:0, 80:2a:a8:41:64:cd), tid:6, ssn:2, winSize:64
+I (918) wifi:<ba-add>idx:1 (ifx:0, 80:2a:a8:41:64:cd), tid:0, ssn:0, winSize:64
+I (928) wifi:AP's beacon interval = 102400 us, DTIM period = 1
+I (1888) esp_netif_handlers: sta ip: 192.168.1.115, mask: 255.255.255.0, gw: 192.168.1.1
+I (1888) open-automation: got ip:192.168.1.115
+I (1888) open-automation: SNTP initialised
+I (1888) open-automation: connected to ap SSID:HelloWorld password:qscwdvpk
+W (1898) storage.c: Bool key srv_req_reach not found, returning default
+I (1898) open-automation: Server reachability is required; checking configured server URL
+I (1908) open-automation: Posting device punch to https://open-automation.org/devices
+I (3928) open-automation: Device punch accepted (status=200)
+I (3928) storage.c: Successfully saved wifi_ssid
+I (3928) storage.c: Successfully saved wifi_password
+I (3938) storage.c: Stored WiFi credentials for SSID 'HelloWorld' (password length=8)
+I (3948) storage.c: Successfully saved wifi_list
+I (3948) open-automation: Using saved WiFi network 'HelloWorld'
+I (3948) open-automation: Successfully connected to WiFi in station mode
+I (3958) storage.c: Loading Server info from flash
+I (3958) storage.c: No legacy server host/port found in flash, using server URL.
+I (4078) open-automation: Firmware MD5 status=400 value=<html>
+<head><title>400 The pla
+I (4728) storage.c: SPIFFS mounted: total=10594961, used=0
+I (4728) open-automation: SPIFFS Initialized successfully
+I (4728) SERVER: Starting HTTP Server
+I (4728) file_server: Starting HTTP Server (max_uri_handlers=58)
+E (4728) httpd: Config option max_open_sockets is too large (max allowed 7, 3 sockets used by HTTP server internally)
+	Either decrease this or configure LWIP_MAX_SOCKETS to a larger value
+E (4748) file_server: Failed to start file server!
+E (4758) SERVER: Failed to start file server!
+E (4758) open-automation: Startup validation failed: web server failed. Rolling back OTA image.
+I (4958) esp_ota_ops: Rollback to previously worked partition.
+I (4958) wifi:state: run -> init (0x0)
+I (4958) wifi:pm stop, total sleep time: 0 us / 4107522 us
+
+I (4958) wifi:<ba-del>idx:1, tid:0
+I (4968) wifi:<ba-del>idx:0, tid:6
+I (4968) wifi:new:<6,0>, old:<6,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+W (4978) open-automation: Station disconnected (reason=8)
+I (4978) open-automation: Reconnect attempt 1 after disconnect
+I (5008) wifi:flush txq
+I (5008) wifi:stop sw txq
+I (5008) wifi:lmac stop hw txq
+ ��ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0xa (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037d599
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x1598
+load:0x403c8700,len:0xd20
+load:0x403cb700,len:0x2f9c
+entry 0x403c8924
+I (29) boot: ESP-IDF v6.0-dev-1002-gbfe5caf58f 2nd stage bootloader
+I (29) boot: compile time Jul  8 2026 15:22:06
+I (29) boot: Multicore bootloader
+I (31) boot: chip revision: v0.2
+I (34) boot: efuse block revision: v1.3
+I (37) boot.esp32s3: Boot SPI Speed : 80MHz
+I (41) boot.esp32s3: SPI Mode       : DIO
+I (45) boot.esp32s3: SPI Flash Size : 16MB
+I (49) boot: Enabling RNG early entropy source...
+I (53) boot: Partition Table:
+I (56) boot: ## Label            Usage          Type ST Offset   Length
+I (62) boot:  0 nvs              WiFi data        01 02 00009000 00005000
+I (69) boot:  1 otadata          OTA data         01 00 0000e000 00002000
+I (75) boot:  2 app0             OTA app          00 10 00010000 00200000
+I (82) boot:  3 app1             OTA app          00 11 00210000 00200000
+I (88) boot:  4 spiffs           Unknown data     01 82 00410000 00b00000
+I (95) boot: End of partition table
+I (98) esp_image: segment 0: paddr=00010020 vaddr=3c0d0020 size=6f680h (456320) map
+I (186) esp_image: segment 1: paddr=0007f6a8 vaddr=3fc9c600 size=00970h (  2416) load
+I (187) esp_image: segment 2: paddr=00080020 vaddr=42000020 size=c67e8h (813032) map
+I (333) esp_image: segment 3: paddr=00146810 vaddr=3fc9cf70 size=0430ch ( 17164) load
+I (337) esp_image: segment 4: paddr=0014ab24 vaddr=40374000 size=18554h ( 99668) load
+I (359) esp_image: segment 5: paddr=00163080 vaddr=600fe000 size=00020h (    32) load
+I (369) boot: Loaded app from partition at offset 0x10000
+I (369) boot: Disabling RNG early entropy source...
+I (380) cpu_start: Multicore app
+I (389) cpu_start: Pro cpu start user code
+I (389) cpu_start: cpu freq: 160000000 Hz
+I (389) app_init: Application information:
+I (389) app_init: Project name:     controller
+I (393) app_init: App version:      2b8fb29-dirty
+I (398) app_init: Compile time:     Jul  9 2026 08:49:01
+I (403) app_init: ELF file SHA256:  29ccee874...
+I (407) app_init: ESP-IDF:          v6.0-dev-1002-gbfe5caf58f
+I (412) efuse_init: Min chip rev:     v0.0
+I (416) efuse_init: Max chip rev:     v0.99 
+I (420) efuse_init: Chip rev:         v0.2
+I (424) heap_init: Initializing. RAM available for dynamic allocation:
+I (430) heap_init: At 3FCB96A0 len 00030070 (192 KiB): RAM
+I (435) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (441) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (446) heap_init: At 600FE020 len 00001FC8 (7 KiB): RTCRAM
+I (452) spi_flash: detected chip: generic
+I (455) spi_flash: flash io: dio
+W (458) i2c: This driver is an old driver, please migrate your application code to adapt `driver/i2c_master.h`
+I (468) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (474) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (481) main_task: Started on CPU0
+I (511) main_task: Calling app_main()
+I (691) open-automation: Device UUID: acce5501-b8f8-42cb-9aa0-05c0085e08b7
+I (691) open-automation: Trying saved WiFi network 1/1: 'HelloWorld'
+I (691) pp: pp rom version: e7ae62f
+I (701) net80211: net80211 rom version: e7ae62f
+I (711) wifi:wifi driver task: 3fced624, prio:23, stack:6656, core=0
+I (721) wifi:wifi firmware version: 956d811
+I (721) wifi:wifi certification version: v7.0
+I (721) wifi:config NVS flash: enabled
+I (721) wifi:config nano formatting: disabled
+I (721) wifi:Init data frame dynamic rx buffer num: 32
+I (731) wifi:Init static rx mgmt buffer num: 5
+I (731) wifi:Init management short buffer num: 32
+I (741) wifi:Init dynamic tx buffer num: 32
+I (741) wifi:Init static tx FG buffer num: 2
+I (751) wifi:Init static rx buffer size: 1600
+I (751) wifi:Init static rx buffer num: 10
+I (751) wifi:Init dynamic rx buffer num: 32
+I (761) wifi_init: rx ba win: 6
+I (761) wifi_init: accept mbox: 6
+I (761) wifi_init: tcpip mbox: 32
+I (771) wifi_init: udp mbox: 6
+I (771) wifi_init: tcp mbox: 6
+I (771) wifi_init: tcp tx win: 5760
+I (781) wifi_init: tcp rx win: 5760
+I (781) wifi_init: tcp mss: 1440
+I (781) wifi_init: WiFi IRAM OP enabled
+I (791) wifi_init: WiFi RX IRAM OP enabled
+W (791) wifi:Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+I (801) phy_init: phy_version 701,f4f1da3a,Mar  3 2025,15:50:10
+I (841) wifi:mode : sta (b8:f8:62:cb:9a:a0)
+I (841) wifi:enable tsf
+I (841) wifi:Set ps type: 0, coexist: 0
+
+I (841) open-automation: WiFi power save disabled for low-latency controller traffic
+I (851) open-automation: wifi_init_sta finished.
+I (851) wifi:new:<6,0>, old:<1,0>, ap:<255,255>, sta:<6,0>, prof:1, snd_ch_cfg:0x0
+I (861) wifi:state: init -> auth (0xb0)
+I (871) wifi:state: auth -> assoc (0x0)
+I (881) wifi:state: assoc -> run (0x10)
+I (911) wifi:connected with HelloWorld, aid = 2, channel 6, BW20, bssid = 80:2a:a8:41:64:cd
+I (911) wifi:security: WPA2-PSK, phy: bgn, rssi: -50
+I (921) wifi:pm start, type: 0
+
+I (921) wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+I (931) wifi:set rx beacon pti, rx_bcn_pti: 0, bcn_timeout: 25000, mt_pti: 0, mt_time: 10000
+I (941) wifi:<ba-add>idx:0 (ifx:0, 80:2a:a8:41:64:cd), tid:6, ssn:2, winSize:64
+I (991) wifi:AP's beacon interval = 102400 us, DTIM period = 1
+I (1201) wifi:<ba-add>idx:1 (ifx:0, 80:2a:a8:41:64:cd), tid:0, ssn:0, winSize:64
+I (1951) esp_netif_handlers: sta ip: 192.168.1.115, mask: 255.255.255.0, gw: 192.168.1.1
+I (1951) open-automation: got ip:192.168.1.115
+I (1951) open-automation: SNTP initialised
+I (1951) open-automation: connected to ap SSID:HelloWorld password:qscwdvpk
+W (1961) storage.c: Bool key srv_req_reach not found, returning default
+I (1961) open-automation: Server reachability is required; checking configured server URL
+I (1971) open-automation: Posting device punch to https://open-automation.org/devices
+I (3921) open-automation: Device punch accepted (status=200)
+I (3921) storage.c: Successfully saved wifi_ssid
+I (3921) storage.c: Successfully saved wifi_password
+I (3921) storage.c: Stored WiFi credentials for SSID 'HelloWorld' (password length=8)
+I (3941) storage.c: Successfully saved wifi_list
+I (3941) open-automation: Using saved WiFi network 'HelloWorld'
+I (3941) open-automation: Successfully connected to WiFi in station mode
+I (3951) storage.c: Loading Server info from flash
+I (3951) storage.c: No legacy server host/port found in flash, using server URL.
+I (4061) open-automation: Firmware MD5 status=400 value=<html>
+<head><title>400 The pla
+I (4711) storage.c: SPIFFS mounted: total=10594961, used=0
+I (4711) open-automation: SPIFFS Initialized successfully
+I (4711) SERVER: Starting HTTP Server
+I (4711) file_server: Starting HTTP Server (max_uri_handlers=58)
+I (4721) ws_echo_server: Registering WS URI handlers
+I (4731) I2C: Initializing I2C master on SCL=13, SDA=14
+I (4731) open-automation: MCP23017 task starting...
+I (4731) open-automation: starting auth service
+I (4741) buzzer: Initializing MCP PUSH pins: PUSH0=4, PUSH1=12 as outputs
+I (4741) buzzer: MCP PUSH pins initialized to LOW (idle)
+I (4751) wiegand: Initializing Wiegand: WG0 (channel 1) GPIO4/DATA0, GPIO5/DATA1, enabled=1
+I (4761) wiegand: Initializing Wiegand: WG1 (channel 2) GPIO6/DATA0, GPIO7/DATA1, enabled=1
+I (4761) wiegand: Registering ISR handlers for WG0: GPIO4 and GPIO5
+I (4771) wiegand: Registering ISR handlers for WG1: GPIO6 and GPIO7
+Starting exit service.
+I (4781) open-automation: Added message to service queue.
+I (4831) open-automation: Testing MCP23017 communication at address 0x20
+I (4831) open-automation: ✅ MCP23017 communication successful!
+I (4831) open-automation: Initializing MCP23017 registers...
+I (4831) open-automation: MCP23017 initialized successfully
+I (4881) open-automation: Added message to service queue.
+I (4981) open-automation: Message processed for eventType: exit
+I (4981) open-automation: Starting motion service.
+I (4981) open-automation: Added message to service queue.
+I (5081) open-automation: Message processed for eventType: exit
+I (5081) open-automation: Added message to service queue.
+I (5181) open-automation: Motion pins configured as inputs: pin 6, pin 14
+I (5181) open-automation: Motion detected on channel 1 - disarming lock
+I (5181) open-automation: Motion detected on channel 2 - disarming lock
+I (5181) open-automation: Message processed for eventType: motion
+Starting keypad service.
+I (5291) open-automation: Message processed for eventType: motion
+I (5301) open-automation: Added message to service queue.
+I (5401) open-automation: Added message to service queue.
+I (5401) open-automation: Keypad 1 pressed - disarming lock
+I (5401) open-automation: Keypad 2 pressed - disarming lock
+I (5401) open-automation: Message processed for eventType: keypad
+alertOnKeypad	ch: 1 alert: 0.
+Starting fob service.
+I (5411) open-automation: Added message to service queue.
+I (5421) open-automation: Added message to service queue.
+I (5421) rf_receiver: Initializing RF receiver on GPIO15
+I (5431) rf_receiver: GPIO15 initial level: 1
+E (5431) gpio: gpio_install_isr_service(526): GPIO isr service already installed
+I (5441) rf_receiver: RF receiver task started on GPIO15
+I (5441) rf_receiver: Sync: 9000-14000us, Short: 180-750us, Long: 900-1800us
+I (5451) rf_receiver: RF receiver ready - waiting for fob signals...
+I (5461) open-automation: Starting lock service.
+I (5461) tunnel: Controller reverse tunnel disabled by firmware config
+I (5471) open-automation: Added message to service queue.
+I (5471) open-automation: ------ SYSTEM STATUS ------
+I (5481) open-automation: Uptime: 0 days 0 hours 0 minutes 5 seconds
+I (5481) open-automation: Free Heap: 36532 bytes (min: 36516, largest block: 27648)
+I (5491) open-automation: NVS Free Entries: 278
+I (5491) open-automation: NVS Used Entries: 352
+I (5501) open-automation: Loop Count: 0
+I (5501) open-automation: ----------------------------
+I (5511) open-automation: Message processed for eventType: keypad
+alertOnKeypad	ch: 2 alert: 0.
+I (5511) open-automation: Message processed for eventType: fob
+I (5621) open-automation: Message processed for eventType: fob
+I (6431) storage.c: Loading Server info from flash
+I (6431) storage.c: No legacy server host/port found in flash, using server URL.
+W (6431) storage.c: Bool key srv_req_reach not found, returning default
+I (6461) open-automation: Added message to service queue.
+I (6461) open-automation: Door closed.
+I (6461) open-automation: Added message to service queue.
+I (6461) open-automation: Door closed.
+I (10081) storage.c: Successfully saved exit0
+I (10081) storage.c: Successfully saved exit1
+I (10291) storage.c: Successfully saved motion0
+I (10291) storage.c: Successfully saved motion1
+I (10411) open-automation: Re-arming lock from fob 1 service.
+I (10521) storage.c: Successfully saved keypad0
+storeKeypadSettings	{"eventType":"keypad", "payload":{"channel":1, "enable": false, "alert": false, "delay": 5, "latch": false, "mode": "toggle"}}
+I (10521) storage.c: Successfully saved keypad1
+storeKeypadSettings	{"eventType":"keypad", "payload":{"channel":2, "enable": false, "alert": false, "delay": 6, "latch": true, "mode": "latch"}}
+I (10621) storage.c: Successfully saved fob0
+I (10621) storage.c: Successfully saved fob1
+I (10981) open-automation: Re-arming lock from button 1 service.
+I (10981) open-automation: Re-arming lock from button 2 service.
+I (11181) open-automation: Re-arming lock from motion 1 service.
+I (11401) open-automation: Re-arming lock from pad 1 service. Alert 0
+I (11411) open-automation: Re-arming lock from fob 2 service.

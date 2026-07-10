@@ -1,0 +1,347 @@
+{
+  "config": {
+    "startedAt": "2026-07-08T01:48:59.848Z",
+    "baseUrl": "http://192.168.1.131",
+    "durationMs": 30000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 152,
+    "ok": 122,
+    "fail": 30
+  },
+  "rows": [
+    {
+      "name": "browser refresh",
+      "count": 4,
+      "ok": 3,
+      "fail": 1,
+      "p50": 1094,
+      "p95": 15003,
+      "p99": 15003,
+      "max": 15003
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 4,
+      "ok": 2,
+      "fail": 2,
+      "p50": 1261,
+      "p95": 30003,
+      "p99": 30003,
+      "max": 30003
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 4,
+      "ok": 4,
+      "fail": 0,
+      "p50": 231,
+      "p95": 1645,
+      "p99": 1645,
+      "max": 1645
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 4,
+      "ok": 4,
+      "fail": 0,
+      "p50": 234,
+      "p95": 1945,
+      "p99": 1945,
+      "max": 1945
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 4,
+      "ok": 3,
+      "fail": 1,
+      "p50": 2069,
+      "p95": 5000,
+      "p99": 5000,
+      "max": 5000
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 26,
+      "ok": 19,
+      "fail": 7,
+      "p50": 160,
+      "p95": 5000,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/state",
+      "count": 26,
+      "ok": 23,
+      "fail": 3,
+      "p50": 409,
+      "p95": 10000,
+      "p99": 10002,
+      "max": 10002
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 4,
+      "ok": 3,
+      "fail": 1,
+      "p50": 564,
+      "p95": 1302,
+      "p99": 1302,
+      "max": 1302
+    },
+    {
+      "name": "GET /api/wifi",
+      "count": 4,
+      "ok": 3,
+      "fail": 1,
+      "p50": 860,
+      "p95": 5000,
+      "p99": 5000,
+      "max": 5000
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 16,
+      "ok": 13,
+      "fail": 3,
+      "p50": 207,
+      "p95": 10002,
+      "p99": 10002,
+      "max": 10002
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 16,
+      "ok": 14,
+      "fail": 2,
+      "p50": 318,
+      "p95": 10003,
+      "p99": 10003,
+      "max": 10003
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 16,
+      "ok": 14,
+      "fail": 2,
+      "p50": 353,
+      "p95": 10004,
+      "p99": 10004,
+      "max": 10004
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 16,
+      "ok": 13,
+      "fail": 3,
+      "p50": 337,
+      "p95": 10003,
+      "p99": 10003,
+      "max": 10003
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 71,
+      "p95": 10001,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 101,
+      "p95": 10001,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 248,
+      "p95": 10001,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 206,
+      "p95": 10001,
+      "p99": 10001,
+      "max": 10001
+    }
+  ],
+  "events": [
+    {
+      "time": "2026-07-08T01:48:59.848Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-08T01:48:59.848Z\",\"baseUrl\":\"http://192.168.1.131\",\"durationMs\":30000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-08T01:49:03.083Z",
+      "name": "POST /api/motion",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-08T01:49:05.564Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-08T01:49:06.085Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-08T01:49:06.539Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-08T01:49:08.432Z",
+      "name": "POST /api/exit",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-08T01:49:09.827Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-08T01:49:12.570Z",
+      "name": "GET /api/wiegand",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-08T01:49:14.492Z",
+      "name": "browser uptime tick",
+      "detail": "uptime did not tick: — -> —"
+    },
+    {
+      "time": "2026-07-08T01:49:17.552Z",
+      "name": "GET /api/wifi",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:17.553Z",
+      "name": "GET /api/rf",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:23.230Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:23.303Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:23.304Z",
+      "name": "POST /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:23.305Z",
+      "name": "POST /api/keypad",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:23.305Z",
+      "name": "POST /api/motion",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:27.678Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:28.231Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:32.496Z",
+      "name": "browser refresh",
+      "detail": "page.goto: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://192.168.1.131/?worker=1&t=1783475357493\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-08T01:49:32.679Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:33.607Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:33.607Z",
+      "name": "POST /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:33.609Z",
+      "name": "POST /api/keypad",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:33.609Z",
+      "name": "POST /api/motion",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:38.356Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:49:43.356Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:50:02.499Z",
+      "name": "browser uptime tick",
+      "detail": "page.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.nav-item[data-target=\"system\"]')\u001b[22m\n\u001b[2m    - waiting for\" http://192.168.1.131/?worker=1&t=1783475357493\" navigation to finish...\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-08T01:50:15.516Z",
+      "name": "restore /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:50:15.516Z",
+      "name": "restore /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:50:15.516Z",
+      "name": "restore /api/keypad",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T01:50:15.516Z",
+      "name": "restore /api/motion",
+      "detail": "This operation was aborted"
+    }
+  ]
+}

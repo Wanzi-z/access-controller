@@ -1,0 +1,374 @@
+{
+  "config": {
+    "startedAt": "2026-07-09T14:48:00.300Z",
+    "baseUrl": "http://192.168.1.115",
+    "durationMs": 120000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 771,
+    "ok": 749,
+    "fail": 22
+  },
+  "rows": [
+    {
+      "name": "browser refresh",
+      "count": 17,
+      "ok": 15,
+      "fail": 2,
+      "p50": 135,
+      "p95": 15001,
+      "p99": 15001,
+      "max": 15001
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 17,
+      "ok": 16,
+      "fail": 1,
+      "p50": 1331,
+      "p95": 8181,
+      "p99": 8181,
+      "max": 8181
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 11,
+      "ok": 10,
+      "fail": 1,
+      "p50": 241,
+      "p95": 5002,
+      "p99": 5002,
+      "max": 5002
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 11,
+      "ok": 10,
+      "fail": 1,
+      "p50": 267,
+      "p95": 5001,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 11,
+      "ok": 10,
+      "fail": 1,
+      "p50": 1083,
+      "p95": 5001,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 208,
+      "ok": 202,
+      "fail": 6,
+      "p50": 252,
+      "p95": 564,
+      "p99": 5000,
+      "max": 5002
+    },
+    {
+      "name": "GET /api/state",
+      "count": 208,
+      "ok": 204,
+      "fail": 4,
+      "p50": 350,
+      "p95": 1248,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 223,
+      "p95": 223,
+      "p99": 223,
+      "max": 223
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 11,
+      "ok": 10,
+      "fail": 1,
+      "p50": 1062,
+      "p95": 5001,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 11,
+      "ok": 10,
+      "fail": 1,
+      "p50": 282,
+      "p95": 5001,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 14,
+      "p95": 14,
+      "p99": 14,
+      "max": 14
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 62,
+      "ok": 60,
+      "fail": 2,
+      "p50": 253,
+      "p95": 525,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 62,
+      "ok": 61,
+      "fail": 1,
+      "p50": 25,
+      "p95": 452,
+      "p99": 10000,
+      "max": 10000
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 62,
+      "ok": 62,
+      "fail": 0,
+      "p50": 24,
+      "p95": 458,
+      "p99": 1314,
+      "max": 1314
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 62,
+      "ok": 61,
+      "fail": 1,
+      "p50": 240,
+      "p95": 481,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 23,
+      "p95": 25,
+      "p99": 25,
+      "max": 25
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 35,
+      "p95": 95,
+      "p99": 95,
+      "max": 95
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 38,
+      "p95": 57,
+      "p99": 57,
+      "max": 57
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 54,
+      "p95": 107,
+      "p99": 107,
+      "max": 107
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 35,
+      "p95": 75,
+      "p99": 75,
+      "max": 75
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 25,
+      "p95": 73,
+      "p99": 73,
+      "max": 73
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 55,
+      "p95": 81,
+      "p99": 81,
+      "max": 81
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 60,
+      "p95": 68,
+      "p99": 68,
+      "max": 68
+    }
+  ],
+  "heap": {
+    "samples": 204,
+    "minFree": 30592,
+    "minLargest": 7680,
+    "lastFree": 37456,
+    "lastLargest": 7680
+  },
+  "events": [
+    {
+      "time": "2026-07-09T14:48:00.300Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-09T14:48:00.300Z\",\"baseUrl\":\"http://192.168.1.115\",\"durationMs\":120000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-09T14:48:11.189Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:48:12.868Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:48:16.295Z",
+      "name": "POST /api/motion",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:48:21.315Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:48:21.979Z",
+      "name": "browser refresh",
+      "detail": "page.goto: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://192.168.1.115/?worker=1&t=1783608486978\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T14:48:22.993Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:48:26.316Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:48:26.646Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:48:27.993Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:36.608Z",
+      "name": "GET /api/discovery",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:36.608Z",
+      "name": "GET /api/logs",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:36.608Z",
+      "name": "GET /api/wifi/list",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:36.608Z",
+      "name": "GET /api/wiegand",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:36.608Z",
+      "name": "GET /api/rf",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:36.630Z",
+      "name": "browser uptime tick",
+      "detail": "page.waitForFunction: Timeout 5000ms exceeded."
+    },
+    {
+      "time": "2026-07-09T14:49:41.746Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:41.913Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:46.734Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:46.746Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:51.734Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:51.963Z",
+      "name": "POST /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T14:49:54.630Z",
+      "name": "browser refresh",
+      "detail": "page.goto: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://192.168.1.115/?worker=1&t=1783608579630\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    }
+  ]
+}

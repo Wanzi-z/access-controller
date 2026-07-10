@@ -1,0 +1,284 @@
+{
+  "config": {
+    "startedAt": "2026-07-08T03:00:00.616Z",
+    "baseUrl": "http://192.168.1.131",
+    "durationMs": 120000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 1276,
+    "ok": 1274,
+    "fail": 2
+  },
+  "rows": [
+    {
+      "name": "browser console",
+      "count": 2,
+      "ok": 0,
+      "fail": 2,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    {
+      "name": "browser refresh",
+      "count": 27,
+      "ok": 27,
+      "fail": 0,
+      "p50": 229,
+      "p95": 535,
+      "p99": 676,
+      "max": 676
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 27,
+      "ok": 27,
+      "fail": 0,
+      "p50": 1243,
+      "p95": 1252,
+      "p99": 1282,
+      "max": 1282
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 16,
+      "ok": 16,
+      "fail": 0,
+      "p50": 229,
+      "p95": 1299,
+      "p99": 1299,
+      "max": 1299
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 16,
+      "ok": 16,
+      "fail": 0,
+      "p50": 234,
+      "p95": 1298,
+      "p99": 1298,
+      "max": 1298
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 16,
+      "ok": 16,
+      "fail": 0,
+      "p50": 257,
+      "p95": 1180,
+      "p99": 1180,
+      "max": 1180
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 301,
+      "ok": 301,
+      "fail": 0,
+      "p50": 101,
+      "p95": 1150,
+      "p99": 2130,
+      "max": 2211
+    },
+    {
+      "name": "GET /api/state",
+      "count": 301,
+      "ok": 301,
+      "fail": 0,
+      "p50": 364,
+      "p95": 620,
+      "p99": 1404,
+      "max": 2347
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 211,
+      "p95": 211,
+      "p99": 211,
+      "max": 211
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 16,
+      "ok": 16,
+      "fail": 0,
+      "p50": 258,
+      "p95": 2093,
+      "p99": 2093,
+      "max": 2093
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 16,
+      "ok": 16,
+      "fail": 0,
+      "p50": 240,
+      "p95": 1128,
+      "p99": 1128,
+      "max": 1128
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 27,
+      "p95": 27,
+      "p99": 27,
+      "max": 27
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 130,
+      "ok": 130,
+      "fail": 0,
+      "p50": 246,
+      "p95": 401,
+      "p99": 537,
+      "max": 557
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 130,
+      "ok": 130,
+      "fail": 0,
+      "p50": 254,
+      "p95": 1270,
+      "p99": 2068,
+      "max": 2468
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 130,
+      "ok": 130,
+      "fail": 0,
+      "p50": 258,
+      "p95": 1307,
+      "p99": 1713,
+      "max": 2078
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 130,
+      "ok": 130,
+      "fail": 0,
+      "p50": 287,
+      "p95": 1375,
+      "p99": 1554,
+      "max": 1633
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 25,
+      "p95": 28,
+      "p99": 28,
+      "max": 28
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 38,
+      "p95": 62,
+      "p99": 62,
+      "max": 62
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 48,
+      "p95": 58,
+      "p99": 58,
+      "max": 58
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 37,
+      "p95": 48,
+      "p99": 48,
+      "max": 48
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 65,
+      "p95": 97,
+      "p99": 97,
+      "max": 97
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 60,
+      "p95": 117,
+      "p99": 117,
+      "max": 117
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 53,
+      "p95": 146,
+      "p99": 146,
+      "max": 146
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 66,
+      "p95": 129,
+      "p99": 129,
+      "max": 129
+    }
+  ],
+  "heap": {
+    "samples": 301,
+    "minFree": 30864,
+    "minLargest": 8192,
+    "lastFree": 46256,
+    "lastLargest": 14336
+  },
+  "events": [
+    {
+      "time": "2026-07-08T03:00:00.617Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-08T03:00:00.616Z\",\"baseUrl\":\"http://192.168.1.131\",\"durationMs\":120000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-08T03:01:33.669Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_EMPTY_RESPONSE"
+    },
+    {
+      "time": "2026-07-08T03:01:33.669Z",
+      "name": "browser console",
+      "detail": "TypeError: Failed to fetch\n    at fetchJSON (http://192.168.1.131/script.js?v=22:50:26)\n    at http://192.168.1.131/script.js?v=22:689:29"
+    }
+  ]
+}

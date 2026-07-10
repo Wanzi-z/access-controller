@@ -1,0 +1,61 @@
+I (73741) api_server: Wiegand state requested
+I (76191) api_server: Wiegand state requested
+I (78351) storage.c: Loading Server info from flash
+I (78351) storage.c: No legacy server host/port found in flash, using server URL.
+W (78351) storage.c: Bool key srv_req_reach not found, returning default
+I (78661) api_server: Wiegand state requested
+I (81211) api_server: Wiegand state requested
+I (83671) api_server: Wiegand state requested
+I (86231) api_server: Wiegand state requested
+I (88691) api_server: Wiegand state requested
+I (91151) api_server: Wiegand state requested
+I (93631) api_server: Wiegand state requested
+I (96161) api_server: Wiegand state requested
+I (98421) storage.c: Loading Server info from flash
+I (98421) storage.c: No legacy server host/port found in flash, using server URL.
+W (98421) storage.c: Bool key srv_req_reach not found, returning default
+I (98641) api_server: Wiegand state requested
+I (100761) storage.c: Loading Server info from flash
+I (100761) storage.c: No legacy server host/port found in flash, using server URL.
+W (100761) storage.c: Bool key srv_req_reach not found, returning default
+I (100971) storage.c: Loading Server info from flash
+I (100971) storage.c: No legacy server host/port found in flash, using server URL.
+W (100971) storage.c: Bool key srv_req_reach not found, returning default
+I (101321) api_server: Wiegand state requested
+alertOnKeypad	ch: 1 alert: 0.
+I (101771) storage.c: Loading Server info from flash
+I (101771) storage.c: No legacy server host/port found in flash, using server URL.
+W (101771) storage.c: Bool key srv_req_reach not found, returning default
+I (101801) storage.c: Successfully saved exit0
+I (101801) storage.c: Successfully saved exit1
+I (101991) storage.c: Loading Server info from flash
+I (101991) storage.c: No legacy server host/port found in flash, using server URL.
+W (101991) storage.c: Bool key srv_req_reach not found, returning default
+I (102141) storage.c: Successfully saved fob0
+I (102141) storage.c: Successfully saved fob1
+I (102551) storage.c: Successfully saved keypad0
+storeKeypadSettings	{"eventType":"keypad", "payload":{"channel":1, "enable": false, "alert": false, "delay": 4, "latch": false, "mode": "momentary"}}
+I (102551) storage.c: Successfully saved keypad1
+storeKeypadSettings	{"eventType":"keypad", "payload":{"channel":2, "enable": false, "alert": false, "delay": 5, "latch": false, "mode": "toggle"}}
+I (103011) storage.c: Successfully saved motion0
+I (103011) storage.c: Successfully saved motion1
+W (104791) httpd_txrx: httpd_sock_err: error in send : 11
+W (104791) httpd_uri: httpd_uri: uri handler execution failed
+W (107791) httpd_txrx: httpd_sock_err: error in send : 11
+W (107791) httpd_uri: httpd_uri: uri handler execution failed
+I (125551) open-automation: ------ SYSTEM STATUS ------
+I (125551) open-automation: Uptime: 0 days 0 hours 2 minutes 5 seconds
+I (125551) open-automation: Free Heap: 9708 bytes (min: 68, largest block: 1088)
+I (125551) open-automation: NVS Free Entries: 247
+I (125561) open-automation: NVS Used Entries: 383
+I (125561) open-automation: Loop Count: 2
+I (125571) open-automation: ----------------------------
+I (144551) wifi:[ADDBA]RX DELBA, reason:39, delete tid:0, initiator:0(recipient)
+I (159591) wifi:[ADDBA]RX DELBA, reason:39, delete tid:0, initiator:0(recipient)
+I (185571) open-automation: ------ SYSTEM STATUS ------
+I (185571) open-automation: Uptime: 0 days 0 hours 3 minutes 5 seconds
+I (185571) open-automation: Free Heap: 9832 bytes (min: 68, largest block: 1088)
+I (185571) open-automation: NVS Free Entries: 247
+I (185581) open-automation: NVS Used Entries: 383
+I (185581) open-automation: Loop Count: 3
+I (185591) open-automation: ----------------------------

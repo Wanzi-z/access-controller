@@ -1,0 +1,619 @@
+{
+  "config": {
+    "startedAt": "2026-07-09T13:40:03.480Z",
+    "baseUrl": "http://192.168.1.115",
+    "durationMs": 120000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 131,
+    "ok": 62,
+    "fail": 69
+  },
+  "rows": [
+    {
+      "name": "browser console",
+      "count": 1,
+      "ok": 0,
+      "fail": 1,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    {
+      "name": "browser refresh",
+      "count": 4,
+      "ok": 1,
+      "fail": 3,
+      "p50": 14999,
+      "p95": 15000,
+      "p99": 15000,
+      "max": 15000
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 4,
+      "ok": 1,
+      "fail": 3,
+      "p50": 5034,
+      "p95": 30001,
+      "p99": 30001,
+      "max": 30001
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 406,
+      "p95": 5001,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 422,
+      "p95": 5001,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 1264,
+      "p95": 5000,
+      "p99": 5000,
+      "max": 5000
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 33,
+      "ok": 15,
+      "fail": 18,
+      "p50": 3059,
+      "p95": 5000,
+      "p99": 5001,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/state",
+      "count": 33,
+      "ok": 15,
+      "fail": 18,
+      "p50": 2947,
+      "p95": 10001,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 315,
+      "p95": 315,
+      "p99": 315,
+      "max": 315
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 1277,
+      "p95": 5000,
+      "p99": 5000,
+      "max": 5000
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 2,
+      "ok": 1,
+      "fail": 1,
+      "p50": 426,
+      "p95": 5000,
+      "p99": 5000,
+      "max": 5000
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 26,
+      "p95": 26,
+      "p99": 26,
+      "max": 26
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 8,
+      "ok": 4,
+      "fail": 4,
+      "p50": 513,
+      "p95": 10000,
+      "p99": 10000,
+      "max": 10000
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 8,
+      "ok": 4,
+      "fail": 4,
+      "p50": 1048,
+      "p95": 10001,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 8,
+      "ok": 4,
+      "fail": 4,
+      "p50": 258,
+      "p95": 10001,
+      "p99": 10001,
+      "max": 10001
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 8,
+      "ok": 3,
+      "fail": 5,
+      "p50": 3083,
+      "p95": 10000,
+      "p99": 10000,
+      "max": 10000
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 27,
+      "p95": 41,
+      "p99": 41,
+      "max": 41
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 24,
+      "p95": 37,
+      "p99": 37,
+      "max": 37
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 51,
+      "p95": 54,
+      "p99": 54,
+      "max": 54
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 58,
+      "p95": 62,
+      "p99": 62,
+      "max": 62
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 1,
+      "ok": 0,
+      "fail": 1,
+      "p50": 2785,
+      "p95": 2785,
+      "p99": 2785,
+      "max": 2785
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 1,
+      "ok": 0,
+      "fail": 1,
+      "p50": 2785,
+      "p95": 2785,
+      "p99": 2785,
+      "max": 2785
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 1,
+      "ok": 0,
+      "fail": 1,
+      "p50": 2785,
+      "p95": 2785,
+      "p99": 2785,
+      "max": 2785
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 1,
+      "ok": 0,
+      "fail": 1,
+      "p50": 2784,
+      "p95": 2784,
+      "p99": 2784,
+      "max": 2784
+    }
+  ],
+  "heap": {
+    "samples": 15,
+    "minFree": 27368,
+    "minLargest": 7680,
+    "lastFree": 39044,
+    "lastLargest": 19456
+  },
+  "events": [
+    {
+      "time": "2026-07-09T13:40:03.480Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-09T13:40:03.480Z\",\"baseUrl\":\"http://192.168.1.115\",\"durationMs\":120000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-09T13:40:20.357Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:20.393Z",
+      "name": "POST /api/motion",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:23.768Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:25.358Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:25.658Z",
+      "name": "browser refresh",
+      "detail": "page.goto: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://192.168.1.115/?worker=1&t=1783604410658\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T13:40:28.768Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:30.692Z",
+      "name": "browser uptime tick",
+      "detail": "page.waitForSelector: Timeout 5000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#systemUptime') to be visible\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T13:40:30.744Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:35.484Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:38.212Z",
+      "name": "GET /api/state",
+      "detail": "terminated"
+    },
+    {
+      "time": "2026-07-09T13:40:40.484Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:40.796Z",
+      "name": "POST /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:43.212Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:48.692Z",
+      "name": "browser refresh",
+      "detail": "page.goto: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://192.168.1.115/?worker=1&t=1783604433692\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T13:40:50.610Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:50.846Z",
+      "name": "POST /api/keypad",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:53.338Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:55.610Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:40:58.338Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:00.611Z",
+      "name": "GET /api/discovery",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:00.611Z",
+      "name": "GET /api/logs",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:00.611Z",
+      "name": "GET /api/wifi/list",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:00.611Z",
+      "name": "GET /api/wiegand",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:00.611Z",
+      "name": "GET /api/rf",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:00.896Z",
+      "name": "POST /api/motion",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:08.464Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:10.736Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:11.246Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:13.464Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:15.736Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:18.691Z",
+      "name": "browser uptime tick",
+      "detail": "page.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.nav-item[data-target=\"system\"]')\u001b[22m\n\u001b[2m    - waiting for\" http://192.168.1.115/?worker=1&t=1783604433692\" navigation to finish...\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T13:41:18.691Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONTENT_LENGTH_MISMATCH"
+    },
+    {
+      "time": "2026-07-09T13:41:21.296Z",
+      "name": "POST /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:23.589Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:25.862Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:28.589Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:30.862Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:31.347Z",
+      "name": "POST /api/keypad",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:36.691Z",
+      "name": "browser refresh",
+      "detail": "page.goto: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://192.168.1.115/?worker=1&t=1783604481692\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T13:41:38.715Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:40.987Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:41.208Z",
+      "name": "POST /api/motion",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:41.208Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:41.208Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:44.280Z",
+      "name": "GET /api/state",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:44.280Z",
+      "name": "GET /api/state",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:44.281Z",
+      "name": "POST /api/exit",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:47.352Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:47.352Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:47.352Z",
+      "name": "POST /api/fob",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:41:57.403Z",
+      "name": "POST /api/keypad",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:57.477Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:41:57.477Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T13:42:00.536Z",
+      "name": "POST /api/motion",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:00.536Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:00.536Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:03.736Z",
+      "name": "GET /api/state",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:03.736Z",
+      "name": "GET /api/state",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:03.737Z",
+      "name": "POST /api/exit",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:06.692Z",
+      "name": "browser uptime tick",
+      "detail": "page.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.nav-item[data-target=\"system\"]')\u001b[22m\n\u001b[2m    - waiting for\" http://192.168.1.115/?worker=1&t=1783604481692\" navigation to finish...\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T13:42:06.808Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:06.808Z",
+      "name": "GET /api/signals",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:06.808Z",
+      "name": "POST /api/fob",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:09.944Z",
+      "name": "POST /api/keypad",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:13.080Z",
+      "name": "POST /api/motion",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:16.216Z",
+      "name": "restore /api/exit",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:16.216Z",
+      "name": "restore /api/fob",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:16.216Z",
+      "name": "restore /api/keypad",
+      "detail": "fetch failed"
+    },
+    {
+      "time": "2026-07-09T13:42:16.216Z",
+      "name": "restore /api/motion",
+      "detail": "fetch failed"
+    }
+  ]
+}

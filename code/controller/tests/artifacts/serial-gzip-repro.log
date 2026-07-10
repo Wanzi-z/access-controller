@@ -1,0 +1,48 @@
+I (29859) api_server: Wiegand state requested
+I (32309) api_server: Wiegand state requested
+I (34769) api_server: Wiegand state requested
+I (37329) api_server: Wiegand state requested
+I (39789) api_server: Wiegand state requested
+I (42349) api_server: Wiegand state requested
+I (44459) storage.c: Loading Server info from flash
+I (44459) storage.c: No legacy server host/port found in flash, using server URL.
+W (44459) storage.c: Bool key srv_req_reach not found, returning default
+I (44759) api_server: Wiegand state requested
+I (47369) api_server: Wiegand state requested
+I (49829) api_server: Wiegand state requested
+I (51879) storage.c: Loading Server info from flash
+I (51879) storage.c: No legacy server host/port found in flash, using server URL.
+W (51879) storage.c: Bool key srv_req_reach not found, returning default
+I (52099) storage.c: Loading Server info from flash
+I (52099) storage.c: No legacy server host/port found in flash, using server URL.
+W (52099) storage.c: Bool key srv_req_reach not found, returning default
+I (52919) storage.c: Successfully saved exit0
+I (52919) storage.c: Successfully saved exit1
+W (56169) httpd_txrx: httpd_sock_err: error in send : 11
+W (56169) file_server: Embedded asset send failed after 4096/6604 bytes
+W (56169) httpd_uri: httpd_uri: uri handler execution failed
+W (59169) httpd_txrx: httpd_sock_err: error in send : 11
+W (59169) file_server: Embedded asset send failed after 0/21883 bytes
+W (59169) httpd_uri: httpd_uri: uri handler execution failed
+I (59949) storage.c: Successfully saved fob0
+I (59949) storage.c: Successfully saved fob1
+W (62169) httpd_txrx: httpd_sock_err: error in send : 11
+W (62169) httpd_uri: httpd_uri: uri handler execution failed
+I (62169) api_server: Wiegand state requested
+W (64169) httpd_txrx: httpd_sock_err: error in send : 11
+W (64169) httpd_uri: httpd_uri: uri handler execution failed
+I (65579) open-automation: ------ SYSTEM STATUS ------
+I (65579) open-automation: Uptime: 0 days 0 hours 1 minutes 5 seconds
+I (65579) open-automation: Free Heap: 9580 bytes (min: 1084, largest block: 1280)
+I (65579) open-automation: NVS Free Entries: 340
+I (65589) open-automation: NVS Used Entries: 290
+I (65589) open-automation: Loop Count: 1
+I (65599) open-automation: ----------------------------
+I (121579) wifi:[ADDBA]RX DELBA, reason:39, delete tid:0, initiator:0(recipient)
+I (125599) open-automation: ------ SYSTEM STATUS ------
+I (125599) open-automation: Uptime: 0 days 0 hours 2 minutes 5 seconds
+I (125599) open-automation: Free Heap: 9936 bytes (min: 1084, largest block: 1280)
+I (125599) open-automation: NVS Free Entries: 340
+I (125609) open-automation: NVS Used Entries: 290
+I (125609) open-automation: Loop Count: 2
+I (125619) open-automation: ----------------------------

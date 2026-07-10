@@ -1,0 +1,469 @@
+{
+  "config": {
+    "startedAt": "2026-07-08T05:16:05.891Z",
+    "baseUrl": "http://192.168.1.131",
+    "durationMs": 3600000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 4
+  },
+  "totals": {
+    "count": 35136,
+    "ok": 35107,
+    "fail": 29
+  },
+  "rows": [
+    {
+      "name": "browser console",
+      "count": 25,
+      "ok": 0,
+      "fail": 25,
+      "p50": 0,
+      "p95": 0,
+      "p99": 0,
+      "max": 0
+    },
+    {
+      "name": "browser refresh",
+      "count": 678,
+      "ok": 678,
+      "fail": 0,
+      "p50": 198,
+      "p95": 484,
+      "p99": 639,
+      "max": 932
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 678,
+      "ok": 678,
+      "fail": 0,
+      "p50": 1999,
+      "p95": 2007,
+      "p99": 2009,
+      "max": 15797
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 501,
+      "ok": 501,
+      "fail": 0,
+      "p50": 246,
+      "p95": 446,
+      "p99": 552,
+      "max": 14824
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 501,
+      "ok": 501,
+      "fail": 0,
+      "p50": 253,
+      "p95": 459,
+      "p99": 1199,
+      "max": 14824
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 501,
+      "ok": 499,
+      "fail": 2,
+      "p50": 309,
+      "p95": 1233,
+      "p99": 1542,
+      "max": 16806
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 9998,
+      "ok": 9998,
+      "fail": 0,
+      "p50": 101,
+      "p95": 310,
+      "p99": 1071,
+      "max": 2578
+    },
+    {
+      "name": "GET /api/state",
+      "count": 9998,
+      "ok": 9998,
+      "fail": 0,
+      "p50": 383,
+      "p95": 628,
+      "p99": 1430,
+      "max": 16087
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 298,
+      "p95": 298,
+      "p99": 298,
+      "max": 298
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 501,
+      "ok": 500,
+      "fail": 1,
+      "p50": 274,
+      "p95": 1156,
+      "p99": 1345,
+      "max": 15501
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 501,
+      "ok": 501,
+      "fail": 0,
+      "p50": 266,
+      "p95": 1095,
+      "p99": 1222,
+      "max": 14823
+    },
+    {
+      "name": "OTA upload+reboot",
+      "count": 4,
+      "ok": 4,
+      "fail": 0,
+      "p50": 14721,
+      "p95": 15914,
+      "p99": 15914,
+      "max": 15914
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 20,
+      "p95": 20,
+      "p99": 20,
+      "max": 20
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 2808,
+      "ok": 2808,
+      "fail": 0,
+      "p50": 252,
+      "p95": 488,
+      "p99": 1162,
+      "max": 1629
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 2808,
+      "ok": 2807,
+      "fail": 1,
+      "p50": 23,
+      "p95": 393,
+      "p99": 1289,
+      "max": 14810
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 2808,
+      "ok": 2808,
+      "fail": 0,
+      "p50": 27,
+      "p95": 438,
+      "p99": 1057,
+      "max": 2611
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 2808,
+      "ok": 2808,
+      "fail": 0,
+      "p50": 245,
+      "p95": 465,
+      "p99": 719,
+      "max": 16064
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 21,
+      "p95": 52,
+      "p99": 52,
+      "max": 52
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 66,
+      "p95": 90,
+      "p99": 90,
+      "max": 90
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 40,
+      "p95": 94,
+      "p99": 94,
+      "max": 94
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 47,
+      "p95": 77,
+      "p99": 77,
+      "max": 77
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 35,
+      "p95": 83,
+      "p99": 83,
+      "max": 83
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 70,
+      "p95": 86,
+      "p99": 86,
+      "max": 86
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 71,
+      "p95": 86,
+      "p99": 86,
+      "max": 86
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 71,
+      "p95": 86,
+      "p99": 86,
+      "max": 86
+    }
+  ],
+  "heap": {
+    "samples": 9998,
+    "minFree": 30612,
+    "minLargest": 9728,
+    "lastFree": 58228,
+    "lastLargest": 31744
+  },
+  "events": [
+    {
+      "time": "2026-07-08T05:16:05.891Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-08T05:16:05.891Z\",\"baseUrl\":\"http://192.168.1.131\",\"durationMs\":3600000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":4}"
+    },
+    {
+      "time": "2026-07-08T05:28:22.633Z",
+      "name": "ota-pass",
+      "detail": "\n  \"buildDate\": \"Jul  8 2026\",\n  \"buildTime\": \"00:10:15\",\n  \"bytes\": 1339376,\n  \"ok\": true,\n  \"partition\": \"app0\",\n  \"projectName\": \"controller\",\n  \"projectVersion\": \"b0ab394\",\n  \"reboot\": true,\n  \"rebootDelayMs\": 1500\n}\nWaiting for device to reboot and answer /api/state...\nDevice is back online.\n    Firmware: master@b0ab394b34df version=b0ab394\n    OTA: running=app0 next=app1 state=pending_verify"
+    },
+    {
+      "time": "2026-07-08T05:28:23.240Z",
+      "name": "reboot-detected",
+      "detail": "uptime 1034s -> 6s"
+    },
+    {
+      "time": "2026-07-08T05:40:21.457Z",
+      "name": "ota-pass",
+      "detail": "\n  \"buildDate\": \"Jul  8 2026\",\n  \"buildTime\": \"00:10:15\",\n  \"bytes\": 1339376,\n  \"ok\": true,\n  \"partition\": \"app1\",\n  \"projectName\": \"controller\",\n  \"projectVersion\": \"b0ab394\",\n  \"reboot\": true,\n  \"rebootDelayMs\": 1500\n}\nWaiting for device to reboot and answer /api/state...\nDevice is back online.\n    Firmware: master@b0ab394b34df version=b0ab394\n    OTA: running=app1 next=app0 state=pending_verify"
+    },
+    {
+      "time": "2026-07-08T05:40:21.690Z",
+      "name": "reboot-detected",
+      "detail": "uptime 710s -> 6s"
+    },
+    {
+      "time": "2026-07-08T05:52:21.471Z",
+      "name": "ota-pass",
+      "detail": "\n  \"buildDate\": \"Jul  8 2026\",\n  \"buildTime\": \"00:10:15\",\n  \"bytes\": 1339376,\n  \"ok\": true,\n  \"partition\": \"app0\",\n  \"projectName\": \"controller\",\n  \"projectVersion\": \"b0ab394\",\n  \"reboot\": true,\n  \"rebootDelayMs\": 1500\n}\nWaiting for device to reboot and answer /api/state...\nDevice is back online.\n    Firmware: master@b0ab394b34df version=b0ab394\n    OTA: running=app0 next=app1 state=pending_verify"
+    },
+    {
+      "time": "2026-07-08T05:52:21.700Z",
+      "name": "reboot-detected",
+      "detail": "uptime 711s -> 6s"
+    },
+    {
+      "time": "2026-07-08T06:04:21.236Z",
+      "name": "ota-pass",
+      "detail": "\n  \"buildDate\": \"Jul  8 2026\",\n  \"buildTime\": \"00:10:15\",\n  \"bytes\": 1339376,\n  \"ok\": true,\n  \"partition\": \"app1\",\n  \"projectName\": \"controller\",\n  \"projectVersion\": \"b0ab394\",\n  \"reboot\": true,\n  \"rebootDelayMs\": 1500\n}\nWaiting for device to reboot and answer /api/state...\nDevice is back online.\n    Firmware: master@b0ab394b34df version=b0ab394\n    OTA: running=app1 next=app0 state=pending_verify"
+    },
+    {
+      "time": "2026-07-08T06:04:21.464Z",
+      "name": "reboot-detected",
+      "detail": "uptime 711s -> 6s"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-08T05:28:22.641Z",
+      "name": "GET /api/rf",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:28:24.710Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:40:21.462Z",
+      "name": "POST /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T05:40:21.464Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:40:21.464Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:40:21.464Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:40:21.464Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:40:21.464Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:40:21.464Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:40:21.464Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:52:21.476Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:52:21.476Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:52:21.476Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:52:21.476Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:52:21.476Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:52:21.476Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T05:52:21.476Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T06:04:21.238Z",
+      "name": "GET /api/wiegand",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T06:04:21.238Z",
+      "name": "GET /api/rf",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-08T06:04:21.239Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    },
+    {
+      "time": "2026-07-08T06:04:21.239Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_RESET"
+    },
+    {
+      "time": "2026-07-08T06:04:21.239Z",
+      "name": "browser console",
+      "detail": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+    }
+  ]
+}

@@ -1,0 +1,304 @@
+{
+  "config": {
+    "startedAt": "2026-07-09T15:18:54.339Z",
+    "baseUrl": "http://192.168.1.115",
+    "durationMs": 120000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 1800,
+    "ok": 1792,
+    "fail": 8
+  },
+  "rows": [
+    {
+      "name": "browser refresh",
+      "count": 25,
+      "ok": 24,
+      "fail": 1,
+      "p50": 75,
+      "p95": 478,
+      "p99": 15001,
+      "max": 15001
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 25,
+      "ok": 25,
+      "fail": 0,
+      "p50": 1073,
+      "p95": 1262,
+      "p99": 3379,
+      "max": 3379
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 28,
+      "ok": 28,
+      "fail": 0,
+      "p50": 57,
+      "p95": 258,
+      "p99": 1065,
+      "max": 1065
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 28,
+      "ok": 28,
+      "fail": 0,
+      "p50": 83,
+      "p95": 304,
+      "p99": 1085,
+      "max": 1085
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 28,
+      "ok": 28,
+      "fail": 0,
+      "p50": 1071,
+      "p95": 1166,
+      "p99": 1322,
+      "max": 1322
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 558,
+      "ok": 555,
+      "fail": 3,
+      "p50": 54,
+      "p95": 131,
+      "p99": 1180,
+      "max": 5001
+    },
+    {
+      "name": "GET /api/state",
+      "count": 558,
+      "ok": 556,
+      "fail": 2,
+      "p50": 53,
+      "p95": 247,
+      "p99": 886,
+      "max": 10001
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 64,
+      "p95": 64,
+      "p99": 64,
+      "max": 64
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 28,
+      "ok": 28,
+      "fail": 0,
+      "p50": 120,
+      "p95": 1127,
+      "p99": 2071,
+      "max": 2071
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 28,
+      "ok": 28,
+      "fail": 0,
+      "p50": 100,
+      "p95": 1125,
+      "p99": 1144,
+      "max": 1144
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 17,
+      "p95": 17,
+      "p99": 17,
+      "max": 17
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 119,
+      "ok": 118,
+      "fail": 1,
+      "p50": 40,
+      "p95": 284,
+      "p99": 1264,
+      "max": 10001
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 119,
+      "ok": 118,
+      "fail": 1,
+      "p50": 35,
+      "p95": 290,
+      "p99": 1122,
+      "max": 10000
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 119,
+      "ok": 119,
+      "fail": 0,
+      "p50": 47,
+      "p95": 259,
+      "p99": 1063,
+      "max": 1081
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 119,
+      "ok": 119,
+      "fail": 0,
+      "p50": 42,
+      "p95": 252,
+      "p99": 1081,
+      "max": 1082
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 32,
+      "p95": 32,
+      "p99": 32,
+      "max": 32
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 48,
+      "p95": 56,
+      "p99": 56,
+      "max": 56
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 59,
+      "p95": 61,
+      "p99": 61,
+      "max": 61
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 80,
+      "p95": 83,
+      "p99": 83,
+      "max": 83
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 29,
+      "p95": 79,
+      "p99": 79,
+      "max": 79
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 50,
+      "p95": 82,
+      "p99": 82,
+      "max": 82
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 69,
+      "p95": 83,
+      "p99": 83,
+      "max": 83
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 82,
+      "p95": 92,
+      "p99": 92,
+      "max": 92
+    }
+  ],
+  "heap": {
+    "samples": 556,
+    "minFree": 28120,
+    "minLargest": 7680,
+    "lastFree": 35252,
+    "lastLargest": 9216
+  },
+  "events": [
+    {
+      "time": "2026-07-09T15:18:54.339Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-09T15:18:54.339Z\",\"baseUrl\":\"http://192.168.1.115\",\"durationMs\":120000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-09T15:19:51.572Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T15:19:56.457Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T15:19:56.607Z",
+      "name": "POST /api/exit",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T15:20:01.457Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T15:20:01.697Z",
+      "name": "GET /api/state",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T15:20:05.671Z",
+      "name": "browser refresh",
+      "detail": "page.goto: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://192.168.1.115/?worker=1&t=1783610390670\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-09T15:20:06.657Z",
+      "name": "POST /api/fob",
+      "detail": "This operation was aborted"
+    },
+    {
+      "time": "2026-07-09T15:20:06.697Z",
+      "name": "GET /api/signals",
+      "detail": "This operation was aborted"
+    }
+  ]
+}

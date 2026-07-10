@@ -1,0 +1,263 @@
+{
+  "config": {
+    "startedAt": "2026-07-08T03:05:41.341Z",
+    "baseUrl": "http://192.168.1.131",
+    "durationMs": 120000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 1205,
+    "ok": 1205,
+    "fail": 0
+  },
+  "rows": [
+    {
+      "name": "browser refresh",
+      "count": 27,
+      "ok": 27,
+      "fail": 0,
+      "p50": 219,
+      "p95": 622,
+      "p99": 890,
+      "max": 890
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 27,
+      "ok": 27,
+      "fail": 0,
+      "p50": 1245,
+      "p95": 1259,
+      "p99": 1269,
+      "max": 1269
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 15,
+      "ok": 15,
+      "fail": 0,
+      "p50": 296,
+      "p95": 665,
+      "p99": 665,
+      "max": 665
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 15,
+      "ok": 15,
+      "fail": 0,
+      "p50": 270,
+      "p95": 1161,
+      "p99": 1161,
+      "max": 1161
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 15,
+      "ok": 15,
+      "fail": 0,
+      "p50": 301,
+      "p95": 1204,
+      "p99": 1204,
+      "max": 1204
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 289,
+      "ok": 289,
+      "fail": 0,
+      "p50": 147,
+      "p95": 1051,
+      "p99": 1254,
+      "max": 1360
+    },
+    {
+      "name": "GET /api/state",
+      "count": 289,
+      "ok": 289,
+      "fail": 0,
+      "p50": 388,
+      "p95": 694,
+      "p99": 2469,
+      "max": 2564
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 297,
+      "p95": 297,
+      "p99": 297,
+      "max": 297
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 15,
+      "ok": 15,
+      "fail": 0,
+      "p50": 278,
+      "p95": 2123,
+      "p99": 2123,
+      "max": 2123
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 15,
+      "ok": 15,
+      "fail": 0,
+      "p50": 295,
+      "p95": 1127,
+      "p99": 1127,
+      "max": 1127
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 21,
+      "p95": 21,
+      "p99": 21,
+      "max": 21
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 120,
+      "ok": 120,
+      "fail": 0,
+      "p50": 286,
+      "p95": 737,
+      "p99": 2793,
+      "max": 3390
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 120,
+      "ok": 120,
+      "fail": 0,
+      "p50": 295,
+      "p95": 1226,
+      "p99": 1466,
+      "max": 1543
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 120,
+      "ok": 120,
+      "fail": 0,
+      "p50": 300,
+      "p95": 1428,
+      "p99": 1592,
+      "max": 1836
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 120,
+      "ok": 120,
+      "fail": 0,
+      "p50": 332,
+      "p95": 1444,
+      "p99": 1597,
+      "max": 2096
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 29,
+      "p95": 66,
+      "p99": 66,
+      "max": 66
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 30,
+      "p95": 43,
+      "p99": 43,
+      "max": 43
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 41,
+      "p95": 50,
+      "p99": 50,
+      "max": 50
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 48,
+      "p95": 64,
+      "p99": 64,
+      "max": 64
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 67,
+      "p95": 153,
+      "p99": 153,
+      "max": 153
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 83,
+      "p95": 154,
+      "p99": 154,
+      "max": 154
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 66,
+      "p95": 153,
+      "p99": 153,
+      "max": 153
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 68,
+      "p95": 170,
+      "p99": 170,
+      "max": 170
+    }
+  ],
+  "heap": {
+    "samples": 289,
+    "minFree": 26600,
+    "minLargest": 7680,
+    "lastFree": 35216,
+    "lastLargest": 8192
+  },
+  "events": [
+    {
+      "time": "2026-07-08T03:05:41.341Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-08T03:05:41.341Z\",\"baseUrl\":\"http://192.168.1.131\",\"durationMs\":120000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": []
+}

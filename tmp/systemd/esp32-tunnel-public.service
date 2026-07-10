@@ -1,0 +1,33 @@
+[Unit]
+Description=Public reverse SSH port for ESP32 Access Controller tunnel
+After=network-online.target esp32-tunnel.service
+Wants=network-online.target esp32-tunnel.service
+
+[Service]
+User=andy
+Environment="AUTOSSH_GATETIME=0"
+Environment="REMOTE_HOST=142.93.57.114"
+Environment="REMOTE_USER=andy"
+Environment="SSH_KEY_PATH=/home/andy/.ssh/id_ed25519"
+Environment="LOCAL_TUNNEL_PORT=9111"
+Environment="REMOTE_TUNNEL_PORT=9111"
+TimeoutStartSec=90
+ExecStartPre=/usr/bin/test -r ${SSH_KEY_PATH}
+ExecStartPre=/bin/bash -lc 'for i in {1..60}; do (echo > /dev/tcp/127.0.0.1/${LOCAL_TUNNEL_PORT}) >/dev/null 2>&1 && exit 0; sleep 1; done; echo "esp32 tunnel: local port not ready: ${LOCAL_TUNNEL_PORT}" >&2; exit 1'
+ExecStartPre=-/usr/bin/ssh -i ${SSH_KEY_PATH} -o "ConnectTimeout=10" -o "BatchMode=yes" ${REMOTE_USER}@${REMOTE_HOST} "fuser -k ${REMOTE_TUNNEL_PORT}/tcp 2>/dev/null || true"
+ExecStart=/usr/bin/autossh -M 0 \
+  -i ${SSH_KEY_PATH} \
+  -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" \
+  -o "TCPKeepAlive=yes" \
+  -o "BatchMode=yes" \
+  -o "IdentitiesOnly=yes" \
+  -o "ExitOnForwardFailure=yes" \
+  -o "ConnectTimeout=30" \
+  -N -T \
+  -R 0.0.0.0:${REMOTE_TUNNEL_PORT}:localhost:${LOCAL_TUNNEL_PORT} \
+  ${REMOTE_USER}@${REMOTE_HOST}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
