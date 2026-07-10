@@ -193,6 +193,10 @@ bool station_connect(char *ssid, char *password, bool keep_ap_enabled) {
     if (err != ESP_OK) {
         return false;
     }
+    err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to set STA WiFi storage to RAM (%s)", esp_err_to_name(err));
+    }
 
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     s_retry_num = 0;

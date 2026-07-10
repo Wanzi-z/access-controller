@@ -17,6 +17,8 @@ struct buzzer bzr;
 // From schematic: PUSH0_IO = GPA4 (index 4), PUSH1_IO = GPB4 (index 12)
 #define MCP_PUSH0_IO  4   // Port A, pin 4
 #define MCP_PUSH1_IO  12  // Port B, pin 4 (8 + 4 = 12)
+#define KEYPAD_PUSH_ACTIVE_MS 750
+#define KEYPAD_PUSH_IDLE_MS 100
 
 // External MCP23017 functions
 extern void set_mcp_io(uint8_t io, bool val);
@@ -24,14 +26,24 @@ extern void set_mcp_io_dir(uint8_t io, bool dir);
 
 static const char *BUZZER_TAG = "buzzer";
 
+static void keypad_push_set(uint8_t push_pin, bool active) {
+    if (USE_MCP23017) {
+        ESP_LOGI(BUZZER_TAG, "MCP PUSH pin %d -> %s", push_pin, active ? "HIGH (active)" : "LOW (idle)");
+        set_mcp_io(push_pin, active);
+    } else {
+        gpio_set_level(OPEN_IO_1, active ? 1 : 0);
+    }
+}
+
 static void beep_keypad_internal(int beeps, int channel, bool force) {
     if (!bzr.enable) return;
     if (bzr.quietTestMode && !force) return;
 
-    // Select the correct PUSH pin based on channel (1 or 2)
+    bool both_keypads = (channel == 0);
     uint8_t push_pin = (channel == 2) ? MCP_PUSH1_IO : MCP_PUSH0_IO;
 
-    ESP_LOGI(BUZZER_TAG, "beep_keypad: beeps=%d, channel=%d, MCP_PIN=%d", beeps, channel, push_pin);
+    ESP_LOGI(BUZZER_TAG, "beep_keypad: beeps=%d, channel=%d, MCP_PIN=%d%s",
+             beeps, channel, push_pin, both_keypads ? " + both" : "");
 
     for (int i = 0; i < beeps; i++) {
         // Beep the onboard buzzer
@@ -39,27 +51,21 @@ static void beep_keypad_internal(int beeps, int channel, bool force) {
         
         // Also pulse the keypad PUSH signal via MCP23017.
         // NOTE: This pin drives a transistor, so we pulse HIGH to assert the PUSH line.
-        if (USE_MCP23017) {
-            ESP_LOGI(BUZZER_TAG, "MCP PUSH pin %d -> HIGH (active)", push_pin);
-            set_mcp_io(push_pin, 1);  // Assert (turn transistor on)
-        } else {
-            // Direct GPIO fallback for boards that route PUSH via ESP32 GPIO.
-            // Same rule: HIGH asserts (turns the transistor on), LOW releases.
-            gpio_set_level(OPEN_IO_1, 1);
+        keypad_push_set(push_pin, true);
+        if (both_keypads) {
+            keypad_push_set(MCP_PUSH1_IO, true);
         }
         
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(KEYPAD_PUSH_ACTIVE_MS));
         
         gpio_set_level(bzr.pin, 0);
         
-        if (USE_MCP23017) {
-            ESP_LOGI(BUZZER_TAG, "MCP PUSH pin %d -> LOW (idle)", push_pin);
-            set_mcp_io(push_pin, 0);  // Deassert (turn transistor off)
-        } else {
-            gpio_set_level(OPEN_IO_1, 0);
+        keypad_push_set(push_pin, false);
+        if (both_keypads) {
+            keypad_push_set(MCP_PUSH1_IO, false);
         }
         
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(pdMS_TO_TICKS(KEYPAD_PUSH_IDLE_MS));
     }
 }
 
@@ -69,6 +75,52 @@ void beep_keypad(int beeps, int channel) {
 
 void beep_keypad_force(int beeps, int channel) {
     beep_keypad_internal(beeps, channel, true);
+}
+
+void keypad_push_test(int channel, int pulses, int active_ms, int idle_ms, bool active_high) {
+    if (pulses < 1) pulses = 1;
+    if (pulses > 10) pulses = 10;
+    if (active_ms < 20) active_ms = 20;
+    if (active_ms > 3000) active_ms = 3000;
+    if (idle_ms < 20) idle_ms = 20;
+    if (idle_ms > 3000) idle_ms = 3000;
+
+    uint8_t push_pin = (channel == 2) ? MCP_PUSH1_IO : MCP_PUSH0_IO;
+    bool active_level = active_high;
+    bool idle_level = !active_level;
+
+    ESP_LOGI(BUZZER_TAG,
+             "keypad_push_test: channel=%d MCP_PIN=%d pulses=%d active_ms=%d idle_ms=%d active_level=%d",
+             channel, push_pin, pulses, active_ms, idle_ms, active_level ? 1 : 0);
+
+    if (USE_MCP23017) {
+        set_mcp_io_dir(push_pin, 0);
+        set_mcp_io(push_pin, idle_level);
+    } else {
+        gpio_set_direction(OPEN_IO_1, GPIO_MODE_OUTPUT);
+        gpio_set_level(OPEN_IO_1, idle_level);
+    }
+    vTaskDelay(pdMS_TO_TICKS(idle_ms));
+
+    for (int i = 0; i < pulses; i++) {
+        if (USE_MCP23017) {
+            ESP_LOGI(BUZZER_TAG, "PUSH test pin %d -> %d", push_pin, active_level ? 1 : 0);
+            set_mcp_io(push_pin, active_level);
+        } else {
+            gpio_set_level(OPEN_IO_1, active_level);
+        }
+        vTaskDelay(pdMS_TO_TICKS(active_ms));
+
+        if (USE_MCP23017) {
+            ESP_LOGI(BUZZER_TAG, "PUSH test pin %d -> %d", push_pin, idle_level ? 1 : 0);
+            set_mcp_io(push_pin, idle_level);
+        } else {
+            gpio_set_level(OPEN_IO_1, idle_level);
+        }
+        if (i + 1 < pulses) {
+            vTaskDelay(pdMS_TO_TICKS(idle_ms));
+        }
+    }
 }
 
 void buzzer_set_quiet_test_mode(bool enabled) {

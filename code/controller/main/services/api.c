@@ -66,6 +66,7 @@ extern cJSON *rf_receiver_line_test_snapshot(void);
 extern void buzzer_set_quiet_test_mode(bool enabled);
 extern bool buzzer_get_quiet_test_mode(void);
 extern void beep_keypad_force(int beeps, int channel);
+extern void keypad_push_test(int channel, int pulses, int active_ms, int idle_ms, bool active_high);
 
 extern void handle_lock_message(cJSON *payload);
 extern void handle_exit_message(cJSON *payload);
@@ -1187,12 +1188,44 @@ static esp_err_t api_buzzer_error_beep_post_handler(httpd_req_t *req) {
     int channel = cJSON_IsNumber(channel_item) ? channel_item->valueint : 1;
     if (beeps < 1) beeps = 1;
     if (beeps > 5) beeps = 5;
-    if (channel < 1 || channel > 2) channel = 1;
+    if (channel < 0 || channel > 2) channel = 1;
     cJSON_Delete(payload);
 
     beep_keypad_force(beeps, channel);
     cJSON *root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "ok", true);
+    return send_json_response(req, root);
+}
+
+static esp_err_t api_keypad_push_test_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *channel_item = cJSON_GetObjectItemCaseSensitive(payload, "channel");
+    const cJSON *pulses_item = cJSON_GetObjectItemCaseSensitive(payload, "pulses");
+    const cJSON *active_item = cJSON_GetObjectItemCaseSensitive(payload, "activeMs");
+    const cJSON *idle_item = cJSON_GetObjectItemCaseSensitive(payload, "idleMs");
+    const cJSON *active_high_item = cJSON_GetObjectItemCaseSensitive(payload, "activeHigh");
+
+    int channel = cJSON_IsNumber(channel_item) ? channel_item->valueint : 1;
+    int pulses = cJSON_IsNumber(pulses_item) ? pulses_item->valueint : 1;
+    int active_ms = cJSON_IsNumber(active_item) ? active_item->valueint : 300;
+    int idle_ms = cJSON_IsNumber(idle_item) ? idle_item->valueint : 300;
+    bool active_high = active_high_item ? cJSON_IsTrue(active_high_item) : true;
+    if (channel < 0 || channel > 2) channel = 1;
+    cJSON_Delete(payload);
+
+    keypad_push_test(channel, pulses, active_ms, idle_ms, active_high);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddNumberToObject(root, "channel", channel);
+    cJSON_AddNumberToObject(root, "pulses", pulses);
+    cJSON_AddNumberToObject(root, "activeMs", active_ms);
+    cJSON_AddNumberToObject(root, "idleMs", idle_ms);
+    cJSON_AddBoolToObject(root, "activeHigh", active_high);
     return send_json_response(req, root);
 }
 
@@ -2154,6 +2187,13 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_buzzer_error_beep_post_handler,
     };
     httpd_register_uri_handler(server, &buzzer_error_beep_post);
+
+    httpd_uri_t keypad_push_test_post = {
+        .uri = "/api/keypad/push-test",
+        .method = HTTP_POST,
+        .handler = api_keypad_push_test_post_handler,
+    };
+    httpd_register_uri_handler(server, &keypad_push_test_post);
 
     httpd_uri_t wifi_post = {
         .uri = "/api/wifi",

@@ -35,6 +35,10 @@ void ap_main(char *ssid, char *password)
     }
 
     ESP_ERROR_CHECK(wifi_driver_ensure_initialized());
+    esp_err_t storage_err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    if (storage_err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to set AP WiFi storage to RAM (%s)", esp_err_to_name(storage_err));
+    }
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
@@ -67,9 +71,21 @@ void ap_main(char *ssid, char *password)
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_AP);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set AP WiFi mode (%s)", esp_err_to_name(err));
+        return;
+    }
+    err = esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set AP WiFi config (%s)", esp_err_to_name(err));
+        return;
+    }
+    err = esp_wifi_start();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+        ESP_LOGE(TAG, "Failed to start AP WiFi (%s)", esp_err_to_name(err));
+        return;
+    }
 
     ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s channel:%d",
              ssid, password, CONFIG_ESP_WIFI_CHANNEL);

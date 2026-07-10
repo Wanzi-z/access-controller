@@ -316,7 +316,7 @@ void arm_lock(int channel, bool arm, bool alert) {
         bool suppress = !force_feedback && wiegand_pin_entry_active(locks[ch].channel) && strcmp(source, "wg_pin") != 0;
         if (!suppress) {
             if (force_feedback) {
-                beep_keypad_force(1, locks[ch].channel);
+                beep_keypad_force(1, 0);
             } else {
                 beep_keypad(1, locks[ch].channel);
             }
