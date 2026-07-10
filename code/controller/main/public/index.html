@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=30">
+  <link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
   <header class="app-bar">
@@ -36,283 +36,352 @@
 
   <main class="page-container">
     <section id="page-device" class="page active" aria-labelledby="device-heading">
-      <div class="card">
+      <div class="card device-controls-card">
         <div class="card-header">
           <div>
-            <h2 id="device-heading">Relay Channels</h2>
-            <p class="subtitle">Control locks, exit buttons, and FOB inputs per channel.</p>
+            <h2 id="device-heading">Device Controls</h2>
+            <p class="subtitle">Locks, exit inputs, and Wiegand readers.</p>
           </div>
         </div>
-        <div class="channel-grid">
-          <div class="channel-card" data-channel="1">
+        <div class="device-control-stack">
+          <section class="device-control-section" aria-labelledby="locks-heading">
             <div class="card-section-header">
-              <h3>Channel 1</h3>
+              <h3 id="locks-heading">Locks</h3>
             </div>
-            <div class="control-section">
-              <h4>Lock</h4>
-              <div class="lock-status-row">
-                <span class="lock-status-label">Contact</span>
-                <span id="lockContact_1" class="status-dot" title="Contact state" aria-label="Contact state"></span>
-                <span class="lock-status-label">Signal</span>
-                <span id="lockSense_1" class="status-dot" title="Lock signal state" aria-label="Lock signal state"></span>
-              </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableLock_1">
-                <span>Enable lock</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="arm_1">
-                <span>Arm lock</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="enableContactAlert_1">
-                <span>Contact alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="polarity_1">
-                <span>Reverse polarity</span>
-              </label>
-            </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_exit_1" value="Exit" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="exitSignal_1" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
-              </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableExit_1">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertExit_1">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchExit_1">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="armDelay_1">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="armDelay_1" min="0" step="1" value="5">
-                  <button id="relock" type="button" class="secondary">Save</button>
+            <div class="device-lock-grid">
+              <div class="control-section">
+                <h4>Lock 1</h4>
+                <div class="lock-status-row">
+                  <span class="lock-status-label">Contact</span>
+                  <span id="lockContact_1" class="status-dot" title="Contact state" aria-label="Contact state"></span>
+                  <span class="lock-status-label">Signal</span>
+                  <span id="lockSense_1" class="status-dot" title="Lock signal state" aria-label="Lock signal state"></span>
                 </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableLock_1">
+                  <span>Enable lock</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="arm_1">
+                  <span>Arm lock</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableContactAlert_1">
+                  <span>Contact alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="polarity_1">
+                  <span>Reverse polarity</span>
+                </label>
               </div>
-            </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_keypad_1" value="Keypad" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="keypadSignal_1" class="status-dot" title="Keypad signal state" aria-label="Keypad signal state"></span>
-              </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableKeypad_1">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertKeypad_1">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchKeypad_1">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="keypadDelay_1">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="keypadDelay_1" min="0" step="1" value="5">
-                  <button id="keypadSave_1" type="button" class="secondary">Save</button>
+              <div class="control-section">
+                <h4>Lock 2</h4>
+                <div class="lock-status-row">
+                  <span class="lock-status-label">Contact</span>
+                  <span id="lockContact_2" class="status-dot" title="Contact state" aria-label="Contact state"></span>
+                  <span class="lock-status-label">Signal</span>
+                  <span id="lockSense_2" class="status-dot" title="Lock signal state" aria-label="Lock signal state"></span>
                 </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableLock_2">
+                  <span>Enable lock</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="arm_2">
+                  <span>Arm lock</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableContactAlert_2">
+                  <span>Contact alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="polarity_2">
+                  <span>Reverse polarity</span>
+                </label>
               </div>
             </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_fob_1" value="FOB" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="fobSignal_1" class="status-dot" title="FOB signal state" aria-label="FOB signal state"></span>
-              </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableFob_1">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertFob_1">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchFob_1">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="fobDelay_1">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="fobDelay_1" min="0" step="1" value="4">
-                  <button id="fobSave_1" type="button" class="secondary">Save</button>
-                </div>
-              </div>
-            </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_motion_1" value="Motion" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="motionSignal_1" class="status-dot" title="Motion signal state" aria-label="Motion signal state"></span>
-              </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableMotion_1">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertMotion_1">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchMotion_1">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="motionDelay_1">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="motionDelay_1" min="0" step="1" value="4">
-                  <button id="motionSave_1" type="button" class="secondary">Save</button>
-                </div>
-              </div>
-            </div>
-          </div>
+          </section>
 
-          <div class="channel-card" data-channel="2">
+          <section class="device-control-section" aria-labelledby="exits-heading">
             <div class="card-section-header">
-              <h3>Channel 2</h3>
+              <h3 id="exits-heading">Exits</h3>
             </div>
-            <div class="control-section">
-              <h4>Lock</h4>
-              <div class="lock-status-row">
-                <span class="lock-status-label">Contact</span>
-                <span id="lockContact_2" class="status-dot" title="Contact state" aria-label="Contact state"></span>
-                <span class="lock-status-label">Signal</span>
-                <span id="lockSense_2" class="status-dot" title="Lock signal state" aria-label="Lock signal state"></span>
+            <div class="device-exit-grid">
+              <div class="control-section">
+                <h4>Exit 1</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="exitSignal_1" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableExit_1">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertExit_1">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchExit_1">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="armDelay_1">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="armDelay_1" min="0" step="1" value="5">
+                    <button id="relock" type="button" class="secondary">Save</button>
+                  </div>
+                </div>
               </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableLock_2">
-                <span>Enable lock</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="arm_2">
-                <span>Arm lock</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="enableContactAlert_2">
-                <span>Contact alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="polarity_2">
-                <span>Reverse polarity</span>
-              </label>
-            </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_exit_2" value="Exit" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="exitSignal_2" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+              <div class="control-section">
+                <h4>Exit 2</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="keypadSignal_1" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableKeypad_1">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertKeypad_1">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchKeypad_1">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="keypadDelay_1">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="keypadDelay_1" min="0" step="1" value="5">
+                    <button id="keypadSave_1" type="button" class="secondary">Save</button>
+                  </div>
+                </div>
               </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableExit_2">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertExit_2">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchExit_2">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="armDelay_2">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="armDelay_2" min="0" step="1" value="5">
-                  <button id="relock_2" type="button" class="secondary">Save</button>
+              <div class="control-section">
+                <h4>Exit 3</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="fobSignal_1" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableFob_1">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertFob_1">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchFob_1">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="fobDelay_1">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="fobDelay_1" min="0" step="1" value="4">
+                    <button id="fobSave_1" type="button" class="secondary">Save</button>
+                  </div>
+                </div>
+              </div>
+              <div class="control-section">
+                <h4>Exit 4</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="motionSignal_1" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableMotion_1">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertMotion_1">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchMotion_1">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="motionDelay_1">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="motionDelay_1" min="0" step="1" value="4">
+                    <button id="motionSave_1" type="button" class="secondary">Save</button>
+                  </div>
+                </div>
+              </div>
+              <div class="control-section">
+                <h4>Exit 5</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="exitSignal_2" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableExit_2">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertExit_2">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchExit_2">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="armDelay_2">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="armDelay_2" min="0" step="1" value="5">
+                    <button id="relock_2" type="button" class="secondary">Save</button>
+                  </div>
+                </div>
+              </div>
+              <div class="control-section">
+                <h4>Exit 6</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="keypadSignal_2" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableKeypad_2">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertKeypad_2">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchKeypad_2">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="keypadDelay_2">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="keypadDelay_2" min="0" step="1" value="5">
+                    <button id="keypadSave_2" type="button" class="secondary">Save</button>
+                  </div>
+                </div>
+              </div>
+              <div class="control-section">
+                <h4>Exit 7</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="fobSignal_2" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableFob_2">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertFob_2">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchFob_2">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="fobDelay_2">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="fobDelay_2" min="0" step="1" value="4">
+                    <button id="fobSave_2" type="button" class="secondary">Save</button>
+                  </div>
+                </div>
+              </div>
+              <div class="control-section">
+                <h4>Exit 8</h4>
+                <div class="access-status-row">
+                  <span class="access-status-label">Signal</span>
+                  <span id="motionSignal_2" class="status-dot" title="Exit signal state" aria-label="Exit signal state"></span>
+                </div>
+                <label class="form-switch">
+                  <input type="checkbox" id="enableMotion_2">
+                  <span>Enable</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="alertMotion_2">
+                  <span>Alert</span>
+                </label>
+                <label class="form-switch">
+                  <input type="checkbox" id="latchMotion_2">
+                  <span>Latch</span>
+                </label>
+                <div class="input-row">
+                  <label for="motionDelay_2">Re-arm delay (seconds)</label>
+                  <div class="input-group">
+                    <input type="number" id="motionDelay_2" min="0" step="1" value="4">
+                    <button id="motionSave_2" type="button" class="secondary">Save</button>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_keypad_2" value="Keypad" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="keypadSignal_2" class="status-dot" title="Keypad signal state" aria-label="Keypad signal state"></span>
+          </section>
+
+          <section class="device-control-section" aria-labelledby="wiegand-devices-heading">
+            <div class="card-section-header">
+              <h3 id="wiegand-devices-heading">Wiegand Devices</h3>
+            </div>
+            <div class="wiegand-device-grid">
+              <div class="wiegand-device-card">
+                <div class="wiegand-device-title">
+                  <h4>Wiegand 1</h4>
+                  <span id="wiegandDeviceSignal_1" class="status-dot" title="Wiegand 1 PIN activity" aria-label="Wiegand 1 PIN activity"></span>
+                </div>
+                <div class="wiegand-device-metrics">
+                  <div class="wifi-detail">
+                    <span>PIN buffer</span>
+                    <strong id="wiegandDeviceCode_1">—</strong>
+                  </div>
+                  <div class="wifi-detail">
+                    <span>Digits</span>
+                    <strong id="wiegandDeviceLength_1">0</strong>
+                  </div>
+                </div>
               </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableKeypad_2">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertKeypad_2">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchKeypad_2">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="keypadDelay_2">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="keypadDelay_2" min="0" step="1" value="5">
-                  <button id="keypadSave_2" type="button" class="secondary">Save</button>
+              <div class="wiegand-device-card">
+                <div class="wiegand-device-title">
+                  <h4>Wiegand 2</h4>
+                  <span id="wiegandDeviceSignal_2" class="status-dot" title="Wiegand 2 PIN activity" aria-label="Wiegand 2 PIN activity"></span>
+                </div>
+                <div class="wiegand-device-metrics">
+                  <div class="wifi-detail">
+                    <span>PIN buffer</span>
+                    <strong id="wiegandDeviceCode_2">—</strong>
+                  </div>
+                  <div class="wifi-detail">
+                    <span>Digits</span>
+                    <strong id="wiegandDeviceLength_2">0</strong>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_fob_2" value="FOB" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="fobSignal_2" class="status-dot" title="FOB signal state" aria-label="FOB signal state"></span>
-              </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableFob_2">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertFob_2">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchFob_2">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="fobDelay_2">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="fobDelay_2" min="0" step="1" value="4">
-                  <button id="fobSave_2" type="button" class="secondary">Save</button>
+            <div id="wiegandStatusBar" class="wiegand-status-bar">
+              <div class="wiegand-status-metrics">
+                <div class="wifi-detail">
+                  <span>Status</span>
+                  <strong id="wiegandStatus">Idle</strong>
+                </div>
+                <div class="wifi-detail">
+                  <span>Pending cards</span>
+                  <strong id="wiegandPending">0</strong>
+                </div>
+                <div class="wifi-detail">
+                  <span>Duplicate</span>
+                  <strong id="wiegandDuplicate" class="muted">—</strong>
                 </div>
               </div>
-            </div>
-            <div class="control-section">
-              <input type="text" class="section-label" id="label_motion_2" value="Motion" maxlength="20">
-              <div class="access-status-row">
-                <span class="access-status-label">Signal</span>
-                <span id="motionSignal_2" class="status-dot" title="Motion signal state" aria-label="Motion signal state"></span>
-              </div>
-              <label class="form-switch">
-                <input type="checkbox" id="enableMotion_2">
-                <span>Enable</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="alertMotion_2">
-                <span>Alert</span>
-              </label>
-              <label class="form-switch">
-                <input type="checkbox" id="latchMotion_2">
-                <span>Latch</span>
-              </label>
-              <div class="input-row">
-                <label for="motionDelay_2">Re-arm delay (seconds)</label>
-                <div class="input-group">
-                  <input type="number" id="motionDelay_2" min="0" step="1" value="4">
-                  <button id="motionSave_2" type="button" class="secondary">Save</button>
-                </div>
+              <div class="wiegand-actions">
+                <select id="wiegandChannelSelect" aria-label="Wiegand reader">
+                  <option value="0">Both Wiegand devices</option>
+                  <option value="1">Wiegand 1</option>
+                  <option value="2">Wiegand 2</option>
+                </select>
+                <button type="button" class="secondary" id="wiegandRegisterBtn">Register RFID</button>
+                <button type="button" class="secondary enrollment-stop-active" id="wiegandStopBtn" hidden>Stop</button>
               </div>
             </div>
-          </div>
+          </section>
         </div>
       </div>
 
@@ -587,6 +656,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=30"></script>
+  <script src="script.js?v=31"></script>
 </body>
 </html>

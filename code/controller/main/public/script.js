@@ -117,7 +117,7 @@ const handleError = (error, fallbackMessage) => {
   showToast(fallbackMessage || error.message || 'Something went wrong');
 };
 
-const formatChannelLabel = (channel) => (channel ? `Channel ${channel}` : 'All channels');
+const formatChannelLabel = (channel) => (channel ? `Wiegand ${channel}` : 'Both Wiegand devices');
 
 const formatUptime = (value) => {
   const totalSeconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -651,6 +651,7 @@ const applyFastSignalState = (state = {}) => {
     };
   }
   renderLivePinEntries(state.wiegand?.pinEntries || []);
+  renderWiegandDevices(state.wiegand?.pinEntries || []);
   if (Array.isArray(App.data?.keypadUsers)) {
     renderKeypadUsers(App.data.keypadUsers);
   }
@@ -764,6 +765,20 @@ const scheduleCredentialNameSave = (input, saveHandler) => {
   App.credentialAutoSaveTimers.set(container, timer);
 };
 
+const renderWiegandDevices = (pinEntries = []) => {
+  [1, 2].forEach((channel) => {
+    const entry = Array.isArray(pinEntries)
+      ? pinEntries.find((item) => Number(item?.channel) === channel)
+      : null;
+    const active = !!entry?.active;
+    const codeEl = document.getElementById(`wiegandDeviceCode_${channel}`);
+    const lengthEl = document.getElementById(`wiegandDeviceLength_${channel}`);
+    if (codeEl) codeEl.textContent = entry?.code ? entry.code : '—';
+    if (lengthEl) lengthEl.textContent = String(Number(entry?.length) || 0);
+    applySignalDot(`wiegandDeviceSignal_${channel}`, active, 'PIN digits active', 'Idle');
+  });
+};
+
 const buildWiegandUserRow = (user, existingValue) => {
   if (!user) return '';
   const meta = WIEGAND_STATUS_META[user.status] || WIEGAND_STATUS_META[2];
@@ -803,7 +818,7 @@ const buildWiegandUserRow = (user, existingValue) => {
           <input type="text" class="user-name-input" value="${name}" placeholder="Enter name...">
         </label>
         <div class="credential-meta-row">
-          <span class="user-channel">Channel ${channelNum}</span>
+          <span class="user-channel">${escapeHtml(formatChannelLabel(channelNum))}</span>
           <span class="${statusClass}">${meta.label}</span>
         </div>
         <label class="stacked">
@@ -1086,6 +1101,7 @@ const renderWiegand = (wiegand = {}) => {
   if (App.elements.wiegandRemoveAllBtn) {
     App.elements.wiegandRemoveAllBtn.disabled = registrationActive || !users.length;
   }
+  renderWiegandDevices(pinEntries);
   renderLivePinEntries(pinEntries);
 
   if (listEl) {
@@ -1178,11 +1194,11 @@ const buildRfUserRow = (user, existingValue) => {
             </select>
           </label>
           <label class="stacked">
-            <span>Channel</span>
+            <span>Lock target</span>
             <select class="rf-channel-select">
-              <option value="1" ${channelMask === 1 ? 'selected' : ''}>Channel 1</option>
-              <option value="2" ${channelMask === 2 ? 'selected' : ''}>Channel 2</option>
-              <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both</option>
+              <option value="1" ${channelMask === 1 ? 'selected' : ''}>Lock 1</option>
+              <option value="2" ${channelMask === 2 ? 'selected' : ''}>Lock 2</option>
+              <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both locks</option>
             </select>
           </label>
           <label class="stacked">
@@ -1850,16 +1866,18 @@ const createCardModeSelect = (modeId, latchId) => {
 };
 
 const setupControlCardChrome = () => {
-  const configs = [];
-  [1, 2].forEach((ch) => {
-    configs.push(
-      { label: 'Lock', enableId: `enableLock_${ch}`, update: updateLock },
-      { label: 'Exit', enableId: `enableExit_${ch}`, latchId: `latchExit_${ch}`, modeId: `modeExit_${ch}`, update: updateExit, endpoint: 'exit', apply: applyExitState },
-      { label: 'Keypad', enableId: `enableKeypad_${ch}`, latchId: `latchKeypad_${ch}`, modeId: `modeKeypad_${ch}`, update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
-      { label: 'FOB', enableId: `enableFob_${ch}`, latchId: `latchFob_${ch}`, modeId: `modeFob_${ch}`, update: updateFob, endpoint: 'fob', apply: applyFobState },
-      { label: 'Motion', enableId: `enableMotion_${ch}`, latchId: `latchMotion_${ch}`, modeId: `modeMotion_${ch}`, update: updateMotion, endpoint: 'motion', apply: applyMotionState },
-    );
-  });
+  const configs = [
+    { label: 'Lock 1', enableId: 'enableLock_1', update: updateLock },
+    { label: 'Lock 2', enableId: 'enableLock_2', update: updateLock },
+    { label: 'Exit 1', enableId: 'enableExit_1', latchId: 'latchExit_1', modeId: 'modeExit_1', update: updateExit, endpoint: 'exit', apply: applyExitState },
+    { label: 'Exit 2', enableId: 'enableKeypad_1', latchId: 'latchKeypad_1', modeId: 'modeKeypad_1', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
+    { label: 'Exit 3', enableId: 'enableFob_1', latchId: 'latchFob_1', modeId: 'modeFob_1', update: updateFob, endpoint: 'fob', apply: applyFobState },
+    { label: 'Exit 4', enableId: 'enableMotion_1', latchId: 'latchMotion_1', modeId: 'modeMotion_1', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
+    { label: 'Exit 5', enableId: 'enableExit_2', latchId: 'latchExit_2', modeId: 'modeExit_2', update: updateExit, endpoint: 'exit', apply: applyExitState },
+    { label: 'Exit 6', enableId: 'enableKeypad_2', latchId: 'latchKeypad_2', modeId: 'modeKeypad_2', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
+    { label: 'Exit 7', enableId: 'enableFob_2', latchId: 'latchFob_2', modeId: 'modeFob_2', update: updateFob, endpoint: 'fob', apply: applyFobState },
+    { label: 'Exit 8', enableId: 'enableMotion_2', latchId: 'latchMotion_2', modeId: 'modeMotion_2', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
+  ];
 
   configs.forEach((config) => {
     const enableEl = document.getElementById(config.enableId);
@@ -2739,7 +2757,7 @@ const livePinCredentialRows = () => {
       pending: true,
       credentialId: `pending-pin-ch${Number(entry.channel) || 0}`,
       uuid: '',
-      name: `CH${Number(entry.channel) || 0} PIN`,
+      name: `${formatChannelLabel(Number(entry.channel) || 0)} PIN`,
       pin: String(entry.code || ''),
       pinIndex: -1,
       mode: 'typing',
@@ -2822,11 +2840,11 @@ const buildKeypadUserRow = (user, index, existingValue) => {
             </select>
           </label>
           <label class="stacked">
-            <span>Channel</span>
+            <span>Lock target</span>
             <select class="pin-channel-select">
-              <option value="1" ${channelMask === 1 ? 'selected' : ''}>Channel 1</option>
-              <option value="2" ${channelMask === 2 ? 'selected' : ''}>Channel 2</option>
-              <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both</option>
+              <option value="1" ${channelMask === 1 ? 'selected' : ''}>Lock 1</option>
+              <option value="2" ${channelMask === 2 ? 'selected' : ''}>Lock 2</option>
+              <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both locks</option>
             </select>
           </label>
           <label class="stacked">
@@ -2867,7 +2885,7 @@ const renderLivePinEntries = (entries = []) => {
     const code = active ? String(entry.code) : '';
     return `
       <div class="live-pin-entry ${active ? 'is-active' : ''}">
-        <span>CH${Number(entry.channel) || 0}</span>
+        <span>${escapeHtml(formatChannelLabel(Number(entry.channel) || 0))}</span>
         <strong>${escapeHtml(active ? code : 'Idle')}</strong>
       </div>
     `;
