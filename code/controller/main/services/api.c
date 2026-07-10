@@ -298,7 +298,10 @@ static cJSON *wifi_scan_snapshot(void) {
                 if (!item) {
                     continue;
                 }
+                char bssid[18];
+                snprintf(bssid, sizeof(bssid), MACSTR, MAC2STR(records[i].bssid));
                 cJSON_AddStringToObject(item, "ssid", (const char *)records[i].ssid);
+                cJSON_AddStringToObject(item, "bssid", bssid);
                 cJSON_AddNumberToObject(item, "rssi", records[i].rssi);
                 cJSON_AddNumberToObject(item, "channel", records[i].primary);
                 cJSON_AddStringToObject(item, "auth", wifi_auth_mode_name(records[i].authmode));

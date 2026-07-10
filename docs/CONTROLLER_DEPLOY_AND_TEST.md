@@ -211,6 +211,13 @@ curl -sf "$DEVICE_URL/api/state" | jq '{ssid:.wifi.active_ssid, ap:.device.netwo
 Pass evidence:
 
 - AP UI/API is available while station is unavailable.
+- In AP mode, `GET /api/wifi/scan` returns nearby networks with SSID, BSSID,
+  RSSI, channel, and auth mode.
+- The Settings UI available-network cards populate while browsing through
+  `http://192.168.4.1/`; normal state polling must not clear them back to
+  "No nearby networks found yet."
+- If stored credentials exist but station is disconnected, the active-network
+  card must say station is not connected instead of showing the SSID as active.
 - Saved-network recovery returns to station mode without serial intervention.
 - `server.requireReachable=true` keeps station mode only when
   `https://open-automation.org/devices` accepts the punch.
@@ -439,3 +446,20 @@ Pass evidence:
 - Playwright desktop/mobile settings smoke passed and showed the active network
   card with link quality, RSSI, STA IP, gateway, STA MAC, AP BSSID, channel,
   and security.
+
+## 2026-07-10 AP Wi-Fi Scan Recovery Evidence
+
+- Controller ran in AP+STA mode with AP `ac_08b7` at `192.168.4.1` and STA
+  connected to phone hotspot `ec3409` at `10.69.136.23`.
+- `GET /api/wifi/scan` returned 11-14 nearby networks on both AP and STA paths,
+  including exact SSID `ec3409` and BSSID `2a:2a:17:2e:df:3e`.
+- `GET /api/wifi/list` returned saved `ec3409` even after legacy active
+  credential migration.
+- Playwright Settings smoke through `http://192.168.4.1/` rendered 11 available
+  network cards and a saved `ec3409` card.
+- Playwright Settings smoke through `http://10.69.136.23/` rendered 11
+  available network cards and the connected `ec3409` active-network details.
+- A deliberately bad SSID `zz_bad_field_test` was saved to force the recovery
+  path. After reboot, the controller did not remain stranded; it recovered to
+  saved `ec3409`, stayed reachable through AP+STA, and the bad test SSID was
+  removed.

@@ -205,6 +205,23 @@ Routes are registered in `code/controller/main/services/api.c`.
 | `POST` | `/api/server` | Update server IP/port through authorization message handling. |
 | `GET` | `/favicon.ico` | Empty favicon response. |
 
+Wi-Fi scan/list behavior:
+
+- `/api/wifi/scan` returns nearby SSIDs with RSSI, channel, auth mode, security
+  flag, and BSSID. BSSID is important when a phone hotspot or customer AP has a
+  similar-looking SSID or duplicate SSIDs are present.
+- `/api/wifi/list` hides passwords but includes the active legacy stored SSID
+  if older firmware saved credentials before the multi-network list existed.
+  This prevents the UI from showing an active target while the saved-network
+  panel is empty.
+- The Settings UI refreshes saved networks and scan results whenever Settings
+  is opened or Scan is clicked. Normal `/api/state` polling preserves the scan
+  cache instead of wiping it back to "No nearby networks found yet."
+- The active-network card only shows a network as connected when
+  `device.network.wifi_sta_connected` is true. In AP fallback with stored
+  credentials, the card shows the configured target as not connected instead of
+  pretending station mode is active.
+
 ### Embedded Web UI
 
 The UI is in `code/controller/main/public`:

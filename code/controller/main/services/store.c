@@ -694,6 +694,7 @@ bool load_server_require_reachable(void) {
 /* ---------- WiFi list management ---------- */
 static uint64_t now_ms_store(void) { return esp_timer_get_time() / 1000ULL; }
 static esp_err_t wifi_list_save_array(cJSON *arr); // forward
+static bool wifi_list_prepend_item(cJSON *arr, cJSON *item); // forward
 
 static cJSON *wifi_list_load_array(void) {
     char *json = get_char("wifi_list");
@@ -706,6 +707,34 @@ static cJSON *wifi_list_load_array(void) {
         arr = cJSON_CreateArray();
     }
     free(json);
+
+    char active_ssid[32] = {0};
+    char active_password[64] = {0};
+    load_wifi_credentials_from_flash(active_ssid, active_password);
+    if (active_ssid[0] != '\0') {
+        bool found = false;
+        int count = cJSON_GetArraySize(arr);
+        for (int i = 0; i < count; i++) {
+            cJSON *item = cJSON_GetArrayItem(arr, i);
+            const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(item, "ssid");
+            if (cJSON_IsString(ssid) && ssid->valuestring && strcmp(ssid->valuestring, active_ssid) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            cJSON *obj = cJSON_CreateObject();
+            if (obj) {
+                cJSON_AddStringToObject(obj, "ssid", active_ssid);
+                cJSON_AddStringToObject(obj, "password", active_password);
+                cJSON_AddNumberToObject(obj, "last_used_ms", 0);
+                if (!wifi_list_prepend_item(arr, obj)) {
+                    cJSON_Delete(obj);
+                }
+            }
+        }
+    }
+
     return arr;
 }
 

@@ -373,10 +373,8 @@ const onPageActivated = (targetId) => {
   }
 
   if (targetId === 'settings') {
-    if (!App.pageBoot.settings) {
-      App.pageBoot.settings = true;
-      loadWifiList();
-    }
+    App.pageBoot.settings = true;
+    loadWifiList({ force: true, scan: true });
   }
 };
 
@@ -1517,11 +1515,11 @@ const loadState = async () => {
     App.data = mergeStateCredentialDetails(App.data || {}, data);
     consecutiveStateFailures = 0;
     nextStateToastAt = 0;
-    if (wifiNetworksCache) {
+    if (wifiNetworksCache !== null) {
       App.data.wifi = App.data.wifi || {};
       App.data.wifi.networks = wifiNetworksCache;
     }
-    if (wifiScanCache) {
+    if (wifiScanCache !== null) {
       App.data.wifi = App.data.wifi || {};
       App.data.wifi.scanned = wifiScanCache;
     }
@@ -1607,19 +1605,21 @@ let wifiListInFlight = null;
 const loadWifiList = async ({ force = false, scan = true } = {}) => {
   if (wifiListInFlight && !force) return wifiListInFlight;
   wifiListInFlight = (async () => {
+    let listLoaded = false;
     try {
       const networks = await fetchJSON(`api/wifi/list?t=${Date.now()}`, { timeoutMs: 3000 });
       applyWifiListSnapshot(Array.isArray(networks) ? networks : [], wifiScanCache || []);
-      if (scan) {
-        try {
-          const scanned = await fetchJSON(`api/wifi/scan?t=${Date.now()}`, { timeoutMs: 5000 });
-          applyWifiListSnapshot(wifiNetworksCache || [], Array.isArray(scanned) ? scanned : []);
-        } catch (scanError) {
-          console.warn('Failed to scan Wi-Fi networks', scanError);
-        }
-      }
+      listLoaded = true;
     } catch (error) {
       console.warn('Failed to load Wi-Fi list', error);
+    }
+    if (scan) {
+      try {
+        const scanned = await fetchJSON(`api/wifi/scan?t=${Date.now()}`, { timeoutMs: 12000 });
+        applyWifiListSnapshot(listLoaded ? (wifiNetworksCache || []) : [], Array.isArray(scanned) ? scanned : []);
+      } catch (scanError) {
+        console.warn('Failed to scan Wi-Fi networks', scanError);
+      }
     }
   })().finally(() => {
     wifiListInFlight = null;
@@ -2919,15 +2919,48 @@ const renderWifi = (wifi = {}, networkState = {}, system = {}) => {
   if (!list) return;
   const networks = wifi.networks || [];
   const scanned = wifi.scanned || [];
-  const active = wifi.active_ssid || '';
+  const configuredSsid = wifi.active_ssid || '';
+  const staConnected = networkState.wifi_sta_connected === true;
+  const active = staConnected ? configuredSsid : '';
   const savedSsids = new Set(networks.map((network) => network.ssid).filter(Boolean));
-  const activeSaved = networks.find((network) => network.ssid === active) || null;
+  const activeSaved = networks.find((network) => network.ssid === configuredSsid) || null;
   const activeScan = scanned
-    .filter((network) => network.ssid === active)
+    .filter((network) => network.ssid === configuredSsid)
     .sort((left, right) => (Number(right.rssi) || -999) - (Number(left.rssi) || -999))[0] || null;
   if (activeEl) {
-    if (!active) {
+    if (!configuredSsid) {
       activeEl.innerHTML = '<p class="empty-state muted">No active station network.</p>';
+    } else if (!staConnected) {
+      const targetSignal = formatWifiSignal(activeScan);
+      const targetDetails = [
+        ['Status', 'Station not connected'],
+        ['AP mode', networkState.wifi_ap_ip || '192.168.4.1'],
+        ['Target seen', activeScan ? targetSignal : 'No'],
+        ['STA IP', '—'],
+        ['Gateway', '—'],
+        ['STA MAC', networkState.wifi_sta_mac || '—'],
+        ['AP BSSID', activeScan?.bssid || '—'],
+        ['Channel', activeScan?.channel || '—'],
+        ['Security', activeScan?.auth || (activeScan?.secure ? 'Secured' : '—')],
+      ];
+      const strength = wifiSignalFromRssi(activeScan?.rssi) ?? 0;
+      activeEl.innerHTML = `
+        <div class="wifi-active-summary">
+          <div class="wifi-active-title">${escapeHtml(configuredSsid)}</div>
+          <div class="wifi-active-signal">
+            <span class="wifi-strength" aria-hidden="true"><span style="width:${strength}%"></span></span>
+            <strong>${escapeHtml(activeScan ? targetSignal : 'Not connected')}</strong>
+          </div>
+        </div>
+        <div class="wifi-active-grid">
+          ${targetDetails.map(([label, value]) => `
+            <div class="wifi-detail">
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(value || '—')}</strong>
+            </div>
+          `).join('')}
+        </div>
+      `;
     } else {
       const connectedAtMs = activeSaved?.last_used_ms;
       const connectedForSeconds = Number.isFinite(Number(connectedAtMs))

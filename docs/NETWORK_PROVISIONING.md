@@ -88,6 +88,15 @@ reset loop. The expected recovery behavior is: boot, start AP if station/server
 policy fails, keep the local UI/API reachable, and retry saved station
 credentials when the saved network becomes available again.
 
+The provisioning UI must remain useful while the controller is in AP-only or
+AP+STA mode. Wi-Fi scans are run on demand from `/api/wifi/scan`; when the
+device is AP-only the firmware temporarily enables AP+STA for the scan and then
+restores AP mode. The UI keeps the last scan results through normal state
+polling so transient scan delays do not clear the available-network list.
+Legacy active credentials are merged into `/api/wifi/list` snapshots so an
+older board cannot show a configured SSID while saying there are no saved
+networks.
+
 ## Settings Flow
 
 ```mermaid
@@ -152,3 +161,6 @@ sequenceDiagram
   posts and does not expose the dashboard.
 - With a nearly full NVS partition, Wi-Fi AP/STA startup does not crash because
   Wi-Fi config is stored in RAM at runtime.
+- In AP mode and AP+STA mode, `/api/wifi/scan` returns nearby SSIDs and BSSIDs,
+  and the Settings UI continues to show available networks after `/api/state`
+  refreshes.
