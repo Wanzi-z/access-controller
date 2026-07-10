@@ -200,6 +200,29 @@ void start_motion_timer (struct motionButton *mot, bool val)
   }
 }
 
+static void test_motion_signal(struct motionButton *mot)
+{
+	if (!mot) return;
+	const char *mode = motion_current_mode(mot);
+	if (strcmp(mode, "latch") == 0) {
+		ESP_LOGI(TAG, "Motion channel %d test - latch active", mot->channel);
+		lock_set_action_source("motion_test");
+		arm_lock(mot->channel, true, true);
+		start_motion_timer(mot, false);
+	} else if (strcmp(mode, "toggle") == 0) {
+		mot->toggleState = !mot->toggleState;
+		ESP_LOGI(TAG, "Motion channel %d test toggled lock to %s", mot->channel, mot->toggleState ? "armed" : "disarmed");
+		lock_set_action_source("motion_test");
+		arm_lock(mot->channel, mot->toggleState, true);
+		start_motion_timer(mot, false);
+	} else {
+		ESP_LOGI(TAG, "Motion channel %d test - disarming lock", mot->channel);
+		lock_set_action_source("motion_test");
+		arm_lock(mot->channel, false, true);
+		start_motion_timer(mot, true);
+	}
+}
+
 void check_motion (struct motionButton *mot)
 {
 	mot->isPressed = !get_mcp_io(mot->pin);
@@ -211,19 +234,19 @@ void check_motion (struct motionButton *mot)
 	const char *mode = motion_current_mode(mot);
 	if (strcmp(mode, "latch") == 0 && mot->isPressed != mot->prevPress) {
 		ESP_LOGI(TAG, "Motion channel %d state changed to %s (latch mode)", mot->channel, mot->isPressed ? "active" : "inactive");
-        lock_set_action_source("motion_latch");
-		arm_lock(mot->channel, mot->isPressed, mot->alert);
+	        lock_set_action_source("motion_latch");
+			arm_lock(mot->channel, mot->isPressed, true);
 		start_motion_timer(mot, false);
 	} else if (strcmp(mode, "toggle") == 0 && mot->isPressed && !mot->prevPress) {
 		mot->toggleState = !mot->toggleState;
 		ESP_LOGI(TAG, "Motion channel %d toggled lock to %s", mot->channel, mot->toggleState ? "armed" : "disarmed");
-        lock_set_action_source("motion_toggle");
-		arm_lock(mot->channel, mot->toggleState, mot->alert);
+	        lock_set_action_source("motion_toggle");
+			arm_lock(mot->channel, mot->toggleState, true);
 		start_motion_timer(mot, false);
 	} else if (strcmp(mode, "momentary") == 0 && mot->isPressed && !mot->prevPress) {
 		ESP_LOGI(TAG, "Motion detected on channel %d - disarming lock", mot->channel);
-        lock_set_action_source("motion");
-		arm_lock(mot->channel, false, mot->alert);
+	        lock_set_action_source("motion");
+			arm_lock(mot->channel, false, true);
 		start_motion_timer(mot, true);
 	}
 
@@ -247,6 +270,10 @@ void handle_motion_message(cJSON * payload)
 		 if (ch < 1 || ch > NUM_OF_MOTIONS) {
 			 cJSON_Delete(payload);
 			 return;
+		 }
+
+		 if (cJSON_IsTrue(cJSON_GetObjectItem(payload, "test"))) {
+			test_motion_signal(&motions[ch - 1]);
 		 }
 
 		 if (cJSON_GetObjectItem(payload,"alert")) {
@@ -282,8 +309,8 @@ void motion_timer_func(struct motionButton *mot)
 {
 	if (mot->count >= mot->delay && !mot->expired) {
 		ESP_LOGI(TAG, "Re-arming lock from motion %d service.", mot->channel);
-        lock_set_action_source("motion_auto");
-		arm_lock(mot->channel, true, mot->alert);
+	        lock_set_action_source("motion_auto");
+			arm_lock(mot->channel, true, true);
 		mot->expired = true;
 	} else {
 		mot->count++;

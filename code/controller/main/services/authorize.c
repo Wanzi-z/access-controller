@@ -316,5 +316,5 @@ void auth_main()
 {
   ESP_LOGI(TAG, "starting auth service");
   TaskHandle_t auth_service_task;
-  xTaskCreate(&auth_service, "auth_service_task", 9 * 1024, NULL, 5, NULL);
+  xTaskCreate(&auth_service, "auth_service_task", 6 * 1024, NULL, 5, NULL);
 }

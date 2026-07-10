@@ -522,7 +522,7 @@ esp_err_t start_file_server(const char *base_path)
     config.backlog_conn = 4;
     config.lru_purge_enable = true;
     config.task_priority = 8;
-    config.stack_size = 12288;
+    config.stack_size = 8192;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 10;
     config.keep_alive_enable = false;

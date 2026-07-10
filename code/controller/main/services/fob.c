@@ -107,10 +107,10 @@ void start_fob_timer (struct fob *fb, bool val)
 void check_fob_timer (struct fob *fb)
 {
   if (fb->count >= fb->delay && !fb->expired) {
-		ESP_LOGI(TAG, "Re-arming lock from fob %d service.", fb->channel);
-        lock_set_action_source("fob_auto");
-		arm_lock(fb->channel, true, fb->alert);
-		fb->expired = true;
+			ESP_LOGI(TAG, "Re-arming lock from fob %d service.", fb->channel);
+	        lock_set_action_source("fob_auto");
+			arm_lock(fb->channel, true, true);
+			fb->expired = true;
   } else fb->count++;
 }
 
@@ -147,21 +147,21 @@ void check_fobs (struct fob *fb)
 	if (strcmp(mode, "latch") == 0 && fb->isPressed != fb->prevPress) {
 		// Latch mode: FOB state directly controls lock state
 		ESP_LOGI(TAG, "Fob %d state changed to %s (latch mode)", fb->channel, fb->isPressed ? "activated" : "deactivated");
-        lock_set_action_source("fob_latch");
-		arm_lock(fb->channel, fb->isPressed, fb->alert);
+	        lock_set_action_source("fob_latch");
+			arm_lock(fb->channel, fb->isPressed, true);
 		enableExit(fb->channel, fb->isPressed);
 		enableKeypad(fb->channel, fb->isPressed);
 	} else if (strcmp(mode, "toggle") == 0 && fb->isPressed && !fb->prevPress) {
 		fb->toggleState = !fb->toggleState;
 		ESP_LOGI(TAG, "Fob %d toggled lock to %s", fb->channel, fb->toggleState ? "armed" : "disarmed");
-        lock_set_action_source("fob_toggle");
-		arm_lock(fb->channel, fb->toggleState, fb->alert);
+	        lock_set_action_source("fob_toggle");
+			arm_lock(fb->channel, fb->toggleState, true);
 		start_fob_timer(fb, false);
 	} else if (strcmp(mode, "momentary") == 0 && fb->isPressed && !fb->prevPress) {
 		// Momentary mode: active edge triggers unlock and timer
 		ESP_LOGI(TAG, "Fob %d activated (momentary mode) - disarming lock", fb->channel);
-        lock_set_action_source("fob_active");
-		arm_lock(fb->channel, false, fb->alert);
+	        lock_set_action_source("fob_active");
+			arm_lock(fb->channel, false, true);
 		start_fob_timer(fb, true);
 	}
 
@@ -172,6 +172,30 @@ void alertOnFob (int ch, bool val)
 {
 	for (int i=0; i < NUM_OF_FOBS; i++)
 		if (fobs[i].channel == ch) fobs[i].alert = val;
+}
+
+static void test_fob_signal(struct fob *fb)
+{
+	if (!fb) return;
+	const char *mode = fob_current_mode(fb);
+	if (strcmp(mode, "latch") == 0) {
+		ESP_LOGI(TAG, "Fob %d test - latch active", fb->channel);
+		lock_set_action_source("fob_test");
+		arm_lock(fb->channel, true, true);
+		enableExit(fb->channel, true);
+		enableKeypad(fb->channel, true);
+	} else if (strcmp(mode, "toggle") == 0) {
+		fb->toggleState = !fb->toggleState;
+		ESP_LOGI(TAG, "Fob %d test toggled lock to %s", fb->channel, fb->toggleState ? "armed" : "disarmed");
+		lock_set_action_source("fob_test");
+		arm_lock(fb->channel, fb->toggleState, true);
+		start_fob_timer(fb, false);
+	} else {
+		ESP_LOGI(TAG, "Fob %d test - disarming lock", fb->channel);
+		lock_set_action_source("fob_test");
+		arm_lock(fb->channel, false, true);
+		start_fob_timer(fb, true);
+	}
 }
 
 
@@ -262,6 +286,10 @@ void handle_fob_message(cJSON * payload)
 			return;
 		}
 
+		if (cJSON_IsTrue(cJSON_GetObjectItem(payload, "test"))) {
+			test_fob_signal(&fobs[ch - 1]);
+		}
+
 		if (cJSON_GetObjectItem(payload,"enable")) {
 			val = fob_json_bool(cJSON_GetObjectItem(payload,"enable"));
 			fobs[ch - 1].enable = val;
@@ -314,7 +342,7 @@ void fob_main()
 	fobs[0].delay = 4;
 	fobs[0].channel = 1;
 	fobs[0].enable = false;
-	fobs[0].alert = false;
+	fobs[0].alert = true;
 	fobs[0].latch = false;  // Default to momentary mode
 	fobs[0].toggleState = false;
 	fob_set_mode(&fobs[0], "momentary");
@@ -324,7 +352,7 @@ void fob_main()
 	fobs[1].delay = 4;
 	fobs[1].channel = 2;
 	fobs[1].enable = false;
-	fobs[1].alert = false;
+	fobs[1].alert = true;
 	fobs[1].latch = false;  // Default to momentary mode
 	fobs[1].toggleState = false;
 	fob_set_mode(&fobs[1], "momentary");

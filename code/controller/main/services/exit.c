@@ -105,10 +105,10 @@ void start_exit_timer (struct exitButton *ext, bool val)
 void exit_timer_func(struct exitButton *ext)
 {
 	if (ext->count >= ext->delay && !ext->expired) {
-		ESP_LOGI(TAG, "Re-arming lock from button %d service.", ext->channel);
-		lock_set_action_source("exit_auto");
-		arm_lock(ext->channel, true, ext->alert);
-		ext->expired = true;
+			ESP_LOGI(TAG, "Re-arming lock from button %d service.", ext->channel);
+			lock_set_action_source("exit_auto");
+			arm_lock(ext->channel, true, true);
+			ext->expired = true;
 	} else {
 		ext->count++;
 	}
@@ -237,6 +237,29 @@ void modeExit (int ch, const char *mode)
 		if (exits[i].channel == ch) exit_set_mode(&exits[i], mode);
 }
 
+static void test_exit_signal(struct exitButton *ext)
+{
+	if (!ext) return;
+	const char *mode = exit_current_mode(ext);
+	if (strcmp(mode, "latch") == 0) {
+		ESP_LOGI(TAG, "Exit button %d test - latch active", ext->channel);
+		lock_set_action_source("exit_test");
+		arm_lock(ext->channel, true, true);
+		start_exit_timer(ext, false);
+	} else if (strcmp(mode, "toggle") == 0) {
+		ext->toggleState = !ext->toggleState;
+		ESP_LOGI(TAG, "Exit button %d test toggled lock to %s", ext->channel, ext->toggleState ? "armed" : "disarmed");
+		lock_set_action_source("exit_test");
+		arm_lock(ext->channel, ext->toggleState, true);
+		start_exit_timer(ext, false);
+	} else {
+		ESP_LOGI(TAG, "Exit button %d test - disarming lock", ext->channel);
+		lock_set_action_source("exit_test");
+		arm_lock(ext->channel, false, true);
+		start_exit_timer(ext, true);
+	}
+}
+
 void check_exit (struct exitButton *ext)
 {
 	ext->isPressed = !get_io(ext->pin);
@@ -247,21 +270,21 @@ void check_exit (struct exitButton *ext)
 
 	const char *mode = exit_current_mode(ext);
 	if (strcmp(mode, "latch") == 0 && ext->isPressed != ext->prevPress) {
-		ESP_LOGI(TAG, "Exit button %d state changed to %s (latch mode)", ext->channel, ext->isPressed ? "active" : "inactive");
-		lock_set_action_source("exit_latch");
-		arm_lock(ext->channel, ext->isPressed, ext->alert);
-		start_exit_timer(ext, false);
+			ESP_LOGI(TAG, "Exit button %d state changed to %s (latch mode)", ext->channel, ext->isPressed ? "active" : "inactive");
+			lock_set_action_source("exit_latch");
+			arm_lock(ext->channel, ext->isPressed, true);
+			start_exit_timer(ext, false);
 	} else if (strcmp(mode, "toggle") == 0 && ext->isPressed && !ext->prevPress) {
 		ext->toggleState = !ext->toggleState;
-		ESP_LOGI(TAG, "Exit button %d toggled lock to %s", ext->channel, ext->toggleState ? "armed" : "disarmed");
-		lock_set_action_source("exit_toggle");
-		arm_lock(ext->channel, ext->toggleState, ext->alert);
-		start_exit_timer(ext, false);
+			ESP_LOGI(TAG, "Exit button %d toggled lock to %s", ext->channel, ext->toggleState ? "armed" : "disarmed");
+			lock_set_action_source("exit_toggle");
+			arm_lock(ext->channel, ext->toggleState, true);
+			start_exit_timer(ext, false);
 	} else if (strcmp(mode, "momentary") == 0 && ext->isPressed && !ext->prevPress) {
-		ESP_LOGI(TAG, "Exit button %d pressed - disarming lock", ext->channel);
-		lock_set_action_source("exit_press");
-		arm_lock(ext->channel, false, ext->alert);
-		start_exit_timer(ext, true);
+			ESP_LOGI(TAG, "Exit button %d pressed - disarming lock", ext->channel);
+			lock_set_action_source("exit_press");
+			arm_lock(ext->channel, false, true);
+			start_exit_timer(ext, true);
 	}
 
 	ext->prevPress = ext->isPressed;
@@ -283,6 +306,10 @@ void handle_exit_message(cJSON * payload)
 		 if (ch < 1 || ch > NUM_OF_EXITS) {
 			 cJSON_Delete(payload);
 			 return;
+		 }
+
+		 if (cJSON_IsTrue(cJSON_GetObjectItem(payload, "test"))) {
+			test_exit_signal(&exits[ch - 1]);
 		 }
 
 		 if (cJSON_GetObjectItem(payload,"alert")) {
@@ -334,7 +361,7 @@ void exit_main()
 	exits[0].pin = USE_MCP23017 ? EXIT_BUTTON_MCP_IO_1 : EXIT_BUTTON_IO_1;
 	exits[0].delay = 4;
 	exits[0].channel = 1;
-	exits[0].alert = false;
+	exits[0].alert = true;
 	exits[0].enable = false;
 	exits[0].latch = false;
 	exits[0].toggleState = false;
@@ -345,7 +372,7 @@ void exit_main()
 	exits[1].delay = 4;
 	exits[1].channel = 2;
 	exits[1].enable = false;
-	exits[1].alert = false;
+	exits[1].alert = true;
 	exits[1].latch = false;
 	exits[1].toggleState = false;
 	exit_set_mode(&exits[1], "momentary");

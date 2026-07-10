@@ -258,6 +258,29 @@ void modeKeypad (int ch, const char *mode)
 		if (keypads[i].channel == ch) keypad_set_mode(&keypads[i], mode);
 }
 
+static void test_keypad_signal(struct keypadButton *pad)
+{
+	if (!pad) return;
+	const char *mode = keypad_current_mode(pad);
+	if (strcmp(mode, "latch") == 0) {
+		ESP_LOGI(TAG, "Keypad %d test - latch active", pad->channel);
+		lock_set_action_source("kp_test");
+		arm_lock(pad->channel, true, true);
+		start_keypad_timer(pad, false);
+	} else if (strcmp(mode, "toggle") == 0) {
+		pad->toggleState = !pad->toggleState;
+		ESP_LOGI(TAG, "Keypad %d test toggled lock to %s", pad->channel, pad->toggleState ? "armed" : "disarmed");
+		lock_set_action_source("kp_test");
+		arm_lock(pad->channel, pad->toggleState, true);
+		start_keypad_timer(pad, false);
+	} else {
+		ESP_LOGI(TAG, "Keypad %d test - disarming lock", pad->channel);
+		lock_set_action_source("kp_test");
+		arm_lock(pad->channel, false, true);
+		start_keypad_timer(pad, true);
+	}
+}
+
 void check_keypads (struct keypadButton *pad)
 {
 	pad->isPressed = !get_io(pad->pin);
@@ -304,6 +327,10 @@ void handle_keypad_message(cJSON * payload)
 		 if (ch < 1 || ch > NUM_OF_KEYPADS) {
 			 cJSON_Delete(payload);
 			 return;
+		 }
+
+		 if (cJSON_IsTrue(cJSON_GetObjectItem(payload, "test"))) {
+			 test_keypad_signal(&keypads[ch - 1]);
 		 }
 
 		 if (cJSON_GetObjectItem(payload,"alert")) {

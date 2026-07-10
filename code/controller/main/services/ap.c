@@ -49,21 +49,18 @@ void ap_main(char *ssid, char *password)
             .channel = CONFIG_ESP_WIFI_CHANNEL,
             .password = "",
             .max_connection = EXAMPLE_MAX_STA_CONN,
-#ifdef CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT
-            .authmode = WIFI_AUTH_WPA3_PSK,
-            .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
-#else /* CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT */
             .authmode = WIFI_AUTH_WPA2_PSK,
-#endif
             .pmf_cfg = {
-                    .required = true,
+                    .required = false,
             },
         },
     };
 
-    strncpy((char *)wifi_config.ap.ssid, ssid, sizeof(wifi_config.ap.ssid));
+    strncpy((char *)wifi_config.ap.ssid, ssid, sizeof(wifi_config.ap.ssid) - 1);
+    wifi_config.ap.ssid[sizeof(wifi_config.ap.ssid) - 1] = '\0';
     wifi_config.ap.ssid_len = strlen(ssid);
-    strncpy((char *)wifi_config.ap.password, password, sizeof(wifi_config.ap.password));
+    strncpy((char *)wifi_config.ap.password, password, sizeof(wifi_config.ap.password) - 1);
+    wifi_config.ap.password[sizeof(wifi_config.ap.password) - 1] = '\0';
     printf("ap_main\t%s\t%s\n", wifi_config.ap.ssid, wifi_config.ap.password);
 
     if (strlen(password) == 0) {

@@ -16,6 +16,7 @@
 #include "lwip/sys.h"
 
 #define EXAMPLE_ESP_MAXIMUM_RETRY  5
+#define STATION_CONNECT_TIMEOUT_MS 30000
 
 /* FreeRTOS event group to signal when we are connected */
 static EventGroupHandle_t s_wifi_event_group;
@@ -246,12 +247,16 @@ bool station_connect(char *ssid, char *password, bool keep_ap_enabled) {
             WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
             pdFALSE,
             pdFALSE,
-            portMAX_DELAY);
+            pdMS_TO_TICKS(STATION_CONNECT_TIMEOUT_MS));
 
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "connected to ap SSID:%s password:%s", ssid, password);
         return true;
     } else {
+        if ((bits & WIFI_FAIL_BIT) == 0) {
+            ESP_LOGW(TAG, "Timed out connecting to SSID:%s after %d ms", ssid, STATION_CONNECT_TIMEOUT_MS);
+            automation_record_log("WiFi connect timed out; recovery AP remains available");
+        }
         ESP_LOGE(TAG, "Failed to connect to SSID:%s, password:%s", ssid, password);
         if (keep_ap_enabled) {
             esp_wifi_disconnect();

@@ -1492,6 +1492,22 @@ let signalPollFailures = 0;
 let signalPollRetryTimer = null;
 let signalPollStartTimer = null;
 
+const applyWifiListSnapshot = (networks = wifiNetworksCache || [], scanned = wifiScanCache || []) => {
+  wifiNetworksCache = Array.isArray(networks) ? networks : [];
+  wifiScanCache = Array.isArray(scanned) ? scanned : [];
+  const wifi = (App.data && App.data.wifi) ? App.data.wifi : {};
+  renderWifi(
+    { ...wifi, networks: wifiNetworksCache, scanned: wifiScanCache },
+    App.data?.device?.network || {},
+    App.data?.system || {}
+  );
+  if (App.data) {
+    App.data.wifi = App.data.wifi || {};
+    App.data.wifi.networks = wifiNetworksCache;
+    App.data.wifi.scanned = wifiScanCache;
+  }
+};
+
 const loadState = async () => {
   if (stateInFlight) return stateInFlight;
 
@@ -1588,32 +1604,19 @@ const stopSignalPolling = () => {
 };
 
 let wifiListInFlight = null;
-const loadWifiList = async () => {
-  if (wifiListInFlight) return wifiListInFlight;
+const loadWifiList = async ({ force = false, scan = true } = {}) => {
+  if (wifiListInFlight && !force) return wifiListInFlight;
   wifiListInFlight = (async () => {
     try {
-      const [savedResult, scanResult] = await Promise.allSettled([
-        fetchJSON(`api/wifi/list?t=${Date.now()}`),
-        fetchJSON(`api/wifi/scan?t=${Date.now()}`),
-      ]);
-      const networks = savedResult.status === 'fulfilled' && Array.isArray(savedResult.value)
-        ? savedResult.value
-        : [];
-      const scanned = scanResult.status === 'fulfilled' && Array.isArray(scanResult.value)
-        ? scanResult.value
-        : [];
-      wifiNetworksCache = networks;
-      wifiScanCache = scanned;
-      const wifi = (App.data && App.data.wifi) ? App.data.wifi : {};
-      renderWifi(
-        { ...wifi, networks: wifiNetworksCache, scanned: wifiScanCache },
-        App.data?.device?.network || {},
-        App.data?.system || {}
-      );
-      if (App.data) {
-        App.data.wifi = App.data.wifi || {};
-        App.data.wifi.networks = wifiNetworksCache;
-        App.data.wifi.scanned = wifiScanCache;
+      const networks = await fetchJSON(`api/wifi/list?t=${Date.now()}`, { timeoutMs: 3000 });
+      applyWifiListSnapshot(Array.isArray(networks) ? networks : [], wifiScanCache || []);
+      if (scan) {
+        try {
+          const scanned = await fetchJSON(`api/wifi/scan?t=${Date.now()}`, { timeoutMs: 5000 });
+          applyWifiListSnapshot(wifiNetworksCache || [], Array.isArray(scanned) ? scanned : []);
+        } catch (scanError) {
+          console.warn('Failed to scan Wi-Fi networks', scanError);
+        }
       }
     } catch (error) {
       console.warn('Failed to load Wi-Fi list', error);
@@ -1753,6 +1756,22 @@ const updateMotion = async (channel, updates) => {
   }
 };
 
+const testServiceInput = async (channel, config) => {
+  if (!config?.endpoint || !config?.apply) return;
+  try {
+    const state = await fetchJSON(`api/${config.endpoint}`, {
+      method: 'POST',
+      body: JSON.stringify({ channel, test: true }),
+      timeoutMs: 5000,
+    });
+    config.apply(state || []);
+    showToast(`${config.label} test sent.`);
+  } catch (error) {
+    handleError(error, `Failed to test ${config.label.toLowerCase()}`);
+    throw error;
+  }
+};
+
 const createCardEnableButton = (enableId, label) => {
   const button = document.createElement('button');
   button.type = 'button';
@@ -1760,6 +1779,16 @@ const createCardEnableButton = (enableId, label) => {
   button.dataset.enableTarget = enableId;
   button.setAttribute('aria-label', `${label} enabled`);
   button.innerHTML = '<span class="card-enable-icon" aria-hidden="true"></span><span class="card-enable-text">Enabled</span>';
+  return button;
+};
+
+const createCardTestButton = (label) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'card-test-toggle';
+  button.setAttribute('aria-label', `Test ${label} input`);
+  button.title = `Test ${label} input`;
+  button.innerHTML = '<span class="card-test-icon" aria-hidden="true"></span>';
   return button;
 };
 
@@ -1782,10 +1811,10 @@ const setupControlCardChrome = () => {
   [1, 2].forEach((ch) => {
     configs.push(
       { label: 'Lock', enableId: `enableLock_${ch}`, update: updateLock },
-      { label: 'Exit', enableId: `enableExit_${ch}`, latchId: `latchExit_${ch}`, modeId: `modeExit_${ch}`, update: updateExit },
-      { label: 'Keypad', enableId: `enableKeypad_${ch}`, latchId: `latchKeypad_${ch}`, modeId: `modeKeypad_${ch}`, update: updateKeypad },
-      { label: 'FOB', enableId: `enableFob_${ch}`, latchId: `latchFob_${ch}`, modeId: `modeFob_${ch}`, update: updateFob },
-      { label: 'Motion', enableId: `enableMotion_${ch}`, latchId: `latchMotion_${ch}`, modeId: `modeMotion_${ch}`, update: updateMotion },
+      { label: 'Exit', enableId: `enableExit_${ch}`, latchId: `latchExit_${ch}`, modeId: `modeExit_${ch}`, update: updateExit, endpoint: 'exit', apply: applyExitState },
+      { label: 'Keypad', enableId: `enableKeypad_${ch}`, latchId: `latchKeypad_${ch}`, modeId: `modeKeypad_${ch}`, update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
+      { label: 'FOB', enableId: `enableFob_${ch}`, latchId: `latchFob_${ch}`, modeId: `modeFob_${ch}`, update: updateFob, endpoint: 'fob', apply: applyFobState },
+      { label: 'Motion', enableId: `enableMotion_${ch}`, latchId: `latchMotion_${ch}`, modeId: `modeMotion_${ch}`, update: updateMotion, endpoint: 'motion', apply: applyMotionState },
     );
   });
 
@@ -1825,6 +1854,19 @@ const setupControlCardChrome = () => {
       }
       header.appendChild(modeWrap);
       latchEl?.closest('label')?.classList.add('hidden-card-control');
+    }
+
+    if (config.endpoint) {
+      const testButton = createCardTestButton(config.label);
+      testButton.addEventListener('click', async () => {
+        testButton.disabled = true;
+        try {
+          await testServiceInput(channel, config);
+        } finally {
+          testButton.disabled = false;
+        }
+      });
+      header.appendChild(testButton);
     }
 
     const enableButton = createCardEnableButton(config.enableId, config.label);
@@ -2083,14 +2125,16 @@ const setupForms = () => {
       const wifiPassword = document.getElementById('wifiPassword')?.value || '';
 
       try {
-        await fetchJSON('api/wifi/add', {
-          method: 'POST',
-          body: JSON.stringify({ ssid: wifiName, password: wifiPassword }),
-        });
-        showToast('Wi‑Fi saved. Device will reboot to connect.');
-      } catch (error) {
-        handleError(error, 'Failed to update Wi-Fi credentials');
-      }
+          await fetchJSON('api/wifi/add', {
+            method: 'POST',
+            body: JSON.stringify({ ssid: wifiName, password: wifiPassword }),
+          });
+          showToast('Wi‑Fi saved. Device will reboot to connect.');
+          wifiNetworksCache = null;
+          wifiScanCache = null;
+        } catch (error) {
+          handleError(error, 'Failed to update Wi-Fi credentials');
+        }
     });
   }
 
@@ -2107,6 +2151,8 @@ const setupForms = () => {
             body: JSON.stringify({ ssid }),
           });
           showToast('Connecting... device will reboot.');
+          wifiNetworksCache = null;
+          wifiScanCache = null;
         } catch (error) {
           handleError(error, 'Failed to connect');
         } finally {
@@ -2117,12 +2163,20 @@ const setupForms = () => {
         const ssid = deleteBtn.getAttribute('data-ssid');
         deleteBtn.disabled = true;
         try {
-          await fetchJSON('api/wifi/delete', {
+          const result = await fetchJSON('api/wifi/delete', {
             method: 'POST',
             body: JSON.stringify({ ssid }),
           });
+          if (Array.isArray(result?.networks)) {
+            applyWifiListSnapshot(result.networks, wifiScanCache || []);
+          }
           showToast('Wi‑Fi removed.');
-          loadState();
+          if (result?.reboot) {
+            wifiNetworksCache = null;
+            wifiScanCache = null;
+          } else {
+            await loadWifiList({ force: true, scan: false });
+          }
         } catch (error) {
           handleError(error, 'Failed to delete Wi‑Fi');
         } finally {
@@ -2136,7 +2190,7 @@ const setupForms = () => {
     wifiScanBtn.addEventListener('click', async () => {
       wifiScanBtn.disabled = true;
       try {
-        await loadWifiList();
+        await loadWifiList({ force: true, scan: true });
         showToast('Wi-Fi scan refreshed.');
       } catch (error) {
         handleError(error, 'Failed to scan Wi-Fi networks');

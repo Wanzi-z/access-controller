@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "esp_http_server.h"
@@ -30,6 +31,7 @@ static const char *API_TAG = "api_server";
 #define STATE_RESPONSE_BUFFER_SIZE 24576
 #define OTA_UPLOAD_BUFFER_SIZE 4096
 #define OTA_REBOOT_DELAY_MS 1500
+#define WIFI_REBOOT_DELAY_MS 1000
 
 #ifndef BUILD_GIT_COMMIT
 #define BUILD_GIT_COMMIT "unknown"
@@ -83,6 +85,16 @@ extern void modify_user_from_flash(const char *uuid, const char *newName, const 
 
 // Forward declaration
 static cJSON *keypad_users_snapshot(void);
+
+static void delayed_restart_task(void *arg) {
+    uint32_t delay_ms = (uint32_t)(uintptr_t)arg;
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+    esp_restart();
+}
+
+static void schedule_restart(uint32_t delay_ms) {
+    xTaskCreate(delayed_restart_task, "delayed_restart", 2048, (void *)(uintptr_t)delay_ms, 5, NULL);
+}
 
 static void mac_to_string(const uint8_t mac[6], char *buf, size_t size) {
     if (!buf || size == 0) {
@@ -1220,6 +1232,33 @@ static esp_err_t api_wifi_list_get_handler(httpd_req_t *req) {
     return send_json_response(req, wifi_list_snapshot());
 }
 
+static esp_err_t send_wifi_update_response(httpd_req_t *req, bool reboot) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to build Wi-Fi response");
+    }
+
+    cJSON_AddBoolToObject(root, "ok", true);
+    cJSON_AddBoolToObject(root, "reboot", reboot);
+
+    char ssid[32] = {0};
+    char pwd[64] = {0};
+    load_wifi_credentials_from_flash(ssid, pwd);
+    cJSON_AddStringToObject(root, "active_ssid", ssid);
+
+    cJSON *list = wifi_list_snapshot();
+    if (list) {
+        cJSON_AddItemToObject(root, "networks", list);
+    }
+
+    cJSON *network = network_state_snapshot();
+    if (network) {
+        cJSON_AddItemToObject(root, "network", network);
+    }
+
+    return send_json_response(req, root);
+}
+
 static esp_err_t api_wifi_scan_get_handler(httpd_req_t *req) {
     return send_json_response(req, wifi_scan_snapshot());
 }
@@ -1241,8 +1280,9 @@ static esp_err_t api_wifi_add_post_handler(httpd_req_t *req) {
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save WiFi");
     }
-    httpd_resp_sendstr(req, "OK");
-    esp_restart();
+    esp_err_t send_err = send_wifi_update_response(req, true);
+    schedule_restart(WIFI_REBOOT_DELAY_MS);
+    if (send_err != ESP_OK) return send_err;
     return ESP_OK;
 }
 
@@ -1256,12 +1296,21 @@ static esp_err_t api_wifi_delete_post_handler(httpd_req_t *req) {
         cJSON_Delete(payload);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "ssid required");
     }
+    char active_ssid[32] = {0};
+    char active_pwd[64] = {0};
+    load_wifi_credentials_from_flash(active_ssid, active_pwd);
+    bool deleted_active = (strcmp(active_ssid, ssid) == 0);
+
     err = wifi_list_delete(ssid);
     cJSON_Delete(payload);
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete WiFi");
     }
-    return send_full_state_response(req);
+    esp_err_t send_err = send_wifi_update_response(req, deleted_active);
+    if (deleted_active) {
+        schedule_restart(WIFI_REBOOT_DELAY_MS);
+    }
+    return send_err;
 }
 
 static esp_err_t api_wifi_connect_post_handler(httpd_req_t *req) {
@@ -1282,8 +1331,9 @@ static esp_err_t api_wifi_connect_post_handler(httpd_req_t *req) {
     if (err != ESP_OK) {
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to activate WiFi");
     }
-    httpd_resp_sendstr(req, "OK");
-    esp_restart();
+    esp_err_t send_err = send_wifi_update_response(req, true);
+    schedule_restart(WIFI_REBOOT_DELAY_MS);
+    if (send_err != ESP_OK) return send_err;
     return ESP_OK;
 }
 

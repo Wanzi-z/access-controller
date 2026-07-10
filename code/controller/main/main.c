@@ -45,6 +45,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_wifi.h"
+#include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_vfs_fat.h"
 #include "esp_spiffs.h"
@@ -57,11 +58,16 @@ bool need_to_update_firmware = true;
 
 #define OTA_STARTUP_VALIDATION_DELAY_MS 10000
 #define DEVICE_PUNCH_CHECK_TASK_STACK_BYTES 8192
+#define DEVICE_PUNCH_HTTP_TIMEOUT_MS 20000
+#define DEVICE_PUNCH_POLICY_ATTEMPTS 3
+#define DEVICE_PUNCH_POLICY_RETRY_DELAY_MS 3000
 #define CONNECTIVITY_RECOVERY_TASK_STACK_BYTES 8192
 #define CONNECTIVITY_RECOVERY_INITIAL_DELAY_MS 30000
 #define CONNECTIVITY_RECOVERY_INTERVAL_MS 60000
 
 #define DEVICE_PUNCH_CHECK_DONE_BIT BIT0
+
+static bool s_recovery_ap_started = false;
 
 static bool running_app_pending_verify(void) {
 #ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
@@ -328,26 +334,37 @@ static bool post_device_punch_to_server(void) {
         return false;
     }
 
-    char payload[512];
+    char sta_ip[16] = {0};
+    esp_netif_t *sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (sta_netif) {
+        esp_netif_ip_info_t ip_info;
+        if (esp_netif_get_ip_info(sta_netif, &ip_info) == ESP_OK && ip_info.ip.addr != 0) {
+            snprintf(sta_ip, sizeof(sta_ip), IPSTR, IP2STR(&ip_info.ip));
+        }
+    }
+
+    char payload[640];
     snprintf(payload, sizeof(payload),
              "{"
              "\"id\":\"%s\","
              "\"name\":\"Access Controller %s\","
              "\"type\":\"access_controller\","
              "\"model\":\"ESP32-S3\","
+             "\"ip\":\"%s\","
              "\"version\":\"%s\","
              "\"capabilities\":[\"access-control\",\"esp32\",\"wiegand\",\"rf\",\"keypad\",\"motion\",\"ota-upload\"],"
              "\"metadata\":{\"firmware\":\"controller\",\"gitBranch\":\"%s\",\"gitDirty\":%s}"
              "}",
              device_id,
              device_id,
+             sta_ip,
              BUILD_GIT_COMMIT,
              BUILD_GIT_BRANCH,
              BUILD_GIT_DIRTY ? "true" : "false");
 
     esp_http_client_config_t http_config = {
         .url = server_url,
-        .timeout_ms = 10000,
+        .timeout_ms = DEVICE_PUNCH_HTTP_TIMEOUT_MS,
     };
     if (use_tls) {
         http_config.crt_bundle_attach = esp_crt_bundle_attach;
@@ -369,11 +386,18 @@ static bool post_device_punch_to_server(void) {
     bool ok = false;
     if (err == ESP_OK && status >= 200 && status < 300) {
         ESP_LOGI(TAG, "Device punch accepted (status=%d)", status);
-        automation_record_log("Device punch accepted by server");
+        char message[128];
+        snprintf(message, sizeof(message), "Device punch accepted by server (ip=%s)", sta_ip[0] ? sta_ip : "none");
+        automation_record_log(message);
         ok = true;
     } else {
         ESP_LOGW(TAG, "Device punch failed: err=%s status=%d", esp_err_to_name(err), status);
-        automation_record_log("Device punch failed");
+        char message[128];
+        snprintf(message, sizeof(message), "Device punch failed err=%s status=%d ip=%s",
+                 esp_err_to_name(err),
+                 status,
+                 sta_ip[0] ? sta_ip : "none");
+        automation_record_log(message);
     }
 
     esp_http_client_cleanup(client);
@@ -436,8 +460,18 @@ static bool server_policy_allows_station_with_check(bool run_check_in_current_ta
     }
 
     ESP_LOGI(TAG, "Server reachability is required; checking configured server URL");
-    if (run_check_in_current_task ? post_device_punch_to_server() : post_device_punch_to_server_for_policy()) {
-        return true;
+    for (int attempt = 1; attempt <= DEVICE_PUNCH_POLICY_ATTEMPTS; attempt++) {
+        if (run_check_in_current_task ? post_device_punch_to_server() : post_device_punch_to_server_for_policy()) {
+            return true;
+        }
+        if (attempt < DEVICE_PUNCH_POLICY_ATTEMPTS) {
+            char message[96];
+            snprintf(message, sizeof(message), "Server reachability retry %d/%d",
+                     attempt + 1,
+                     DEVICE_PUNCH_POLICY_ATTEMPTS);
+            automation_record_log(message);
+            vTaskDelay(pdMS_TO_TICKS(DEVICE_PUNCH_POLICY_RETRY_DELAY_MS));
+        }
     }
 
     ESP_LOGW(TAG, "Configured server URL is not reachable; station mode rejected by policy");
@@ -486,6 +520,11 @@ static bool wifi_candidate_add(wifi_candidate_t *candidates, size_t max_candidat
 static size_t build_wifi_candidates(wifi_candidate_t *candidates, size_t max_candidates) {
     size_t count = 0;
 
+    char active_ssid[32] = {0};
+    char active_password[64] = {0};
+    load_wifi_credentials_from_flash(active_ssid, active_password);
+    wifi_candidate_add(candidates, max_candidates, &count, active_ssid, active_password);
+
     cJSON *saved = wifi_list_credentials_snapshot();
     if (cJSON_IsArray(saved)) {
         int saved_count = cJSON_GetArraySize(saved);
@@ -529,11 +568,15 @@ static bool try_saved_wifi_networks(bool keep_ap_enabled, bool run_policy_in_cur
 
         if (!station_connect(candidate->ssid, candidate->password, keep_ap_enabled)) {
             ESP_LOGW(TAG, "Saved WiFi network failed: '%s'", candidate->ssid);
+            snprintf(msg, sizeof(msg), "Saved WiFi network %s failed", candidate->ssid);
+            automation_record_log(msg);
             continue;
         }
 
         if (!server_policy_allows_station_with_check(run_policy_in_current_task)) {
             ESP_LOGW(TAG, "Saved WiFi network '%s' connected but server policy failed", candidate->ssid);
+            snprintf(msg, sizeof(msg), "Saved WiFi network %s failed server policy", candidate->ssid);
+            automation_record_log(msg);
             station_disconnect_for_ap_mode();
             if (keep_ap_enabled) {
                 esp_wifi_set_mode(WIFI_MODE_AP);
@@ -557,6 +600,11 @@ static bool try_saved_wifi_networks(bool keep_ap_enabled, bool run_policy_in_cur
 }
 
 static void start_access_point_mode(void) {
+    if (s_recovery_ap_started) {
+        ESP_LOGI(TAG, "Recovery AP already started");
+        return;
+    }
+
     ESP_LOGI(TAG, "Starting Access Point...");
     automation_record_log("Starting AP provisioning mode");
 
@@ -564,6 +612,7 @@ static void start_access_point_mode(void) {
     generate_ssid_from_device_id(device_id, ap_ssid, sizeof(ap_ssid));
 
     ap_main(ap_ssid, "pyfitech");
+    s_recovery_ap_started = true;
 }
 
 static void connectivity_recovery_task(void *arg) {
@@ -579,9 +628,8 @@ static void connectivity_recovery_task(void *arg) {
             continue;
         }
 
-        ESP_LOGI(TAG, "AP recovery: network and policy passed; switching to station mode");
-        automation_record_log("AP recovery restored station mode");
-        esp_wifi_set_mode(WIFI_MODE_STA);
+        ESP_LOGI(TAG, "AP recovery: network and policy passed; keeping APSTA recovery mode");
+        automation_record_log("AP recovery restored STA; AP remains available");
         tunnel_start();
         vTaskDelete(NULL);
     }
@@ -623,12 +671,13 @@ void app_main(void) {
     
     bool station_connected = false;
 
-    if (try_saved_wifi_networks(false, false)) {
+    start_access_point_mode();
+
+    if (try_saved_wifi_networks(true, false)) {
         ESP_LOGI(TAG, "Successfully connected to WiFi in station mode");
         station_connected = true;
     } else {
         automation_record_log("WiFi STA failed after retries; starting AP mode");
-        start_access_point_mode();
         start_connectivity_recovery_task();
     }
 

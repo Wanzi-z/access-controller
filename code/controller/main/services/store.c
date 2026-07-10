@@ -730,6 +730,10 @@ static void wifi_list_remove_ssid(cJSON *arr, const char *ssid) {
     }
 }
 
+static bool wifi_list_prepend_item(cJSON *arr, cJSON *item) {
+    return arr && item && cJSON_InsertItemInArray(arr, 0, item);
+}
+
 static esp_err_t wifi_list_store_first_as_active_or_clear(cJSON *arr) {
     if (!arr || cJSON_GetArraySize(arr) == 0) {
         return store_wifi_credentials_to_flash("", "");
@@ -755,7 +759,11 @@ esp_err_t wifi_list_add(const char *ssid, const char *password) {
     cJSON_AddStringToObject(obj, "ssid", ssid);
     cJSON_AddStringToObject(obj, "password", password ? password : "");
     cJSON_AddNumberToObject(obj, "last_used_ms", (double)now_ms_store());
-    cJSON_AddItemToArray(arr, obj);
+    if (!wifi_list_prepend_item(arr, obj)) {
+        cJSON_Delete(obj);
+        cJSON_Delete(arr);
+        return ESP_ERR_NO_MEM;
+    }
     esp_err_t err = wifi_list_save_array(arr);
     cJSON_Delete(arr);
     // also set active creds
@@ -782,7 +790,8 @@ esp_err_t wifi_list_set_active(const char *ssid) {
     if (!ssid) return ESP_ERR_INVALID_ARG;
     cJSON *arr = wifi_list_load_array();
     if (!arr) return ESP_ERR_NO_MEM;
-    bool found = false;
+    cJSON *active_item = NULL;
+    char active_password[64] = {0};
     int count = cJSON_GetArraySize(arr);
     for (int i = 0; i < count; i++) {
         cJSON *item = cJSON_GetArrayItem(arr, i);
@@ -790,13 +799,24 @@ esp_err_t wifi_list_set_active(const char *ssid) {
         const cJSON *p = cJSON_GetObjectItemCaseSensitive(item, "password");
         if (cJSON_IsString(s) && s->valuestring && strcmp(s->valuestring, ssid) == 0) {
             const char *pwd = (cJSON_IsString(p) && p->valuestring) ? p->valuestring : "";
-            store_wifi_credentials_to_flash(ssid, pwd);
-            cJSON_ReplaceItemInObject(item, "last_used_ms", cJSON_CreateNumber((double)now_ms_store()));
-            found = true;
+            strncpy(active_password, pwd, sizeof(active_password) - 1);
+            active_item = cJSON_DetachItemFromArray(arr, i);
             break;
         }
     }
-    esp_err_t err = found ? wifi_list_save_array(arr) : ESP_ERR_NOT_FOUND;
+
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    if (active_item) {
+        cJSON_DeleteItemFromObject(active_item, "last_used_ms");
+        cJSON_AddNumberToObject(active_item, "last_used_ms", (double)now_ms_store());
+        if (wifi_list_prepend_item(arr, active_item)) {
+            store_wifi_credentials_to_flash(ssid, active_password);
+            err = wifi_list_save_array(arr);
+        } else {
+            cJSON_Delete(active_item);
+            err = ESP_ERR_NO_MEM;
+        }
+    }
     cJSON_Delete(arr);
     return err;
 }

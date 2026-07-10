@@ -17,6 +17,8 @@ void set_bool(const char *key, bool value);
 bool get_bool(const char *key, bool default_value);
 void beep(int cnt);
 void longBeep(int cnt);
+void beep_keypad(int beeps, int channel);
+void beep_keypad_force(int beeps, int channel);
 bool wiegand_pin_entry_active(int channel);
 
 // MCP definitions
@@ -150,6 +152,7 @@ void check_lock_contact_timer(Lock *lck) {
                      lck->isContact ? 1 : 0,
                      lck->isSignal ? 1 : 0);
         }
+        lck->expired = true;
     } else {
         lck->sentSignalAlert = false;
         lck->sentContactAlert = false;
@@ -257,7 +260,11 @@ void arm_lock(int channel, bool arm, bool alert) {
         // but still allow the feedback beep for the successful PIN submit path.
         bool suppress = wiegand_pin_entry_active(locks[ch].channel) && strcmp(source, "wg_pin") != 0;
         if (!suppress) {
-            beep_keypad(1, locks[ch].channel);
+            if (strstr(source, "_test")) {
+                beep_keypad_force(1, locks[ch].channel);
+            } else {
+                beep_keypad(1, locks[ch].channel);
+            }
         }
     }
 }
@@ -401,6 +408,9 @@ void handle_lock_message(cJSON * payload) {
         if (locks[ch].enable != val) {
             locks[ch].enable = val;
             ESP_LOGI(TAG, "Enable for lock %d changed to %d", ch + 1, val);
+            char message[96];
+            snprintf(message, sizeof(message), "Lock%d enable changed to %d via API", ch + 1, val ? 1 : 0);
+            automation_record_log(message);
         }
     }
 
@@ -410,6 +420,9 @@ void handle_lock_message(cJSON * payload) {
         if (locks[ch].enableContactAlert != val) {
             locks[ch].enableContactAlert = val;
             ESP_LOGI(TAG, "Contact alert for lock %d changed to %d", ch + 1, val);
+            char message[96];
+            snprintf(message, sizeof(message), "Lock%d contact alert changed to %d via API", ch + 1, val ? 1 : 0);
+            automation_record_log(message);
         }
     }
 
@@ -419,6 +432,9 @@ void handle_lock_message(cJSON * payload) {
         if (locks[ch].polarity != val) {
             locks[ch].polarity = val;
             ESP_LOGI(TAG, "Polarity for lock %d changed to %d", ch + 1, val);
+            char message[96];
+            snprintf(message, sizeof(message), "Lock%d polarity changed to %d via API", ch + 1, val ? 1 : 0);
+            automation_record_log(message);
         }
     }
 
@@ -435,9 +451,15 @@ void handle_lock_message(cJSON * payload) {
             if (val) {
                 arm_lock(ch + 1, true, true);
                 ESP_LOGI(TAG, "Arming lock %d", ch + 1);
+                char message[96];
+                snprintf(message, sizeof(message), "Lock%d armed via API", ch + 1);
+                automation_record_log(message);
             } else {
                 arm_lock(ch + 1, false, true);
                 ESP_LOGI(TAG, "Disarming lock %d", ch + 1);
+                char message[96];
+                snprintf(message, sizeof(message), "Lock%d disarmed via API", ch + 1);
+                automation_record_log(message);
             }
             }
         }
@@ -495,35 +517,6 @@ void lock_init()
 static void lock_service(void *pvParameter) {
     while (1) {
         handle_lock_message(checkServiceMessageByType("lock"));
-        
-        // Reduce frequency of contact checking to prevent spam
-        static int contact_check_counter = 0;
-        contact_check_counter++;
-        
-        // Only check contacts every 200 iterations (about 20 seconds)
-        if (contact_check_counter >= 200) {
-            for (int i = 0; i < NUM_OF_LOCKS; i++) {
-                if (locks[i].enableContactAlert && locks[i].enable) {
-                    // Check for contact
-                    bool hasContact = false;
-                    
-                    if (i == 0) {
-                        hasContact = get_io(CONTACT_IO_1);
-                    } else if (i == 1) {
-                        hasContact = get_io(CONTACT_IO_2);
-                    }
-                    
-                    if (!hasContact) {
-                        ESP_LOGI(TAG, "No contact from lock %d, sounding alert.", i + 1);
-                        if (!wiegand_pin_entry_active(i + 1)) {
-                            beep_keypad(1, i + 1);  // channel is i + 1
-                        }
-                    }
-                }
-            }
-            contact_check_counter = 0;
-        }
-        
         vTaskDelay(SERVICE_LOOP / portTICK_PERIOD_MS);
     }
 }
@@ -535,6 +528,6 @@ void lock_main() {
     lock_init();
     restoreLockSettings();
 
-    xTaskCreate(&lock_service, "lock_service_task", 8 * 1000, NULL, 5, NULL);
+    xTaskCreate(&lock_service, "lock_service_task", 6 * 1024, NULL, 5, NULL);
     xTaskCreate(lock_contact_timer, "lock_contact_timer", 4 * 1000, NULL, 10, NULL);
 }

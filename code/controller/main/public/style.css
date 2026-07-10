@@ -1070,12 +1070,17 @@ body {
 
 .control-card-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: start;
-  gap: 10px;
+  gap: 8px;
 }
 
 .control-card-header .card-enable-toggle {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.control-card-header .card-test-toggle {
   grid-column: 2;
   grid-row: 1;
 }
@@ -1135,7 +1140,8 @@ body {
   display: none !important;
 }
 
-.card-enable-toggle {
+.card-enable-toggle,
+.card-test-toggle {
   width: 36px;
   min-width: 36px;
   height: 36px;
@@ -1152,10 +1158,48 @@ body {
   white-space: nowrap;
 }
 
-.card-enable-toggle:hover {
+.card-test-toggle {
+  color: var(--color-primary);
+}
+
+.card-test-toggle:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.card-enable-toggle:hover,
+.card-test-toggle:hover {
   background: rgba(53, 240, 194, 0.08);
   border-color: rgba(53, 240, 194, 0.32);
   box-shadow: none;
+}
+
+.card-test-icon {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+}
+
+.card-test-icon::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 3px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid currentColor;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+
+.card-test-icon::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  opacity: 0.45;
 }
 
 .card-enable-toggle.is-enabled {

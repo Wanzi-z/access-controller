@@ -768,7 +768,7 @@ void rf_receiver_init(void)
     }
     
     /* Start processing task */
-    xTaskCreate(rf_process_task, "rf_rx", 12288, NULL, 3, NULL);
+    xTaskCreate(rf_process_task, "rf_rx", 8192, NULL, 3, NULL);
     
     ESP_LOGI(RF_TAG, "RF receiver ready - waiting for fob signals...");
 }
