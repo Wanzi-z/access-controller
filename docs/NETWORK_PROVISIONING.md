@@ -80,6 +80,14 @@ probe passes, the controller switches to station-only mode and starts the tunnel
 task. If the probe fails, it returns to AP-only mode and waits for the next
 interval.
 
+Wi-Fi runtime configuration uses `WIFI_STORAGE_RAM` for both AP and station
+setup. This keeps ESP-IDF Wi-Fi mode/config changes from writing to the small
+NVS partition during boot or AP recovery. If NVS is nearly full, AP startup must
+log and return on Wi-Fi configuration errors instead of crashing the device in a
+reset loop. The expected recovery behavior is: boot, start AP if station/server
+policy fails, keep the local UI/API reachable, and retry saved station
+credentials when the saved network becomes available again.
+
 ## Settings Flow
 
 ```mermaid
@@ -142,3 +150,5 @@ sequenceDiagram
   regular interval.
 - `npm run test:server-route` passes, proving the public route accepts punch-in
   posts and does not expose the dashboard.
+- With a nearly full NVS partition, Wi-Fi AP/STA startup does not crash because
+  Wi-Fi config is stored in RAM at runtime.

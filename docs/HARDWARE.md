@@ -173,6 +173,11 @@ Manufacturing outputs are in `circuits/strike/Manufacturer`:
 - Firmware currently uses GPIO13/GPIO14 for I2C and MCP23017 address `0x20`.
 - Firmware currently reads 433 MHz RF data on GPIO15.
 - Most lock/button/motion/fob I/O is routed through MCP23017 pins A0-B7.
+- Keypad push/beep outputs are MCP23017 A4 (`PUSH0_IO`) and B4 (`PUSH1_IO`).
+  On the 2026-07-10 bench setup, only the CH0 Wiegand keypad was installed and
+  audible. Firmware aux feedback pulses both push outputs so CH1/CH2 aux
+  actions remain audible through CH0 while still driving the CH2 push output for
+  two-keypad installations.
 - The KiCad design includes Ethernet/W5500 hardware, but the active firmware
   network path currently centers on Wi-Fi and the HTTP tunnel client.
 - The USB schematic warns about using an isolated USB connection when the board

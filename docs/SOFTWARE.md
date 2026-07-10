@@ -85,6 +85,33 @@ logs periodic heap/NVS/uptime status once per minute.
 | `utilities_server.c` | Utility server functions. |
 | `buzzer.c` | Keypad/buzzer feedback using MCP push pins. |
 
+### Keypad Push Feedback
+
+`buzzer.c` owns the audible keypad feedback pulse. The MCP push pins drive
+transistors for the keypad push/beep lines:
+
+- Channel 1 push/beep: MCP23017 `A4` (`PUSH0_IO`)
+- Channel 2 push/beep: MCP23017 `B4` (`PUSH1_IO`)
+
+The keypad push pulse must be long enough for the installed Wiegand keypad to
+recognize it. A 100 ms pulse was observed to be flaky; the production pulse is
+750 ms active followed by 100 ms idle.
+
+Auxiliary input feedback is intentionally different from lock/contact-alert
+feedback. When an exit, motion, keypad-button, or fob input triggers a lock
+action, `lock.c` treats the source as aux input feedback and calls
+`beep_keypad_force(1, 0)`. Channel `0` means "pulse both keypad push outputs".
+This makes every aux action audible when only one keypad is installed, and also
+keeps the second push output active for installations with two keypads.
+
+Normal per-lock feedback still uses the lock channel, except for aux inputs and
+auto-rearm suppression rules:
+
+- Auto re-arm sources do not beep.
+- Aux input sources force feedback and pulse both keypad outputs.
+- PIN-entry suppression still prevents unrelated beeps while a PIN is being
+  typed, except for the successful PIN feedback path.
+
 ### Important I/O Mappings
 
 These mappings are defined in source and should be kept in sync with hardware
@@ -167,6 +194,8 @@ Routes are registered in `code/controller/main/services/api.c`.
 | `POST` | `/api/rf/rename` | Rename an RF remote. |
 | `POST` | `/api/rf/delete` | Delete an RF remote. |
 | `POST` | `/api/rf/config` | Update RF mode, channel mask, exit seconds, and alert. |
+| `POST` | `/api/buzzer/error-beep` | Force keypad feedback. `channel` may be `1`, `2`, or `0` for both push outputs. |
+| `POST` | `/api/keypad/push-test` | Isolated push-line diagnostic. Accepts `channel`, `pulses`, `activeMs`, `idleMs`, and `activeHigh`; it toggles only the keypad push output, not locks or aux handlers. |
 | `GET` | `/api/wifi` | State snapshot with Wi-Fi information. |
 | `POST` | `/api/wifi` | Legacy/general Wi-Fi settings handler through authorization message handling. |
 | `GET` | `/api/wifi/list` | Saved Wi-Fi network list. |

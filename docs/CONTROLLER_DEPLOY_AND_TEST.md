@@ -343,6 +343,62 @@ NODE
 
 Inspect the screenshots before calling the UI done.
 
+## 11. Aux Keypad Feedback Gate
+
+Run this gate after changing lock, exit, motion, keypad, fob, Wiegand, buzzer,
+or MCP23017 behavior.
+
+Current bench note: as of 2026-07-10, only the Wiegand keypad on CH0 is
+installed/audible. The firmware still pulses both keypad push outputs for aux
+input feedback, so a CH2 test is expected to beep the installed CH0 keypad.
+
+First prove the direct feedback path:
+
+```bash
+curl -sS --max-time 8 -X POST "$DEVICE_URL/api/buzzer/error-beep" \
+  -H 'Content-Type: application/json' \
+  -d '{"channel":0,"beeps":1}'
+```
+
+Expected: one keypad beep. Channel `0` means both keypad push outputs.
+
+If the direct path is questionable, isolate one push line without touching
+locks or input handlers:
+
+```bash
+curl -sS --max-time 10 -X POST "$DEVICE_URL/api/keypad/push-test" \
+  -H 'Content-Type: application/json' \
+  -d '{"channel":1,"pulses":1,"activeMs":750,"idleMs":500,"activeHigh":true}'
+```
+
+The production pulse is 750 ms active. A 100 ms push was observed to be too
+short and flaky for the installed keypad.
+
+Then prove each real handler path. Each request should produce one audible
+keypad beep:
+
+```bash
+for endpoint in exit motion keypad fob; do
+  for channel in 1 2; do
+    curl -sS --max-time 10 -X POST "$DEVICE_URL/api/$endpoint" \
+      -H 'Content-Type: application/json' \
+      -d "{\"channel\":$channel,\"enable\":true,\"alert\":true,\"delay\":4,\"test\":true}"
+    sleep 1
+  done
+done
+```
+
+Pass evidence:
+
+- Direct `channel:0` beep works.
+- Exit CH1 and CH2 tests beep.
+- Motion CH1 and CH2 tests beep.
+- Keypad CH1 and CH2 tests beep.
+- FOB CH1 and CH2 tests beep.
+- Auto re-arm does not create extra keypad beeps.
+- If only CH0 has a keypad installed, CH2 tests are still expected to be
+  audible through CH0 because aux feedback pulses both keypad push outputs.
+
 ## 2026-07-08 Known-Good Evidence
 
 - Programmed ESP32-S3 MAC `b8:f8:62:cb:9a:a0`.
@@ -358,6 +414,19 @@ Inspect the screenshots before calling the UI done.
 - Device Manager health returned `{"ok":true,"service":"device-manager"}`.
 - Device Manager access-controller state returned matching UUID, Echo42 SSID,
   STA IP, Wi-Fi quality, and OTA state.
+
+## 2026-07-10 Keypad Feedback and Regression Evidence
+
+- Firmware commit: `5b518d4 Make keypad feedback reliable for aux inputs`.
+- Controller IP during validation: `10.69.136.23` on `Echo42`.
+- OTA state after install: `valid`.
+- Direct `POST /api/buzzer/error-beep` with `{"channel":0,"beeps":1}` beeped.
+- Exit CH1, Exit CH2, Motion CH1, Motion CH2, Keypad CH1, Keypad CH2, FOB CH1,
+  and FOB CH2 test actions beeped the installed CH0 keypad.
+- CH0 isolated push testing showed 300 ms did not beep and 750 ms did beep, so
+  production keypad push timing is 750 ms active.
+- CH2 direct push was not audible on the bench because no keypad was installed
+  on CH2. Aux feedback still pulses CH2 push output along with CH0.
 - Public `POST https://open-automation.org/devices` returned `200`.
 - Public `GET https://open-automation.org/devices/` returned `401 Basic
   realm="Device Manager"`.
