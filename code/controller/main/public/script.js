@@ -1485,25 +1485,47 @@ let nextStateToastAt = 0;
 const DEVICE_STATE_TOAST_BACKOFF_MS = 120000;
 let wifiNetworksCache = null;
 let wifiScanCache = null;
+let wifiListLoaded = false;
+let wifiScanLoaded = false;
+let wifiListLoading = false;
+let wifiScanLoading = false;
+let wifiListError = null;
+let wifiScanError = null;
+let wifiScanRetryTimer = null;
 let signalsInFlight = null;
 let signalPollFailures = 0;
 let signalPollRetryTimer = null;
 let signalPollStartTimer = null;
 
-const applyWifiListSnapshot = (networks = wifiNetworksCache || [], scanned = wifiScanCache || []) => {
-  wifiNetworksCache = Array.isArray(networks) ? networks : [];
-  wifiScanCache = Array.isArray(scanned) ? scanned : [];
+const renderWifiFromCache = () => {
   const wifi = (App.data && App.data.wifi) ? App.data.wifi : {};
   renderWifi(
-    { ...wifi, networks: wifiNetworksCache, scanned: wifiScanCache },
+    { ...wifi, networks: wifiNetworksCache || [], scanned: wifiScanCache || [] },
     App.data?.device?.network || {},
     App.data?.system || {}
   );
+};
+
+const scheduleWifiScanRetry = () => {
+  if (wifiScanRetryTimer || document.hidden || getActivePageId() !== 'settings') return;
+  wifiScanRetryTimer = setTimeout(() => {
+    wifiScanRetryTimer = null;
+    if (!document.hidden && getActivePageId() === 'settings') {
+      loadWifiList({ force: true, scan: true });
+    }
+  }, 5000);
+};
+
+const applyWifiListSnapshot = (networks = wifiNetworksCache || [], scanned = wifiScanCache || []) => {
+  wifiNetworksCache = Array.isArray(networks) ? networks : [];
+  wifiScanCache = Array.isArray(scanned) ? scanned : [];
+  wifiListLoaded = Array.isArray(networks) || wifiListLoaded;
   if (App.data) {
     App.data.wifi = App.data.wifi || {};
     App.data.wifi.networks = wifiNetworksCache;
     App.data.wifi.scanned = wifiScanCache;
   }
+  renderWifiFromCache();
 };
 
 const loadState = async () => {
@@ -1605,20 +1627,41 @@ let wifiListInFlight = null;
 const loadWifiList = async ({ force = false, scan = true } = {}) => {
   if (wifiListInFlight && !force) return wifiListInFlight;
   wifiListInFlight = (async () => {
-    let listLoaded = false;
+    if (wifiScanRetryTimer) {
+      clearTimeout(wifiScanRetryTimer);
+      wifiScanRetryTimer = null;
+    }
+    wifiListLoading = true;
+    wifiListError = null;
+    renderWifiFromCache();
     try {
       const networks = await fetchJSON(`api/wifi/list?t=${Date.now()}`, { timeoutMs: 3000 });
-      applyWifiListSnapshot(Array.isArray(networks) ? networks : [], wifiScanCache || []);
-      listLoaded = true;
+      wifiNetworksCache = Array.isArray(networks) ? networks : [];
+      wifiListLoaded = true;
     } catch (error) {
+      wifiListError = error;
       console.warn('Failed to load Wi-Fi list', error);
+    } finally {
+      wifiListLoading = false;
+      renderWifiFromCache();
     }
     if (scan) {
+      wifiScanLoading = true;
+      wifiScanError = null;
+      renderWifiFromCache();
       try {
         const scanned = await fetchJSON(`api/wifi/scan?t=${Date.now()}`, { timeoutMs: 12000 });
-        applyWifiListSnapshot(listLoaded ? (wifiNetworksCache || []) : [], Array.isArray(scanned) ? scanned : []);
+        wifiScanCache = Array.isArray(scanned) ? scanned : [];
+        wifiScanLoaded = true;
       } catch (scanError) {
+        wifiScanError = scanError;
         console.warn('Failed to scan Wi-Fi networks', scanError);
+        if (!(wifiScanCache && wifiScanCache.length)) {
+          scheduleWifiScanRetry();
+        }
+      } finally {
+        wifiScanLoading = false;
+        renderWifiFromCache();
       }
     }
   })().finally(() => {
@@ -2132,6 +2175,8 @@ const setupForms = () => {
           showToast('Wi‑Fi saved. Device will reboot to connect.');
           wifiNetworksCache = null;
           wifiScanCache = null;
+          wifiListLoaded = false;
+          wifiScanLoaded = false;
         } catch (error) {
           handleError(error, 'Failed to update Wi-Fi credentials');
         }
@@ -2153,6 +2198,8 @@ const setupForms = () => {
           showToast('Connecting... device will reboot.');
           wifiNetworksCache = null;
           wifiScanCache = null;
+          wifiListLoaded = false;
+          wifiScanLoaded = false;
         } catch (error) {
           handleError(error, 'Failed to connect');
         } finally {
@@ -2188,7 +2235,9 @@ const setupForms = () => {
 
   if (wifiScanBtn) {
     wifiScanBtn.addEventListener('click', async () => {
+      const previousText = wifiScanBtn.textContent;
       wifiScanBtn.disabled = true;
+      wifiScanBtn.textContent = 'Scanning...';
       try {
         await loadWifiList({ force: true, scan: true });
         showToast('Wi-Fi scan refreshed.');
@@ -2196,6 +2245,7 @@ const setupForms = () => {
         handleError(error, 'Failed to scan Wi-Fi networks');
       } finally {
         wifiScanBtn.disabled = false;
+        wifiScanBtn.textContent = previousText;
       }
     });
   }
@@ -2917,8 +2967,8 @@ const renderWifi = (wifi = {}, networkState = {}, system = {}) => {
   const availableList = document.getElementById('wifiAvailableNetworks');
   const activeEl = document.getElementById('wifiActive');
   if (!list) return;
-  const networks = wifi.networks || [];
-  const scanned = wifi.scanned || [];
+  const networks = Array.isArray(wifi.networks) ? wifi.networks : [];
+  const scanned = Array.isArray(wifi.scanned) ? wifi.scanned : [];
   const configuredSsid = wifi.active_ssid || '';
   const staConnected = networkState.wifi_sta_connected === true;
   const active = staConnected ? configuredSsid : '';
@@ -3002,7 +3052,15 @@ const renderWifi = (wifi = {}, networkState = {}, system = {}) => {
 
   if (availableList) {
     if (!scanned.length) {
-      availableList.innerHTML = '<p class="empty-state muted">No nearby networks found yet.</p>';
+      if (wifiScanLoading) {
+        availableList.innerHTML = '<p class="empty-state muted">Scanning nearby networks...</p>';
+      } else if (wifiScanError && !wifiScanLoaded) {
+        availableList.innerHTML = '<p class="empty-state muted">Wi-Fi scan is retrying...</p>';
+      } else if (!wifiScanLoaded) {
+        availableList.innerHTML = '<p class="empty-state muted">Open Settings or click Scan to refresh nearby networks.</p>';
+      } else {
+        availableList.innerHTML = '<p class="empty-state muted">No nearby networks found.</p>';
+      }
     } else {
       availableList.innerHTML = scanned
         .map((network) => {
@@ -3022,7 +3080,13 @@ const renderWifi = (wifi = {}, networkState = {}, system = {}) => {
   }
 
   if (!networks.length) {
-    list.innerHTML = '<p class="empty-state muted">No saved Wi‑Fi networks.</p>';
+    if (wifiListLoading) {
+      list.innerHTML = '<p class="empty-state muted">Loading saved Wi-Fi networks...</p>';
+    } else if (wifiListError && !wifiListLoaded) {
+      list.innerHTML = '<p class="empty-state muted">Saved Wi-Fi list is retrying...</p>';
+    } else {
+      list.innerHTML = '<p class="empty-state muted">No saved Wi-Fi networks.</p>';
+    }
     return;
   }
   list.innerHTML = networks

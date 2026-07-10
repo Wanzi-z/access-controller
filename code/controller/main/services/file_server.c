@@ -141,7 +141,7 @@ static esp_err_t script_get_handler(httpd_req_t *req)
                                gzip ? script_js_gz_start : script_js_start,
                                gzip ? script_js_gz_size : script_js_size,
                                "application/javascript",
-                               "public, max-age=86400, immutable",
+                               "no-store, no-cache, must-revalidate",
                                gzip ? "gzip" : NULL);
 }
 
@@ -158,7 +158,7 @@ static esp_err_t style_get_handler(httpd_req_t *req)
                                gzip ? style_css_gz_start : style_css_start,
                                gzip ? style_css_gz_size : style_css_size,
                                "text/css",
-                               "public, max-age=86400, immutable",
+                               "no-store, no-cache, must-revalidate",
                                gzip ? "gzip" : NULL);
 }
 
