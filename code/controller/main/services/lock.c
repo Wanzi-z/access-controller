@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "cJSON.h"
@@ -93,14 +94,68 @@ typedef struct {
 
 Lock locks[NUM_OF_LOCKS];
 
-static char s_last_action_source[12] = "sys";
+static char s_last_action_source[24] = "sys";
+static SemaphoreHandle_t s_action_source_mutex;
+static StaticSemaphore_t s_action_source_mutex_storage;
+static TaskHandle_t s_action_source_owner;
+static portMUX_TYPE s_action_source_init_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void lock_action_source_ensure_mutex(void) {
+    if (s_action_source_mutex) {
+        return;
+    }
+    taskENTER_CRITICAL(&s_action_source_init_mux);
+    if (!s_action_source_mutex) {
+        s_action_source_mutex = xSemaphoreCreateMutexStatic(&s_action_source_mutex_storage);
+    }
+    taskEXIT_CRITICAL(&s_action_source_init_mux);
+}
 
 void lock_set_action_source(const char *source) {
     const char *fallback = "sys";
     if (!source || source[0] == '\0') {
         source = fallback;
     }
-    strlcpy(s_last_action_source, source, sizeof(s_last_action_source));
+    lock_action_source_ensure_mutex();
+    if (s_action_source_mutex && xSemaphoreTake(s_action_source_mutex, portMAX_DELAY) == pdTRUE) {
+        s_action_source_owner = xTaskGetCurrentTaskHandle();
+        strlcpy(s_last_action_source, source, sizeof(s_last_action_source));
+    }
+}
+
+static void lock_action_source_consume(char *source, size_t source_len) {
+    const char *selected = "sys";
+    TaskHandle_t current = xTaskGetCurrentTaskHandle();
+    bool owned_by_current = s_action_source_owner && s_action_source_owner == current;
+    if (owned_by_current) {
+        selected = s_last_action_source;
+    }
+    strlcpy(source, selected, source_len);
+    if (owned_by_current) {
+        strlcpy(s_last_action_source, "sys", sizeof(s_last_action_source));
+        s_action_source_owner = NULL;
+        xSemaphoreGive(s_action_source_mutex);
+    }
+}
+
+static bool lock_source_is_auto_rearm(const char *source) {
+    return source &&
+        (strcmp(source, "exit_auto") == 0 ||
+         strcmp(source, "fob_auto") == 0 ||
+         strcmp(source, "motion_auto") == 0 ||
+         strcmp(source, "kp_auto") == 0 ||
+         strcmp(source, "wg_auto") == 0 ||
+         strcmp(source, "wg_pin_auto") == 0);
+}
+
+static bool lock_source_is_aux_input(const char *source) {
+    if (!source || lock_source_is_auto_rearm(source)) {
+        return false;
+    }
+    return strncmp(source, "exit_", 5) == 0 ||
+           strncmp(source, "fob_", 4) == 0 ||
+           strncmp(source, "motion", 6) == 0 ||
+           strncmp(source, "kp_", 3) == 0;
 }
 
 void start_lock_contact_timer(Lock *lck, bool val) {
@@ -209,12 +264,14 @@ void enableLock(int ch, bool val) {
 }
 
 void arm_lock(int channel, bool arm, bool alert) {
+    char source[sizeof(s_last_action_source)];
+    lock_action_source_consume(source, sizeof(source));
+
     int ch = channel - 1;
     if (ch < 0 || ch >= NUM_OF_LOCKS) {
         return;
     }
 	if (!locks[ch].enable) {
-        strlcpy(s_last_action_source, "sys", sizeof(s_last_action_source));
         return;
     }
 
@@ -240,8 +297,6 @@ void arm_lock(int channel, bool arm, bool alert) {
     }
 
     char message[96];
-    char source[sizeof(s_last_action_source)];
-    strlcpy(source, s_last_action_source, sizeof(source));
     snprintf(message, sizeof(message),
              "Lock%d[%s] arm=%d out=%d en=%d contact=%d signal=%d alert=%d",
              locks[ch].channel,
@@ -253,14 +308,14 @@ void arm_lock(int channel, bool arm, bool alert) {
              locks[ch].isSignal ? 1 : 0,
              locks[ch].alert ? 1 : 0);
     automation_record_log(message);
-    strlcpy(s_last_action_source, "sys", sizeof(s_last_action_source));
 
-    if (locks[ch].alert) {
+    if (locks[ch].alert && !lock_source_is_auto_rearm(source)) {
         // While typing a PIN, suppress unrelated beeps (e.g. pad auto-rearm/contact alerts)
         // but still allow the feedback beep for the successful PIN submit path.
-        bool suppress = wiegand_pin_entry_active(locks[ch].channel) && strcmp(source, "wg_pin") != 0;
+        bool force_feedback = lock_source_is_aux_input(source);
+        bool suppress = !force_feedback && wiegand_pin_entry_active(locks[ch].channel) && strcmp(source, "wg_pin") != 0;
         if (!suppress) {
-            if (strstr(source, "_test")) {
+            if (force_feedback) {
                 beep_keypad_force(1, locks[ch].channel);
             } else {
                 beep_keypad(1, locks[ch].channel);
