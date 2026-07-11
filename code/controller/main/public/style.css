@@ -2433,6 +2433,26 @@ button.secondary.danger {
     justify-content: flex-start;
   }
 
+  .credential-user-header {
+    grid-template-columns: minmax(0, 1fr) 24px;
+    gap: 8px 12px;
+  }
+
+  .credential-user-title strong {
+    white-space: normal;
+  }
+
+  .credential-user-summary {
+    grid-column: 1 / 2;
+    grid-row: 2;
+    white-space: normal;
+  }
+
+  .credential-user-chevron {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+
   .wifi-saved-card {
     grid-template-columns: 1fr;
   }
