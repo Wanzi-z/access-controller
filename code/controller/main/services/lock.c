@@ -20,7 +20,12 @@ void beep(int cnt);
 void longBeep(int cnt);
 void beep_keypad(int beeps, int channel);
 void beep_keypad_force(int beeps, int channel);
+void alert_output_signal(int beeps, int channel, int target);
+void alert_output_signal_force(int beeps, int channel, int target);
 bool wiegand_pin_entry_active(int channel);
+int alert_target_from_bool(bool alert);
+int alert_target_from_string(const char *value, bool fallback_alert);
+const char *alert_target_to_string(int target);
 
 // MCP definitions
 #define MCP_OUTPUT 0
@@ -81,6 +86,7 @@ typedef struct {
     bool expired;
     bool enable;
     bool enableContactAlert;
+    int alert_target;
     int delay;
     int count;
     bool alert;
@@ -201,7 +207,7 @@ void check_lock_contact_timer(Lock *lck) {
             lck->sentContactAlert = true;
         }
         if (!wiegand_pin_entry_active(lck->channel)) {
-            beep_keypad(1, lck->channel);
+            alert_output_signal(1, 0, lck->alert_target);
             ESP_LOGI(TAG, "Contact alert beep lock %d (contact=%d signal=%d)",
                      lck->channel,
                      lck->isContact ? 1 : 0,
@@ -316,9 +322,9 @@ void arm_lock(int channel, bool arm, bool alert) {
         bool suppress = !force_feedback && wiegand_pin_entry_active(locks[ch].channel) && strcmp(source, "wg_pin") != 0;
         if (!suppress) {
             if (force_feedback) {
-                beep_keypad_force(1, 0);
+                alert_output_signal_force(1, 0, locks[ch].alert_target);
             } else {
-                beep_keypad(1, locks[ch].channel);
+                alert_output_signal(1, 0, locks[ch].alert_target);
             }
         }
     }
@@ -339,6 +345,9 @@ void storeLockSettings(void)
         
         snprintf(key, sizeof(key), "lock_%d_alert", i + 1);  // Shortened from "contactAlert"
         set_bool(key, locks[i].enableContactAlert);
+
+        snprintf(key, sizeof(key), "lock_%d_atgt", i + 1);
+        store_u32(key, (uint32_t)locks[i].alert_target);
         
         snprintf(key, sizeof(key), "lock_%d_pol", i + 1);    // Shortened from "polarity"
         set_bool(key, locks[i].polarity);
@@ -359,6 +368,12 @@ void restoreLockSettings(void)
         
         snprintf(key, sizeof(key), "lock_%d_alert", i + 1);
         locks[i].enableContactAlert = get_bool(key, false);
+
+        snprintf(key, sizeof(key), "lock_%d_atgt", i + 1);
+        locks[i].alert_target = alert_target_normalize(
+            (int)get_u32(key, locks[i].enableContactAlert ? ALERT_TARGET_BOTH : ALERT_TARGET_NONE),
+            locks[i].enableContactAlert);
+        locks[i].enableContactAlert = locks[i].alert_target != ALERT_TARGET_NONE;
         
         snprintf(key, sizeof(key), "lock_%d_pol", i + 1);
         locks[i].polarity = get_bool(key, true);
@@ -374,6 +389,7 @@ void sendLockState(void) {
         cJSON_AddBoolToObject(payload, "enable", locks[i].enable);
         cJSON_AddBoolToObject(payload, "arm", locks[i].shouldLock);
         cJSON_AddBoolToObject(payload, "enableContactAlert", locks[i].enableContactAlert);
+        cJSON_AddStringToObject(payload, "alert_target", alert_target_to_string(locks[i].alert_target));
         cJSON_AddBoolToObject(payload, "polarity", locks[i].polarity);
         cJSON_AddItemToObject(root, "payload", payload);
         
@@ -406,6 +422,7 @@ cJSON *lock_state_snapshot(void) {
         cJSON_AddBoolToObject(entry, "enable", locks[i].enable);
         cJSON_AddBoolToObject(entry, "arm", locks[i].shouldLock);
         cJSON_AddBoolToObject(entry, "enableContactAlert", locks[i].enableContactAlert);
+        cJSON_AddStringToObject(entry, "alert_target", alert_target_to_string(locks[i].alert_target));
         cJSON_AddBoolToObject(entry, "polarity", locks[i].polarity);
         /* Invert: pull-up means disconnected=high; we want true=closed/active (green) */
         bool sense_ok = !locks[i].isSignal;
@@ -433,6 +450,7 @@ void handle_lock_message(cJSON * payload) {
 	cJSON *channel_item = cJSON_GetObjectItem(payload, "channel");
 	cJSON *enable_item = cJSON_GetObjectItem(payload, "enable");
 	cJSON *enableContactAlert_item = cJSON_GetObjectItem(payload, "enableContactAlert");
+	cJSON *alert_target_item = cJSON_GetObjectItem(payload, "alert_target");
 	cJSON *polarity_item = cJSON_GetObjectItem(payload, "polarity");
 	cJSON *arm_item = cJSON_GetObjectItem(payload, "arm");
 	cJSON *getState_item = cJSON_GetObjectItem(payload,"getState");
@@ -474,9 +492,32 @@ void handle_lock_message(cJSON * payload) {
         // Only update if value actually changed
         if (locks[ch].enableContactAlert != val) {
             locks[ch].enableContactAlert = val;
+            if (!val) {
+                locks[ch].alert_target = ALERT_TARGET_NONE;
+            } else if (locks[ch].alert_target == ALERT_TARGET_NONE) {
+                locks[ch].alert_target = ALERT_TARGET_BOTH;
+            }
             ESP_LOGI(TAG, "Contact alert for lock %d changed to %d", ch + 1, val);
             char message[96];
             snprintf(message, sizeof(message), "Lock%d contact alert changed to %d via API", ch + 1, val ? 1 : 0);
+            automation_record_log(message);
+        }
+    }
+
+    if (alert_target_item) {
+        int next_target = locks[ch].alert_target;
+        if (cJSON_IsString(alert_target_item) && alert_target_item->valuestring) {
+            next_target = alert_target_from_string(alert_target_item->valuestring, locks[ch].enableContactAlert);
+        } else if (cJSON_IsNumber(alert_target_item)) {
+            next_target = alert_target_normalize(alert_target_item->valueint, locks[ch].enableContactAlert);
+        }
+        next_target = alert_target_normalize(next_target, locks[ch].enableContactAlert);
+        if (locks[ch].alert_target != next_target) {
+            locks[ch].alert_target = next_target;
+            locks[ch].enableContactAlert = next_target != ALERT_TARGET_NONE;
+            ESP_LOGI(TAG, "Contact alert target for lock %d changed to %s", ch + 1, alert_target_to_string(next_target));
+            char message[128];
+            snprintf(message, sizeof(message), "Lock%d contact alert target changed to %s", ch + 1, alert_target_to_string(next_target));
             automation_record_log(message);
         }
     }
@@ -521,7 +562,7 @@ void handle_lock_message(cJSON * payload) {
     }
 
     // Save settings to flash storage only if any changes were made
-    if (enable_item || enableContactAlert_item || polarity_item || arm_item) {
+    if (enable_item || enableContactAlert_item || alert_target_item || polarity_item || arm_item) {
         storeLockSettings();
         // Send updated state back to client to confirm the change
         sendLockState();
@@ -543,6 +584,7 @@ void lock_init()
 	locks[0].delay = 1;
 	locks[0].alert = true;
 	locks[0].enableContactAlert = false;
+	locks[0].alert_target = ALERT_TARGET_NONE;
 	locks[0].polarity = 0;
 	strcpy(locks[0].type, "lock");
 
@@ -557,7 +599,8 @@ void lock_init()
 	locks[1].delay = 1;
 	locks[1].alert = true;
 	locks[1].enableContactAlert = false;
-	locks[0].polarity = 0;
+	locks[1].alert_target = ALERT_TARGET_NONE;
+	locks[1].polarity = 0;
 	strcpy(locks[1].type, "lock");
 
 	for (int i=0; i < NUM_OF_LOCKS; i++) {

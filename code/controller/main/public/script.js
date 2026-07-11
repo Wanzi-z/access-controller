@@ -599,6 +599,7 @@ const normalizeMaskForOptions = (value, kind, fallback = 1) => {
   const rawMask = kind === 'alert-target'
     ? normalizeAlertTarget(value, true)
     : normalizeChannelMask(value, fallback);
+  if (kind === 'alert-target' && rawMask === 0) return 0;
   const selected = rawMask & availableMask;
   if (selected) return selected;
   if (kind === 'alert-target') return availableMask & ALERT_TARGET_CONTROLLER ? ALERT_TARGET_CONTROLLER : availableMask;
@@ -721,6 +722,7 @@ const applyLockState = (locks = []) => {
     setCardEnabledState(`enableLock_${ch}`, !!lock.enable);
     if (armEl) armEl.checked = !!lock.arm;
     if (contactEl) contactEl.checked = !!lock.enableContactAlert;
+    setCardAlertTargetState(`alertTargetLock_${ch}`, lock.alert_target, !!lock.enableContactAlert);
     if (polarityEl) polarityEl.checked = !!lock.polarity;
 
     /* Ch1: contact state is in API "sense". Ch2: contact state is in API "contact". */
@@ -2167,8 +2169,8 @@ const createCardAlertTargetSelect = (targetId) => {
 
 const setupControlCardChrome = () => {
   const configs = [
-    { label: 'Lock 1', enableId: 'enableLock_1', update: updateLock },
-    { label: 'Lock 2', enableId: 'enableLock_2', update: updateLock },
+    { label: 'Lock 1', enableId: 'enableLock_1', alertId: 'enableContactAlert_1', alertTargetId: 'alertTargetLock_1', alertStateKey: 'enableContactAlert', update: updateLock },
+    { label: 'Lock 2', enableId: 'enableLock_2', alertId: 'enableContactAlert_2', alertTargetId: 'alertTargetLock_2', alertStateKey: 'enableContactAlert', update: updateLock },
     { label: 'Exit 1', enableId: 'enableExit_1', alertId: 'alertExit_1', latchId: 'latchExit_1', modeId: 'modeExit_1', targetId: 'targetExit_1', alertTargetId: 'alertTargetExit_1', update: updateExit, endpoint: 'exit', apply: applyExitState },
     { label: 'Exit 2', enableId: 'enableKeypad_1', alertId: 'alertKeypad_1', latchId: 'latchKeypad_1', modeId: 'modeKeypad_1', targetId: 'targetKeypad_1', alertTargetId: 'alertTargetKeypad_1', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
     { label: 'Exit 3', enableId: 'enableFob_1', alertId: 'alertFob_1', latchId: 'latchFob_1', modeId: 'modeFob_1', targetId: 'targetFob_1', alertTargetId: 'alertTargetFob_1', update: updateFob, endpoint: 'fob', apply: applyFobState },
@@ -2245,7 +2247,8 @@ const setupControlCardChrome = () => {
         alertInput.addEventListener('change', (event) => {
           const alert_target = normalizeAlertTarget(event.target.value, true);
           if (alertEl) alertEl.checked = alertFromTarget(alert_target);
-          config.update(channel, { alert_target, alert: alertFromTarget(alert_target) });
+          const enabledKey = config.alertStateKey || 'alert';
+          config.update(channel, { alert_target, [enabledKey]: alertFromTarget(alert_target) });
         });
       }
       fieldGrid.appendChild(alertWrap);
@@ -2354,7 +2357,10 @@ const setupLockHandlers = () => {
     }
     if (contactEl) {
       contactEl.addEventListener('change', (event) => {
-        updateLock(ch, { enableContactAlert: event.target.checked });
+        updateLock(ch, {
+          enableContactAlert: event.target.checked,
+          alert_target: event.target.checked ? ALERT_TARGET_BOTH : 0,
+        });
       });
     }
     if (polarityEl) {
