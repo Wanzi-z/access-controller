@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=33">
+  <link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
   <header class="app-bar">
@@ -380,61 +380,14 @@
         </div>
       </div>
 
-      <div class="card" id="wiegand-card">
+      <div class="card" id="credential-users-card">
         <div class="card-header">
           <div>
-            <h2>RFID Cards</h2>
-            <p class="subtitle">Registered RFID credentials.</p>
-          </div>
-          <div class="card-actions">
-            <button type="button" class="secondary danger" id="wiegandRemoveAllBtn">Remove All Cards</button>
+            <h2>Users</h2>
+            <p class="subtitle">Credentials grouped by user.</p>
           </div>
         </div>
-        <div id="wiegandUserList" class="user-list"></div>
-      </div>
-
-      <div class="card" id="keypad-card">
-        <div class="card-header">
-          <div>
-            <h2>PIN Codes</h2>
-            <p class="subtitle">Registered keypad PIN credentials.</p>
-          </div>
-          <div class="card-actions">
-            <button type="button" class="secondary danger" id="keypadRemoveAllBtn">Remove All PINs</button>
-          </div>
-        </div>
-        <div id="keypadUserList" class="user-list">
-          <p class="empty-state muted">No PIN codes configured yet.</p>
-        </div>
-        <div id="keypadAddForm" class="add-form" hidden>
-          <div class="form-row">
-            <label class="form-field">
-              <span>Name</span>
-              <input type="text" id="keypadNewName" placeholder="e.g. John Smith">
-            </label>
-            <label class="form-field">
-              <span>PIN Code</span>
-              <input type="text" id="keypadNewPin" placeholder="e.g. 1234" maxlength="8" pattern="[0-9]*" inputmode="numeric">
-            </label>
-          </div>
-          <div class="form-actions">
-            <button id="keypadCancelBtn" type="button" class="secondary">Cancel</button>
-            <button id="keypadSaveNewBtn" type="button">Save PIN</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="card" id="rf-card">
-        <div class="card-header">
-          <div>
-            <h2>Remote FOBs</h2>
-            <p class="subtitle">Registered 433MHz remotes.</p>
-          </div>
-          <div class="card-actions">
-            <button type="button" class="secondary danger" id="rfRemoveAllBtn">Remove All Remotes</button>
-          </div>
-        </div>
-        <div id="rfUserList" class="user-list"></div>
+        <div id="credentialUserList" class="credential-user-list"></div>
       </div>
     </section>
 
@@ -630,6 +583,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=33"></script>
+  <script src="script.js?v=34"></script>
 </body>
 </html>

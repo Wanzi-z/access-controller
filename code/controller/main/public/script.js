@@ -13,6 +13,8 @@ const App = {
   rfAutoSavedIds: new Set(),
   rfAutoSavingIds: new Set(),
   credentialAutoSaveTimers: new Map(),
+  credentialUserOpenKeys: new Set(),
+  credentialUserCollapsedKeys: new Set(),
   toastTimer: null,
   elements: {},
   pageBoot: {
@@ -680,10 +682,7 @@ const applyFastSignalState = (state = {}) => {
   const previousPinActive = pinEntriesHaveActiveCode(App.data?.wiegand?.pinEntries);
   const nextPinActive = pinEntriesHaveActiveCode(state.wiegand?.pinEntries);
   if (App.data) {
-    App.data.wiegand = {
-      ...(App.data.wiegand || {}),
-      ...(state.wiegand || {}),
-    };
+    App.data.wiegand = mergeCredentialStateFromSummary(App.data.wiegand || {}, state.wiegand || {});
   }
   renderLivePinEntries(state.wiegand?.pinEntries || []);
   renderWiegandDevices(state.wiegand?.pinEntries || []);
@@ -704,7 +703,7 @@ const applyFastSignalState = (state = {}) => {
 };
 
 const findCredentialCard = (containerId, id) => {
-  const container = document.getElementById(containerId);
+  const container = document.getElementById(containerId) || App.elements.credentialUserList;
   if (!container || !id) return null;
   return Array.from(container.querySelectorAll('.credential-card'))
     .find((card) => card.dataset.id === String(id));
@@ -1226,6 +1225,7 @@ const renderWiegand = (wiegand = {}) => {
     }
   }
 
+  renderCredentialUsers();
   updateRfReceivedTimestamps();
   ensureRfTimestampTimer();
   startWiegandPolling();
@@ -1451,6 +1451,10 @@ const renderRf = (rf = {}) => {
     users = [],
   } = rf;
 
+  if (App.data) {
+    App.data.rf = rf;
+  }
+
   const statusEl = App.elements.rfStatus;
   const pendingEl = App.elements.rfPending;
   const duplicateEl = App.elements.rfDuplicate;
@@ -1511,6 +1515,7 @@ const renderRf = (rf = {}) => {
     }
   }
 
+  renderCredentialUsers();
   updateRfReceivedTimestamps();
   ensureRfTimestampTimer();
 
@@ -2445,11 +2450,33 @@ const setupForms = () => {
   }
 };
 
+const setupCredentialUserHandlers = () => {
+  const listEl = App.elements.credentialUserList;
+  if (!listEl) return;
+
+  listEl.addEventListener('click', (event) => {
+    const toggle = event.target.closest('button[data-action="toggle-user-group"]');
+    if (!toggle) return;
+    const key = toggle.getAttribute('data-user-key');
+    if (!key) return;
+
+    const isOpen = toggle.getAttribute('aria-expanded') === 'true';
+    if (isOpen) {
+      App.credentialUserOpenKeys.delete(key);
+      App.credentialUserCollapsedKeys.add(key);
+    } else {
+      App.credentialUserOpenKeys.add(key);
+      App.credentialUserCollapsedKeys.delete(key);
+    }
+    renderCredentialUsers();
+  });
+};
+
 const setupWiegandHandlers = () => {
   const registerBtn = App.elements.wiegandRegisterBtn;
   const stopBtn = App.elements.wiegandStopBtn;
   const channelSelect = App.elements.wiegandChannelSelect;
-  const listEl = App.elements.wiegandUserList;
+  const listEl = App.elements.wiegandUserList || App.elements.credentialUserList;
   const removeAllBtn = App.elements.wiegandRemoveAllBtn;
 
   if (registerBtn && channelSelect) {
@@ -2592,7 +2619,7 @@ const setupWiegandHandlers = () => {
 
     listEl.addEventListener('input', (event) => {
       const nameInput = event.target.closest('.user-name-input');
-      if (!nameInput) return;
+      if (!nameInput || !nameInput.closest('.credential-card--rfid')) return;
       scheduleCredentialNameSave(nameInput, (container) => saveWiegandCard(container, null, { quiet: true }));
     });
 
@@ -2624,7 +2651,7 @@ const setupWiegandHandlers = () => {
 const setupRfHandlers = () => {
   const registerBtn = App.elements.rfRegisterBtn;
   const stopBtn = App.elements.rfStopBtn;
-  const listEl = App.elements.rfUserList;
+  const listEl = App.elements.rfUserList || App.elements.credentialUserList;
   const removeAllBtn = App.elements.rfRemoveAllBtn;
 
   if (registerBtn) {
@@ -2772,7 +2799,7 @@ const setupRfHandlers = () => {
 
     listEl.addEventListener('input', (event) => {
       const nameInput = event.target.closest('.user-name-input');
-      if (!nameInput) return;
+      if (!nameInput || !nameInput.closest('.credential-card--remote')) return;
       scheduleCredentialNameSave(nameInput, (container) => saveRfCard(container, null, { quiet: true }));
     });
 
@@ -2995,6 +3022,292 @@ const buildKeypadUserRow = (user, index, existingValue) => {
   `;
 };
 
+const normalizeCredentialUserName = (value) => {
+  const name = String(value || '').trim();
+  return name || 'Default User';
+};
+
+const credentialUserNameKey = (name) => normalizeCredentialUserName(name).toLowerCase();
+
+const credentialOwnerUuid = (item = {}) => (
+  item.userUuid || item.user_uuid || item.uuid || ''
+);
+
+const credentialOwnerName = (item = {}) => normalizeCredentialUserName(item.userName || item.name);
+
+const collectCredentialFormValues = () => {
+  const root = App.elements.credentialUserList
+    || App.elements.wiegandUserList
+    || App.elements.keypadUserList
+    || App.elements.rfUserList;
+  const values = {
+    rfid: {},
+    pin: {},
+    remote: {},
+    focused: null,
+  };
+  if (!root) return values;
+
+  root.querySelectorAll('.credential-card').forEach((row) => {
+    const id = row.getAttribute('data-id');
+    if (!id || row.dataset.pending === 'true') return;
+
+    if (row.classList.contains('credential-card--rfid')) {
+      const nameInput = row.querySelector('.user-name-input');
+      const modeInput = row.querySelector('.wiegand-mode-select');
+      const channelInput = row.querySelector('.wiegand-channel-select');
+      const alertTargetInput = row.querySelector('.wiegand-alert-target-select');
+      values.rfid[id] = {
+        name: nameInput ? nameInput.value : undefined,
+        mode: modeInput ? modeInput.value : undefined,
+        channel_mask: channelInput ? Number(channelInput.value) : undefined,
+        alert_target: alertTargetInput ? alertTargetInput.value : undefined,
+        alert: alertTargetInput ? alertFromTarget(alertTargetInput.value) : undefined,
+      };
+    } else if (row.classList.contains('credential-card--remote')) {
+      const nameInput = row.querySelector('.user-name-input');
+      const modeSel = row.querySelector('.rf-mode-select');
+      const chSel = row.querySelector('.rf-channel-select');
+      const exitInput = row.querySelector('.rf-exit-seconds');
+      const alertTargetInput = row.querySelector('.rf-alert-target-select');
+      values.remote[id] = {
+        name: nameInput ? nameInput.value : undefined,
+        mode: modeSel ? modeSel.value : undefined,
+        channel_mask: chSel ? Number(chSel.value) : undefined,
+        exit_seconds: exitInput ? Number(exitInput.value) : undefined,
+        alert_target: alertTargetInput ? alertTargetInput.value : undefined,
+        alert: alertTargetInput ? alertFromTarget(alertTargetInput.value) : undefined,
+        enabled: row.dataset.enabled !== 'false',
+      };
+    } else if (row.classList.contains('credential-card--pin')) {
+      const nameInput = row.querySelector('.user-name-input');
+      const pinInput = row.querySelector('.pin-code-input');
+      const modeInput = row.querySelector('.pin-mode-select');
+      const channelInput = row.querySelector('.pin-channel-select');
+      const keypadInput = row.querySelector('.pin-keypad-select');
+      const exitInput = row.querySelector('.pin-exit-seconds');
+      const alertTargetInput = row.querySelector('.pin-alert-target-select');
+      values.pin[id] = {
+        name: nameInput ? nameInput.value : undefined,
+        pin: pinInput ? pinInput.value : undefined,
+        mode: modeInput ? modeInput.value : undefined,
+        channel_mask: channelInput ? Number(channelInput.value) : undefined,
+        keypad_mask: keypadInput ? Number(keypadInput.value) : undefined,
+        exit_seconds: exitInput ? Number(exitInput.value) : undefined,
+        alert_target: alertTargetInput ? alertTargetInput.value : undefined,
+        alert: alertTargetInput ? alertFromTarget(alertTargetInput.value) : undefined,
+        enabled: row.dataset.enabled !== 'false',
+      };
+    }
+
+    if (document.activeElement && row.contains(document.activeElement)) {
+      let type = null;
+      if (row.classList.contains('credential-card--rfid')) type = 'rfid';
+      if (row.classList.contains('credential-card--remote')) type = 'remote';
+      if (row.classList.contains('credential-card--pin')) type = 'pin';
+      let selector = null;
+      [
+        '.user-name-input',
+        '.pin-code-input',
+        '.wiegand-mode-select',
+        '.wiegand-channel-select',
+        '.wiegand-alert-target-select',
+        '.rf-mode-select',
+        '.rf-channel-select',
+        '.rf-alert-target-select',
+        '.rf-exit-seconds',
+        '.pin-mode-select',
+        '.pin-channel-select',
+        '.pin-keypad-select',
+        '.pin-alert-target-select',
+        '.pin-exit-seconds',
+      ].some((candidate) => {
+        if (document.activeElement.matches(candidate)) {
+          selector = candidate;
+          return true;
+        }
+        return false;
+      });
+      if (type && selector) values.focused = { type, id, selector };
+    }
+  });
+
+  return values;
+};
+
+const buildCredentialUserGroups = () => {
+  const keypadUsers = Array.isArray(App.data?.keypadUsers) ? App.data.keypadUsers : [];
+  const wiegandUsers = Array.isArray(App.data?.wiegand?.users) ? App.data.wiegand.users : [];
+  const rfUsers = Array.isArray(App.data?.rf?.users) ? App.data.rf.users : [];
+  const nameToUser = new Map();
+  const groups = new Map();
+
+  keypadUsers.forEach((user, index) => {
+    const uuid = user.uuid || '';
+    const name = normalizeCredentialUserName(user.name || `User ${index + 1}`);
+    if (uuid) nameToUser.set(credentialUserNameKey(name), { uuid, name });
+  });
+
+  const groupKeyFor = (uuid, name) => {
+    if (uuid) return `uuid:${uuid}`;
+    const known = nameToUser.get(credentialUserNameKey(name));
+    if (known?.uuid) return `uuid:${known.uuid}`;
+    return `name:${credentialUserNameKey(name)}`;
+  };
+
+  const ensureGroup = ({ uuid = '', name = '' } = {}) => {
+    const known = !uuid ? nameToUser.get(credentialUserNameKey(name)) : null;
+    const groupUuid = uuid || known?.uuid || '';
+    const groupName = normalizeCredentialUserName(name || known?.name);
+    const key = groupKeyFor(groupUuid, groupName);
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        uuid: groupUuid,
+        name: groupName,
+        pins: [],
+        rfid: [],
+        remotes: [],
+      });
+    } else if (groupUuid && !groups.get(key).uuid) {
+      groups.get(key).uuid = groupUuid;
+    }
+    return groups.get(key);
+  };
+
+  keypadUsers.forEach((user, index) => {
+    ensureGroup({
+      uuid: user.uuid || '',
+      name: user.name || `User ${index + 1}`,
+    });
+  });
+
+  const pinCredentials = [
+    ...expandPinUserCredentials(keypadUsers).filter((user) => String(user.pin || '').trim()),
+    ...livePinCredentialRows().map((user) => ({
+      ...user,
+      uuid: App.data?.enrollment?.userUuid || '',
+      name: App.data?.enrollment?.userName || user.name,
+    })),
+  ];
+
+  pinCredentials.forEach((user) => {
+    ensureGroup({
+      uuid: user.uuid || '',
+      name: user.name,
+    }).pins.push(user);
+  });
+
+  wiegandUsers.forEach((user) => {
+    ensureGroup({
+      uuid: credentialOwnerUuid(user),
+      name: credentialOwnerName(user),
+    }).rfid.push(user);
+  });
+
+  rfUsers.forEach((user) => {
+    ensureGroup({
+      uuid: credentialOwnerUuid(user),
+      name: credentialOwnerName(user),
+    }).remotes.push(user);
+  });
+
+  return Array.from(groups.values())
+    .sort((left, right) => left.name.localeCompare(right.name));
+};
+
+const credentialGroupSummary = (group) => {
+  const parts = [
+    [group.rfid.length, 'RFID'],
+    [group.pins.length, 'PIN'],
+    [group.remotes.length, 'Remote'],
+  ]
+    .filter(([count]) => count > 0)
+    .map(([count, label]) => `${count} ${label}${count === 1 || label === 'RFID' ? '' : 's'}`);
+  return parts.length ? parts.join(' · ') : 'No credentials';
+};
+
+const groupContainsFocusedCredential = (group, focused) => {
+  if (!focused) return false;
+  const id = String(focused.id || '');
+  if (!id) return false;
+  if (focused.type === 'rfid') return group.rfid.some((user) => String(user.id || '') === id);
+  if (focused.type === 'remote') return group.remotes.some((user) => String(user.id || '') === id);
+  if (focused.type === 'pin') return group.pins.some((user) => String(user.credentialId || user.uuid || '') === id);
+  return false;
+};
+
+const groupMatchesActiveEnrollment = (group) => {
+  const enrollment = App.data?.enrollment || {};
+  if (!enrollment.active) return false;
+  if (enrollment.userUuid && group.uuid === enrollment.userUuid) return true;
+  return credentialUserNameKey(group.name) === credentialUserNameKey(enrollment.userName || '');
+};
+
+const renderCredentialUsers = () => {
+  const listEl = App.elements.credentialUserList;
+  if (!listEl) return;
+
+  const preserved = collectCredentialFormValues();
+  const groups = buildCredentialUserGroups();
+  if (!groups.length) {
+    listEl.innerHTML = '<p class="empty-state muted">No users or credentials yet.</p>';
+    return;
+  }
+
+  listEl.innerHTML = groups.map((group) => {
+    const shouldOpen =
+      App.credentialUserOpenKeys.has(group.key)
+      || groupContainsFocusedCredential(group, preserved.focused)
+      || groupMatchesActiveEnrollment(group)
+      || (!App.credentialUserCollapsedKeys.has(group.key) && groups.length === 1);
+    const credentialCards = [
+      ...group.rfid.map((user) => buildWiegandUserRow(user, preserved.rfid[user.id])),
+      ...group.pins.map((user, index) => buildKeypadUserRow(user, index, preserved.pin[user.credentialId || user.uuid])),
+      ...group.remotes.map((user) => buildRfUserRow(user, preserved.remote[user.id])),
+    ].join('');
+
+    return `
+      <section class="credential-user-group ${shouldOpen ? 'is-open' : ''}" data-user-key="${escapeHtml(group.key)}">
+        <button type="button" class="credential-user-header" data-action="toggle-user-group" data-user-key="${escapeHtml(group.key)}" aria-expanded="${shouldOpen ? 'true' : 'false'}">
+          <span class="credential-user-title">
+            <strong>${escapeHtml(group.name)}</strong>
+          </span>
+          <span class="credential-user-summary">${escapeHtml(credentialGroupSummary(group))}</span>
+          <span class="credential-user-chevron" aria-hidden="true"></span>
+        </button>
+        <div class="credential-user-body" ${shouldOpen ? '' : 'hidden'}>
+          ${credentialCards
+            ? `<div class="credential-user-grid">${credentialCards}</div>`
+            : '<p class="empty-state muted">No credentials for this user yet.</p>'}
+        </div>
+      </section>
+    `;
+  }).join('');
+
+  applyCredentialActivityState({
+    wiegand: App.data?.wiegand || {},
+    rf: App.data?.rf || {},
+  });
+
+  if (Array.isArray(App.data?.keypadUsers)) {
+    applyPinCredentialActivityState(App.data.keypadUsers);
+  }
+
+  const focused = preserved.focused;
+  if (focused) {
+    const row = Array.from(listEl.querySelectorAll('.credential-card'))
+      .find((candidate) => candidate.getAttribute('data-id') === focused.id);
+    const input = row?.querySelector(focused.selector);
+    if (input) {
+      input.focus();
+      if (typeof input.setSelectionRange === 'function') {
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+  }
+};
+
 const applyPinCredentialActivityState = (users = []) => {
   expandPinUserCredentials(users).forEach((user) => {
     const card = findCredentialCard('keypadUserList', user.credentialId || user.uuid || '');
@@ -3032,18 +3345,20 @@ const renderLivePinEntries = (entries = []) => {
 
 const renderKeypadUsers = (users = []) => {
   const listEl = App.elements.keypadUserList;
+  if (App.data) {
+    App.data.keypadUsers = Array.isArray(users) ? users : [];
+  }
   renderEnrollmentUserOptions(users);
   if (App.elements.keypadRemoveAllBtn) {
     App.elements.keypadRemoveAllBtn.disabled = !users.length;
   }
-  if (!listEl) return;
   const credentialRows = [
     ...expandPinUserCredentials(users),
   ];
 
-  if (!credentialRows.length) {
+  if (listEl && !credentialRows.length) {
     listEl.innerHTML = '<p class="empty-state muted">No PIN codes configured yet.</p>';
-  } else {
+  } else if (listEl) {
     // Preserve input values that user may be editing
     const existingValues = {};
     let focusedUuid = null;
@@ -3095,6 +3410,7 @@ const renderKeypadUsers = (users = []) => {
       }
     }
   }
+  renderCredentialUsers();
 };
 
 const renderEnrollmentUserOptions = (users = []) => {
@@ -3271,7 +3587,7 @@ const setupKeypadPinHandlers = () => {
   const addForm = App.elements.keypadAddForm;
   const cancelBtn = App.elements.keypadCancelBtn;
   const saveNewBtn = App.elements.keypadSaveNewBtn;
-  const listEl = App.elements.keypadUserList;
+  const listEl = App.elements.keypadUserList || App.elements.credentialUserList;
   const removeAllBtn = App.elements.keypadRemoveAllBtn;
 
   if (addBtn && addForm) {
@@ -3470,7 +3786,7 @@ const setupKeypadPinHandlers = () => {
 
     listEl.addEventListener('input', (event) => {
       const input = event.target.closest('.user-name-input, .pin-code-input, .pin-exit-seconds');
-      if (!input) return;
+      if (!input || !input.closest('.credential-card--pin')) return;
       scheduleCredentialNameSave(input, (container) => savePinUser(container, null, { quiet: true }));
     });
 
@@ -3701,6 +4017,7 @@ document.addEventListener('DOMContentLoaded', () => {
     wiegandStatusBar: document.getElementById('wiegandStatusBar'),
     wiegandPending: document.getElementById('wiegandPending'),
     wiegandDuplicate: document.getElementById('wiegandDuplicate'),
+    credentialUserList: document.getElementById('credentialUserList'),
     wiegandUserList: document.getElementById('wiegandUserList'),
     wiegandRegisterBtn: document.getElementById('wiegandRegisterBtn'),
     wiegandStopBtn: document.getElementById('wiegandStopBtn'),
@@ -3758,6 +4075,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupKeypadHandlers();
   setupEnrollmentHandlers();
   setupForms();
+  setupCredentialUserHandlers();
   setupWiegandHandlers();
   setupRfHandlers();
   setupKeypadPinHandlers();

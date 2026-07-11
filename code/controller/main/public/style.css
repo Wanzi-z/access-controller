@@ -563,7 +563,8 @@ button.secondary.danger:hover {
 
 #wiegandUserList,
 #keypadUserList,
-#rfUserList {
+#rfUserList,
+.credential-user-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 360px));
   gap: 12px;
@@ -573,8 +574,95 @@ button.secondary.danger:hover {
 
 #wiegandUserList .empty-state,
 #keypadUserList .empty-state,
-#rfUserList .empty-state {
+#rfUserList .empty-state,
+#credentialUserList .empty-state {
   grid-column: 1 / -1;
+}
+
+.credential-user-list {
+  display: grid;
+  gap: 10px;
+}
+
+.credential-user-group {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(15, 26, 35, 0.78);
+}
+
+.credential-user-header {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 24px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 0;
+  color: var(--color-text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.credential-user-header:hover,
+.credential-user-header:focus-visible {
+  background: rgba(53, 240, 194, 0.06);
+}
+
+.credential-user-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.credential-user-title strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 1rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.credential-user-title span {
+  overflow: hidden;
+  color: var(--color-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.credential-user-summary {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.credential-user-chevron {
+  width: 9px;
+  height: 9px;
+  justify-self: center;
+  border-right: 2px solid var(--color-muted);
+  border-bottom: 2px solid var(--color-muted);
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+}
+
+.credential-user-group.is-open .credential-user-chevron {
+  transform: rotate(45deg);
+}
+
+.credential-user-body {
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+  background: rgba(7, 12, 18, 0.28);
 }
 
 .credential-card.user-row {
