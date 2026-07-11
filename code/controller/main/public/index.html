@@ -535,16 +535,16 @@
           </div>
         </div>
         <form id="wifiForm" class="form">
-          <label class="form-field">
-            <span>Wi-Fi name (SSID)</span>
-            <input type="text" id="wifiName" placeholder="Network name">
-          </label>
-          <label class="form-field">
-            <span>Password</span>
-            <input type="password" id="wifiPassword" placeholder="Password">
-          </label>
-          <div class="form-actions">
-            <button type="submit">Save Wi-Fi</button>
+          <div class="wifi-credentials-row">
+            <label class="form-field">
+              <span>Wi-Fi name (SSID)</span>
+              <input type="text" id="wifiName" placeholder="Network name">
+            </label>
+            <label class="form-field">
+              <span>Password</span>
+              <input type="password" id="wifiPassword" placeholder="Password">
+            </label>
+            <button type="submit" class="wifi-credentials-save">Save Wi-Fi</button>
           </div>
         </form>
         <div class="wifi-scan-panel">
@@ -580,7 +580,7 @@
             <p class="subtitle">Define the upstream controller URL.</p>
           </div>
         </div>
-        <form id="serverForm" class="form">
+        <form id="serverForm" class="form form-narrow">
           <label class="form-field">
             <span>Server URL</span>
             <input type="text" id="serverUrl" placeholder="https://open-automation.org/devices" value="https://open-automation.org/devices">

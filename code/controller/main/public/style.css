@@ -1188,18 +1188,21 @@ body {
   gap: 12px;
 }
 
-.device-lock-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+/* Lock/Wiegand grids always hold exactly 2 cards (never more), so an explicit 2-column layout
+   is simpler and more predictable than auto-fit/minmax here -- auto-fit's fitting algorithm
+   sizes tracks using minmax()'s MAX bound (320px) to decide how many columns fit, not the min,
+   so "minmax(220px, 320px)" was only ever showing 2 columns above ~700px of container width
+   even though two 220px cards would have comfortably fit down to ~450px. A capped max-width
+   keeps the pair from stretching edge-to-edge on wide screens instead. */
+.device-lock-grid,
+.wiegand-device-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   justify-content: start;
+  max-width: 680px;
 }
 
 .device-exit-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.wiegand-device-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
-  justify-content: start;
 }
 
 .wiegand-device-card,
@@ -2592,9 +2595,6 @@ button.secondary.danger {
 
   .channel-grid,
   .channel-card,
-  .device-lock-grid,
-  .device-exit-grid,
-  .wiegand-device-grid,
   .wiegand-status-bar,
   .wiegand-status-metrics,
   .info-list,
@@ -2893,5 +2893,50 @@ button.secondary.danger {
 
   .schedule-day-sep {
     display: none;
+  }
+}
+
+/* Wi-Fi credentials row: SSID + password + save, side by side instead of one full-width
+   field per row -- these are short values, they don't need the whole (up to 1500px) card width. */
+.wifi-credentials-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: 12px;
+  max-width: 720px;
+}
+
+.wifi-credentials-row .form-field {
+  min-width: 0;
+}
+
+.wifi-credentials-save {
+  white-space: nowrap;
+}
+
+.form-narrow {
+  max-width: 480px;
+}
+
+@media (max-width: 620px) {
+  .wifi-credentials-row {
+    grid-template-columns: 1fr;
+    max-width: none;
+  }
+
+  .wifi-credentials-save {
+    width: 100%;
+  }
+}
+
+/* Device Controls cards (Locks/Exits/Wiegand): these were pulled out of the blanket
+   max-width:760px "everything goes single column" rule above -- that forced one card per row
+   far earlier than the content actually needed (two 220-320px lock cards fit down to ~460px).
+   Only collapse to a single column at genuine phone widths. */
+@media (max-width: 480px) {
+  .device-lock-grid,
+  .device-exit-grid,
+  .wiegand-device-grid {
+    grid-template-columns: 1fr;
   }
 }
