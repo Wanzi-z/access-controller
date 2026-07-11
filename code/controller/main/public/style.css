@@ -1176,6 +1176,14 @@ body {
   display: none;
 }
 
+.control-card-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
 .control-card-title {
   display: flex;
   align-items: center;
@@ -1203,19 +1211,10 @@ body {
 .card-mode-select,
 .card-target-select,
 .card-alert-target-select {
-  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
   gap: 5px;
   min-width: 0;
-}
-
-.card-target-select {
-  grid-column: 1 / 2;
-}
-
-.card-alert-target-select {
-  grid-column: 2 / -1;
 }
 
 .card-mode-select > span,
@@ -1235,6 +1234,10 @@ body {
   width: 100%;
   min-height: 36px;
   padding: 7px 9px;
+}
+
+.card-mode-select {
+  grid-column: 1 / -1;
 }
 
 .hidden-card-control {
@@ -2353,6 +2356,10 @@ button.secondary.danger {
 
   .control-card-header {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .control-card-fields {
+    grid-template-columns: 1fr;
   }
 
   .card-mode-select,

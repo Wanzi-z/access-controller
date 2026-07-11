@@ -767,7 +767,7 @@ const renderCredentialAlertToggle = (className, checked, label = 'Alert beep') =
 
 const renderLockTargetSelect = (className, channelMask) => `
   <label class="stacked">
-    <span>Lock target</span>
+    <span>Target</span>
     <select class="${className}">
       <option value="1" ${Number(channelMask) === 1 ? 'selected' : ''}>Lock 1</option>
       <option value="2" ${Number(channelMask) === 2 ? 'selected' : ''}>Lock 2</option>
@@ -1274,7 +1274,7 @@ const buildRfUserRow = (user, existingValue) => {
             </select>
           </label>
           <label class="stacked">
-            <span>Lock target</span>
+            <span>Target</span>
             <select class="rf-channel-select">
               <option value="1" ${channelMask === 1 ? 'selected' : ''}>Lock 1</option>
               <option value="2" ${channelMask === 2 ? 'selected' : ''}>Lock 2</option>
@@ -1953,7 +1953,7 @@ const createCardTargetSelect = (targetId) => {
   const wrap = document.createElement('label');
   wrap.className = 'card-target-select stacked';
   wrap.innerHTML = `
-    <span>Lock target</span>
+    <span>Target</span>
     <select id="${targetId}">
       <option value="1">Lock 1</option>
       <option value="2">Lock 2</option>
@@ -2012,6 +2012,8 @@ const setupControlCardChrome = () => {
       titleWrap.appendChild(title);
     }
     header.appendChild(titleWrap);
+    const fieldGrid = document.createElement('div');
+    fieldGrid.className = 'control-card-fields';
 
     if (config.latchId && config.modeId) {
       const modeWrap = createCardModeSelect(config.modeId, config.latchId);
@@ -2026,7 +2028,7 @@ const setupControlCardChrome = () => {
           config.update(channel, { mode, latch });
         });
       }
-      header.appendChild(modeWrap);
+      fieldGrid.appendChild(modeWrap);
       latchEl?.closest('label')?.classList.add('hidden-card-control');
     }
 
@@ -2039,7 +2041,7 @@ const setupControlCardChrome = () => {
           config.update(channel, { channel_mask: Number(event.target.value) });
         });
       }
-      header.appendChild(targetWrap);
+      fieldGrid.appendChild(targetWrap);
     }
 
     if (config.alertTargetId) {
@@ -2054,7 +2056,7 @@ const setupControlCardChrome = () => {
           config.update(channel, { alert_target, alert: alertFromTarget(alert_target) });
         });
       }
-      header.appendChild(alertWrap);
+      fieldGrid.appendChild(alertWrap);
       alertEl?.closest('label')?.classList.add('hidden-card-control');
     }
 
@@ -2076,6 +2078,9 @@ const setupControlCardChrome = () => {
       config.update(channel, { enable: !enableEl.checked });
     });
     header.appendChild(enableButton);
+    if (fieldGrid.childElementCount > 0) {
+      header.appendChild(fieldGrid);
+    }
     section.insertBefore(header, section.firstChild);
     enableEl.closest('label')?.classList.add('hidden-card-control');
     setCardEnabledState(config.enableId, enableEl.checked);
@@ -2971,7 +2976,7 @@ const buildKeypadUserRow = (user, index, existingValue) => {
             </select>
           </label>
           <label class="stacked">
-            <span>Lock target</span>
+            <span>Target</span>
             <select class="pin-channel-select">
               <option value="1" ${channelMask === 1 ? 'selected' : ''}>Lock 1</option>
               <option value="2" ${channelMask === 2 ? 'selected' : ''}>Lock 2</option>
