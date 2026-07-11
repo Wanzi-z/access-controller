@@ -1062,6 +1062,12 @@ body {
   white-space: nowrap;
 }
 
+#headerClockChip strong {
+  color: var(--color-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+
 .header-chip strong {
   min-width: 0;
   overflow: hidden;
@@ -1314,6 +1320,18 @@ body {
   min-width: 0;
 }
 
+.control-card-mode-row {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+}
+
+.control-card-mode-row .card-mode-select,
+.control-card-mode-row .card-delay-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .control-card-title {
   display: flex;
   align-items: center;
@@ -1343,6 +1361,7 @@ body {
 .card-mode-select,
 .card-target-select,
 .card-alert-target-select,
+.card-delay-field,
 .multi-select-field {
   display: flex;
   flex-direction: column;
@@ -1353,6 +1372,7 @@ body {
 .card-mode-select > span,
 .card-target-select > span,
 .card-alert-target-select > span,
+.card-delay-field > span,
 .multi-select-field > span {
   color: var(--color-muted);
   font-size: 0.68rem;
@@ -1364,7 +1384,8 @@ body {
 
 .card-mode-select select,
 .card-target-select select,
-.card-alert-target-select select {
+.card-alert-target-select select,
+.card-delay-field input {
   width: 100%;
   min-height: 36px;
   padding: 7px 9px;
@@ -1786,6 +1807,59 @@ body {
 
 .form-switch input[type="checkbox"]:checked::after {
   transform: none;
+}
+
+.lock-toggle-row {
+  display: flex;
+  gap: 10px;
+}
+
+.form-switch.lock-toggle-pill {
+  position: relative;
+  flex: 1 1 0;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #2a3944;
+  color: var(--color-muted);
+  text-align: center;
+  transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
+}
+
+.form-switch.lock-toggle-pill span {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  pointer-events: none;
+}
+
+.form-switch.lock-toggle-pill input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  opacity: 0;
+}
+
+.form-switch.lock-toggle-pill input[type="checkbox"]::after {
+  content: none;
+}
+
+.form-switch.lock-toggle-pill:has(input[type="checkbox"]:checked) {
+  background: var(--color-primary-dark);
+  border-color: rgba(53, 240, 194, 0.48);
+  color: #06110f;
+}
+
+.form-switch.lock-toggle-pill:has(input[type="checkbox"]:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 input[type="number"],
@@ -2621,6 +2695,10 @@ button.secondary.danger {
     grid-template-columns: 1fr;
   }
 
+  .control-card-mode-row {
+    flex-direction: column;
+  }
+
   .card-mode-select,
   .card-target-select,
   .card-alert-target-select {
@@ -2628,6 +2706,192 @@ button.secondary.danger {
   }
 
   .card-enable-text {
+    display: none;
+  }
+}
+
+/* Schedule profiles */
+.schedule-profile-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.schedule-profile-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 7px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: rgba(9, 16, 23, 0.76);
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: none;
+  transition: background var(--transition-base), border-color var(--transition-base), color var(--transition-base);
+}
+
+.schedule-profile-chip:hover {
+  border-color: rgba(53, 240, 194, 0.3);
+  box-shadow: none;
+  transform: none;
+}
+
+.schedule-profile-chip.is-active {
+  background: rgba(53, 240, 194, 0.1);
+  border-color: rgba(53, 240, 194, 0.42);
+  color: var(--color-primary);
+}
+
+.schedule-profile-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px dashed var(--color-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.schedule-profile-add:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(53, 240, 194, 0.08);
+  box-shadow: none;
+  transform: none;
+}
+
+.schedule-profile-editor {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  gap: 14px;
+}
+
+.schedule-profile-editor[hidden] {
+  display: none;
+}
+
+.schedule-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.schedule-profile-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.schedule-editor-readonly-note {
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.schedule-editor-utc-note {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+}
+
+.schedule-day-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.schedule-day-row {
+  display: grid;
+  grid-template-columns: 92px 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-panel-2);
+}
+
+.schedule-day-row.is-day-disabled {
+  opacity: 0.5;
+}
+
+.schedule-day-row .form-switch {
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.schedule-day-row .form-switch input[type="checkbox"] {
+  width: 44px;
+  height: 24px;
+}
+
+.schedule-day-time-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.schedule-day-time {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.schedule-day-time-ampm {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.schedule-day-row[data-day-disabled="true"] .schedule-day-time-group {
+  visibility: hidden;
+}
+
+.schedule-day-sep {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.user-schedule-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.user-schedule-select > span {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.user-schedule-select select {
+  max-width: 320px;
+}
+
+@media (max-width: 640px) {
+  .schedule-day-row {
+    grid-template-columns: 84px 1fr;
+    row-gap: 6px;
+  }
+
+  .schedule-day-sep {
     display: none;
   }
 }

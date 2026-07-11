@@ -9,6 +9,7 @@
 #include "nvs_flash.h"
 #include "esp_sntp.h"
 #include "automation.h"
+#include "ip_timezone.h"
 #include <sys/time.h>
 #include <stdbool.h>
 
@@ -88,6 +89,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             s_sntp_started = true;
             ESP_LOGI(TAG, "SNTP initialised");
         }
+        ip_timezone_start();
     }
 }
 

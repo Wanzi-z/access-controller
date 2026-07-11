@@ -10,12 +10,18 @@ const App = {
   uptimeTimer: null,
   systemUptimeBaseSeconds: 0,
   systemUptimeBaseMs: 0,
+  headerClockTimer: null,
+  headerClockBaseUnixSeconds: 0,
+  headerClockBaseMs: 0,
+  headerClockUtcOffsetSeconds: 0,
+  headerClockResolved: false,
   rfAutoSavedIds: new Set(),
   rfAutoSavingIds: new Set(),
   credentialAutoSaveTimers: new Map(),
   credentialUserCreatePromises: new Map(),
   credentialUserOpenKeys: new Set(),
   credentialUserCollapsedKeys: new Set(),
+  scheduleEditingId: null,
   toastTimer: null,
   elements: {},
   pageBoot: {
@@ -430,6 +436,15 @@ const applySystemInfo = (system = {}) => {
     App.systemUptimeBaseSeconds = Math.max(0, Math.floor(uptimeSeconds));
     App.systemUptimeBaseMs = Date.now();
   }
+
+  const unixTime = Number(system.unixTime);
+  App.headerClockResolved = Number.isFinite(unixTime) && unixTime > 0;
+  if (App.headerClockResolved) {
+    App.headerClockBaseUnixSeconds = Math.floor(unixTime);
+    App.headerClockUtcOffsetSeconds = Number(system.utcOffsetSeconds) || 0;
+    App.headerClockBaseMs = Date.now();
+  }
+  updateHeaderClock();
   if (uptimeEl) {
     uptimeEl.textContent = formatUptime(
       Number.isFinite(uptimeSeconds) ? uptimeSeconds : App.systemUptimeBaseSeconds
@@ -473,6 +488,38 @@ const stopUptimeClock = () => {
   if (!App.uptimeTimer) return;
   clearInterval(App.uptimeTimer);
   App.uptimeTimer = null;
+};
+
+// Shows the device's own local time (NTP-synced unix time, shifted by the UTC offset it resolved
+// from IP geolocation) in the header -- not the viewer's browser time zone, since the schedule
+// feature this mirrors is about what time the DEVICE thinks it is. Uses the same
+// shift-then-read-as-UTC trick as the firmware's schedule_allows_access() (getUTCHours/Minutes on
+// a pre-shifted timestamp) so it can't accidentally double-apply the browser's own local zone.
+const updateHeaderClock = () => {
+  const clockEl = document.getElementById('headerClock');
+  if (!clockEl) return;
+  if (!App.headerClockResolved || !App.headerClockBaseMs) {
+    clockEl.textContent = '—';
+    return;
+  }
+  const elapsedSeconds = Math.floor((Date.now() - App.headerClockBaseMs) / 1000);
+  const shiftedUnixSeconds = App.headerClockBaseUnixSeconds + App.headerClockUtcOffsetSeconds + elapsedSeconds;
+  const shifted = new Date(shiftedUnixSeconds * 1000);
+  const hh = String(shifted.getUTCHours()).padStart(2, '0');
+  const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
+  clockEl.textContent = formatTime12h(`${hh}:${mm}`);
+};
+
+const startHeaderClock = () => {
+  if (App.headerClockTimer) return;
+  updateHeaderClock();
+  App.headerClockTimer = setInterval(updateHeaderClock, 1000);
+};
+
+const stopHeaderClock = () => {
+  if (!App.headerClockTimer) return;
+  clearInterval(App.headerClockTimer);
+  App.headerClockTimer = null;
 };
 
 const applySignalDot = (elementId, value, activeText = 'Signal active', inactiveText = 'Signal inactive') => {
@@ -1196,6 +1243,8 @@ const loadDeviceCredentialDetails = async () => {
     await loadCredentialDetails();
     await sleep(150);
     await loadKeypadUsers();
+    await sleep(150);
+    await loadSchedules();
   })().finally(() => {
     deviceCredentialDetailsInFlight = null;
   });
@@ -2172,14 +2221,14 @@ const setupControlCardChrome = () => {
   const configs = [
     { label: 'Lock 1', enableId: 'enableLock_1', alertId: 'enableContactAlert_1', alertTargetId: 'alertTargetLock_1', alertStateKey: 'enableContactAlert', update: updateLock },
     { label: 'Lock 2', enableId: 'enableLock_2', alertId: 'enableContactAlert_2', alertTargetId: 'alertTargetLock_2', alertStateKey: 'enableContactAlert', update: updateLock },
-    { label: 'Exit 1', enableId: 'enableExit_1', alertId: 'alertExit_1', latchId: 'latchExit_1', modeId: 'modeExit_1', targetId: 'targetExit_1', alertTargetId: 'alertTargetExit_1', update: updateExit, endpoint: 'exit', apply: applyExitState },
-    { label: 'Exit 2', enableId: 'enableKeypad_1', alertId: 'alertKeypad_1', latchId: 'latchKeypad_1', modeId: 'modeKeypad_1', targetId: 'targetKeypad_1', alertTargetId: 'alertTargetKeypad_1', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
-    { label: 'Exit 3', enableId: 'enableFob_1', alertId: 'alertFob_1', latchId: 'latchFob_1', modeId: 'modeFob_1', targetId: 'targetFob_1', alertTargetId: 'alertTargetFob_1', update: updateFob, endpoint: 'fob', apply: applyFobState },
-    { label: 'Exit 4', enableId: 'enableMotion_1', alertId: 'alertMotion_1', latchId: 'latchMotion_1', modeId: 'modeMotion_1', targetId: 'targetMotion_1', alertTargetId: 'alertTargetMotion_1', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
-    { label: 'Exit 5', enableId: 'enableExit_2', alertId: 'alertExit_2', latchId: 'latchExit_2', modeId: 'modeExit_2', targetId: 'targetExit_2', alertTargetId: 'alertTargetExit_2', update: updateExit, endpoint: 'exit', apply: applyExitState },
-    { label: 'Exit 6', enableId: 'enableKeypad_2', alertId: 'alertKeypad_2', latchId: 'latchKeypad_2', modeId: 'modeKeypad_2', targetId: 'targetKeypad_2', alertTargetId: 'alertTargetKeypad_2', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
-    { label: 'Exit 7', enableId: 'enableFob_2', alertId: 'alertFob_2', latchId: 'latchFob_2', modeId: 'modeFob_2', targetId: 'targetFob_2', alertTargetId: 'alertTargetFob_2', update: updateFob, endpoint: 'fob', apply: applyFobState },
-    { label: 'Exit 8', enableId: 'enableMotion_2', alertId: 'alertMotion_2', latchId: 'latchMotion_2', modeId: 'modeMotion_2', targetId: 'targetMotion_2', alertTargetId: 'alertTargetMotion_2', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
+    { label: 'Exit 1', enableId: 'enableExit_1', alertId: 'alertExit_1', latchId: 'latchExit_1', modeId: 'modeExit_1', targetId: 'targetExit_1', alertTargetId: 'alertTargetExit_1', delayId: 'armDelay_1', update: updateExit, endpoint: 'exit', apply: applyExitState },
+    { label: 'Exit 2', enableId: 'enableKeypad_1', alertId: 'alertKeypad_1', latchId: 'latchKeypad_1', modeId: 'modeKeypad_1', targetId: 'targetKeypad_1', alertTargetId: 'alertTargetKeypad_1', delayId: 'keypadDelay_1', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
+    { label: 'Exit 3', enableId: 'enableFob_1', alertId: 'alertFob_1', latchId: 'latchFob_1', modeId: 'modeFob_1', targetId: 'targetFob_1', alertTargetId: 'alertTargetFob_1', delayId: 'fobDelay_1', update: updateFob, endpoint: 'fob', apply: applyFobState },
+    { label: 'Exit 4', enableId: 'enableMotion_1', alertId: 'alertMotion_1', latchId: 'latchMotion_1', modeId: 'modeMotion_1', targetId: 'targetMotion_1', alertTargetId: 'alertTargetMotion_1', delayId: 'motionDelay_1', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
+    { label: 'Exit 5', enableId: 'enableExit_2', alertId: 'alertExit_2', latchId: 'latchExit_2', modeId: 'modeExit_2', targetId: 'targetExit_2', alertTargetId: 'alertTargetExit_2', delayId: 'armDelay_2', update: updateExit, endpoint: 'exit', apply: applyExitState },
+    { label: 'Exit 6', enableId: 'enableKeypad_2', alertId: 'alertKeypad_2', latchId: 'latchKeypad_2', modeId: 'modeKeypad_2', targetId: 'targetKeypad_2', alertTargetId: 'alertTargetKeypad_2', delayId: 'keypadDelay_2', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
+    { label: 'Exit 7', enableId: 'enableFob_2', alertId: 'alertFob_2', latchId: 'latchFob_2', modeId: 'modeFob_2', targetId: 'targetFob_2', alertTargetId: 'alertTargetFob_2', delayId: 'fobDelay_2', update: updateFob, endpoint: 'fob', apply: applyFobState },
+    { label: 'Exit 8', enableId: 'enableMotion_2', alertId: 'alertMotion_2', latchId: 'latchMotion_2', modeId: 'modeMotion_2', targetId: 'targetMotion_2', alertTargetId: 'alertTargetMotion_2', delayId: 'motionDelay_2', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
   ];
 
   configs.forEach((config) => {
@@ -2214,16 +2263,46 @@ const setupControlCardChrome = () => {
       const modeWrap = createCardModeSelect(config.modeId, config.latchId);
       const modeSelect = modeWrap.querySelector('select');
       const latchEl = document.getElementById(config.latchId);
+
+      const modeRow = document.createElement('div');
+      modeRow.className = 'control-card-mode-row';
+      modeRow.appendChild(modeWrap);
+
+      let delayField = null;
+      if (config.delayId) {
+        const delayInput = document.getElementById(config.delayId);
+        const oldInputRow = delayInput?.closest('.input-row');
+        oldInputRow?.querySelector('button')?.remove();
+        if (delayInput) {
+          delayField = document.createElement('label');
+          delayField.className = 'card-delay-field stacked';
+          const delaySpan = document.createElement('span');
+          delaySpan.textContent = 'Re-arm delay (seconds)';
+          delayField.appendChild(delaySpan);
+          delayField.appendChild(delayInput);
+          modeRow.appendChild(delayField);
+          delayInput.addEventListener('change', () => {
+            config.update(channel, { delay: parseInt(delayInput.value, 10) || 0 });
+          });
+        }
+        oldInputRow?.remove();
+      }
+
       if (modeSelect && latchEl) {
         modeSelect.value = normalizeCardMode(null, latchEl.checked);
+        const syncDelayVisibility = () => {
+          delayField?.classList.toggle('hidden-card-control', modeSelect.value !== 'momentary');
+        };
+        syncDelayVisibility();
         modeSelect.addEventListener('change', (event) => {
           const mode = normalizeCardMode(event.target.value, latchEl.checked);
           const latch = mode === 'latch';
           latchEl.checked = latch;
+          syncDelayVisibility();
           config.update(channel, { mode, latch });
         });
       }
-      fieldGrid.appendChild(modeWrap);
+      fieldGrid.appendChild(modeRow);
       latchEl?.closest('label')?.classList.add('hidden-card-control');
     }
 
@@ -2377,8 +2456,6 @@ const setupExitHandlers = () => {
     const enableEl = document.getElementById(`enableExit_${ch}`);
     const alertEl = document.getElementById(`alertExit_${ch}`);
     const latchEl = document.getElementById(`latchExit_${ch}`);
-    const saveBtn = document.getElementById(ch === 1 ? 'relock' : 'relock_2');
-    const delayEl = document.getElementById(`armDelay_${ch}`);
 
     if (enableEl) {
       enableEl.addEventListener('change', (event) => {
@@ -2395,12 +2472,6 @@ const setupExitHandlers = () => {
         updateExit(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
       });
     }
-    if (saveBtn && delayEl) {
-      saveBtn.addEventListener('click', () => {
-        const value = parseInt(delayEl.value, 10) || 0;
-        updateExit(ch, { delay: value });
-      });
-    }
   });
 };
 
@@ -2409,8 +2480,6 @@ const setupFobHandlers = () => {
     const enableEl = document.getElementById(`enableFob_${ch}`);
     const alertEl = document.getElementById(`alertFob_${ch}`);
     const latchEl = document.getElementById(`latchFob_${ch}`);
-    const delayEl = document.getElementById(`fobDelay_${ch}`);
-    const saveBtn = document.getElementById(`fobSave_${ch}`);
 
     if (enableEl) {
       enableEl.addEventListener('change', (event) => {
@@ -2427,12 +2496,6 @@ const setupFobHandlers = () => {
         updateFob(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
       });
     }
-    if (delayEl && saveBtn) {
-      saveBtn.addEventListener('click', () => {
-        const value = parseInt(delayEl.value, 10) || 0;
-        updateFob(ch, { delay: value });
-      });
-    }
   });
 };
 
@@ -2441,8 +2504,6 @@ const setupKeypadHandlers = () => {
     const enableEl = document.getElementById(`enableKeypad_${ch}`);
     const alertEl = document.getElementById(`alertKeypad_${ch}`);
     const latchEl = document.getElementById(`latchKeypad_${ch}`);
-    const delayEl = document.getElementById(`keypadDelay_${ch}`);
-    const saveBtn = document.getElementById(`keypadSave_${ch}`);
 
     if (enableEl) {
       enableEl.addEventListener('change', (event) => {
@@ -2459,12 +2520,6 @@ const setupKeypadHandlers = () => {
         updateKeypad(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
       });
     }
-    if (delayEl && saveBtn) {
-      saveBtn.addEventListener('click', () => {
-        const value = parseInt(delayEl.value, 10) || 0;
-        updateKeypad(ch, { delay: value });
-      });
-    }
   });
 };
 
@@ -2473,8 +2528,6 @@ const setupMotionHandlers = () => {
     const enableEl = document.getElementById(`enableMotion_${ch}`);
     const alertEl = document.getElementById(`alertMotion_${ch}`);
     const latchEl = document.getElementById(`latchMotion_${ch}`);
-    const delayEl = document.getElementById(`motionDelay_${ch}`);
-    const saveBtn = document.getElementById(`motionSave_${ch}`);
 
     if (enableEl) {
       enableEl.addEventListener('change', (event) => {
@@ -2489,12 +2542,6 @@ const setupMotionHandlers = () => {
     if (latchEl) {
       latchEl.addEventListener('change', (event) => {
         updateMotion(ch, { latch: event.target.checked, mode: normalizeCardMode(null, event.target.checked) });
-      });
-    }
-    if (delayEl && saveBtn) {
-      saveBtn.addEventListener('click', () => {
-        const value = parseInt(delayEl.value, 10) || 0;
-        updateMotion(ch, { delay: value });
       });
     }
   });
@@ -2718,7 +2765,37 @@ const setupCredentialUserHandlers = () => {
       App.credentialUserOpenKeys.add(key);
       App.credentialUserCollapsedKeys.delete(key);
     }
+    // Re-render is skipped whenever focus sits inside the list (see
+    // shouldDeferCredentialRender) so it doesn't clobber an in-progress edit.
+    // The toggle button itself just received focus from this click, which
+    // would otherwise defer the very render that's supposed to reflect it.
+    toggle.blur();
     renderCredentialUsers();
+  });
+
+  listEl.addEventListener('change', async (event) => {
+    const picker = event.target.closest('.user-schedule-picker');
+    if (!picker) return;
+    const uuid = picker.getAttribute('data-user-uuid');
+    if (!uuid) return;
+    const scheduleId = picker.value;
+    const previous = App.data?.schedules?.assignments?.[uuid] || '';
+
+    picker.disabled = true;
+    try {
+      const schedules = await fetchJSON('api/schedules/assign', {
+        method: 'POST',
+        body: JSON.stringify({ uuid, schedule_id: scheduleId }),
+      });
+      if (App.data) App.data.schedules = schedules;
+      showToast(`Access schedule set to ${scheduleNameFor(scheduleId)}.`);
+      renderCredentialUsers();
+    } catch (error) {
+      handleError(error, 'Failed to update access schedule');
+      picker.value = previous;
+    } finally {
+      picker.disabled = false;
+    }
   });
 };
 
@@ -3506,6 +3583,11 @@ const buildCredentialUserGroups = () => {
     }).remotes.push(user);
   });
 
+  const assignments = App.data?.schedules?.assignments || {};
+  groups.forEach((group) => {
+    group.scheduleId = group.uuid ? (assignments[group.uuid] || '') : '';
+  });
+
   return Array.from(groups.values())
     .sort((left, right) => left.name.localeCompare(right.name));
 };
@@ -3538,6 +3620,290 @@ const groupMatchesActiveEnrollment = (group) => {
   return credentialUserNameKey(group.name) === credentialUserNameKey(enrollment.userName || '');
 };
 
+// ---- Schedule profiles ----
+
+const BUILTIN_SCHEDULES = [
+  { id: '', name: 'Always', start: null, end: null },
+  { id: 'day', name: 'Day', start: '06:00', end: '18:00' },
+  { id: 'night', name: 'Night', start: '18:00', end: '06:00' },
+];
+
+const formatTime12h = (hhmm) => {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
+  if (!match) return hhmm || '';
+  let hour = Number(match[1]);
+  const minute = match[2];
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  hour %= 12;
+  if (hour === 0) hour = 12;
+  return `${hour}:${minute} ${suffix}`;
+};
+
+const formatUtcOffset = (offsetSeconds) => {
+  const total = Number(offsetSeconds) || 0;
+  const sign = total < 0 ? '−' : '+';
+  const abs = Math.abs(total);
+  const hours = Math.floor(abs / 3600);
+  const minutes = Math.floor((abs % 3600) / 60);
+  return `UTC${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+const renderTimezoneNote = () => {
+  const resolved = !!App.data?.schedules?.utc_offset_resolved;
+  const offset = App.data?.schedules?.utc_offset_seconds;
+  return resolved
+    ? `<p class="schedule-editor-utc-note">Times shown in the device's local time zone (${formatUtcOffset(offset)}), detected from its network location.</p>`
+    : '<p class="schedule-editor-utc-note">Detecting time zone from the network — showing UTC until that finishes.</p>';
+};
+
+const SCHEDULE_DAYS = [
+  { key: 'sun', label: 'Sun' },
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+];
+
+const customScheduleProfiles = () => (Array.isArray(App.data?.schedules?.profiles) ? App.data.schedules.profiles : []);
+
+const allScheduleOptions = () => [
+  ...BUILTIN_SCHEDULES.map(({ id, name }) => ({ id, name })),
+  ...customScheduleProfiles().map((profile) => ({ id: profile.id, name: profile.name || 'Untitled profile' })),
+];
+
+const scheduleNameFor = (id) => {
+  const match = allScheduleOptions().find((option) => option.id === (id || ''));
+  return match ? match.name : 'Always';
+};
+
+const renderUserScheduleSelect = (group) => {
+  if (!group.uuid) return '';
+  const options = allScheduleOptions();
+  const current = group.scheduleId || '';
+  return `
+    <label class="user-schedule-select">
+      <span>Access schedule</span>
+      <select class="user-schedule-picker" data-user-uuid="${escapeHtml(group.uuid)}">
+        ${options.map((option) => `
+          <option value="${escapeHtml(option.id)}" ${option.id === current ? 'selected' : ''}>${escapeHtml(option.name)}</option>
+        `).join('')}
+      </select>
+    </label>
+  `;
+};
+
+const renderScheduleChips = () => {
+  const options = allScheduleOptions();
+  const editingId = App.scheduleEditingId;
+  const chips = options.map((option) => `
+    <button type="button" class="schedule-profile-chip ${option.id === editingId ? 'is-active' : ''}" data-action="select-schedule-profile" data-schedule-id="${escapeHtml(option.id)}">${escapeHtml(option.name)}</button>
+  `).join('');
+  return `${chips}<button type="button" class="schedule-profile-add" data-action="add-schedule-profile" aria-label="Add schedule profile" title="Add schedule profile">+</button>`;
+};
+
+const renderScheduleEditor = () => {
+  const editingId = App.scheduleEditingId;
+  if (editingId === null || editingId === undefined) return '';
+
+  const builtin = BUILTIN_SCHEDULES.find((option) => option.id === editingId);
+  if (builtin) {
+    const windowText = builtin.start
+      ? `Every day, ${formatTime12h(builtin.start)} – ${formatTime12h(builtin.end)}.`
+      : 'No restrictions — access allowed at all times.';
+    return `
+      <div class="schedule-profile-name">${escapeHtml(builtin.name)}</div>
+      <p class="schedule-editor-readonly-note">${escapeHtml(windowText)} Built-in schedules can't be edited or deleted — add a custom profile instead.</p>
+      ${builtin.start ? renderTimezoneNote() : ''}
+    `;
+  }
+
+  const profile = customScheduleProfiles().find((candidate) => candidate.id === editingId);
+  if (!profile) return '';
+
+  const days = profile.days || {};
+  const dayRows = SCHEDULE_DAYS.map(({ key, label }) => {
+    const day = days[key] || { enabled: true, start: '09:00', end: '17:00' };
+    const start = day.start || '09:00';
+    const end = day.end || '17:00';
+    return `
+      <div class="schedule-day-row" data-day="${key}" data-day-disabled="${day.enabled ? 'false' : 'true'}">
+        <label class="form-switch">
+          <input type="checkbox" class="schedule-day-enabled" ${day.enabled ? 'checked' : ''}>
+          <span>${label}</span>
+        </label>
+        <span class="schedule-day-time-group">
+          <input type="time" class="schedule-day-time schedule-day-start" value="${escapeHtml(start)}">
+          <span class="schedule-day-time-ampm">${escapeHtml(formatTime12h(start))}</span>
+        </span>
+        <span class="schedule-day-sep">to</span>
+        <span class="schedule-day-time-group">
+          <input type="time" class="schedule-day-time schedule-day-end" value="${escapeHtml(end)}">
+          <span class="schedule-day-time-ampm">${escapeHtml(formatTime12h(end))}</span>
+        </span>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="schedule-editor-head">
+      <input type="text" class="schedule-profile-name" data-schedule-id="${escapeHtml(profile.id)}" value="${escapeHtml(profile.name || '')}" placeholder="Profile name" aria-label="Profile name">
+      ${renderCredentialIconButton('delete-schedule-profile', profile.id, 'Delete schedule profile', 'credential-remove-icon')}
+    </div>
+    ${renderTimezoneNote()}
+    <div class="schedule-day-grid">${dayRows}</div>
+  `;
+};
+
+const renderSchedules = () => {
+  const stripEl = App.elements.scheduleProfileStrip;
+  const editorEl = App.elements.scheduleProfileEditor;
+  if (!stripEl || !editorEl) return;
+
+  stripEl.innerHTML = renderScheduleChips();
+
+  const editorHtml = renderScheduleEditor();
+  editorEl.innerHTML = editorHtml;
+  editorEl.hidden = !editorHtml;
+};
+
+const loadSchedules = async () => {
+  try {
+    const schedules = await fetchJSON(`api/schedules?t=${Date.now()}`);
+    if (App.data) App.data.schedules = schedules;
+    renderSchedules();
+    renderCredentialUsers();
+  } catch (error) {
+    console.warn('Failed to load schedules', error);
+  }
+};
+
+const collectDayGridFromDom = (editorEl) => {
+  const days = {};
+  editorEl.querySelectorAll('.schedule-day-row').forEach((row) => {
+    const key = row.dataset.day;
+    if (!key) return;
+    const enabled = row.querySelector('.schedule-day-enabled')?.checked !== false;
+    const start = row.querySelector('.schedule-day-start')?.value || '09:00';
+    const end = row.querySelector('.schedule-day-end')?.value || '17:00';
+    days[key] = { enabled, start, end };
+  });
+  return days;
+};
+
+const saveScheduleProfile = async (id, patch) => {
+  try {
+    const schedules = await fetchJSON('api/schedules', {
+      method: 'PUT',
+      body: JSON.stringify({ id, ...patch }),
+    });
+    if (App.data) App.data.schedules = schedules;
+    renderSchedules();
+    renderCredentialUsers();
+  } catch (error) {
+    handleError(error, 'Failed to update schedule profile');
+  }
+};
+
+let scheduleNameSaveTimer = null;
+
+const setupScheduleHandlers = () => {
+  const stripEl = App.elements.scheduleProfileStrip;
+  const editorEl = App.elements.scheduleProfileEditor;
+  if (!stripEl || !editorEl) return;
+
+  stripEl.addEventListener('click', async (event) => {
+    const addBtn = event.target.closest('button[data-action="add-schedule-profile"]');
+    if (addBtn) {
+      addBtn.disabled = true;
+      try {
+        const schedules = await fetchJSON('api/schedules', { method: 'POST', body: JSON.stringify({}) });
+        if (App.data) App.data.schedules = schedules;
+        const profiles = schedules.profiles || [];
+        const created = profiles[profiles.length - 1];
+        App.scheduleEditingId = created ? created.id : null;
+        renderSchedules();
+        showToast('Schedule profile created.');
+        const nameInput = editorEl.querySelector('.schedule-profile-name');
+        if (nameInput) {
+          nameInput.focus();
+          nameInput.select();
+        }
+      } catch (error) {
+        handleError(error, 'Failed to create schedule profile');
+      } finally {
+        addBtn.disabled = false;
+      }
+      return;
+    }
+
+    const chip = event.target.closest('button[data-action="select-schedule-profile"]');
+    if (chip) {
+      const id = chip.getAttribute('data-schedule-id') || '';
+      App.scheduleEditingId = App.scheduleEditingId === id ? null : id;
+      renderSchedules();
+    }
+  });
+
+  editorEl.addEventListener('click', async (event) => {
+    const deleteBtn = event.target.closest('button[data-action="delete-schedule-profile"]');
+    if (!deleteBtn) return;
+    const id = deleteBtn.getAttribute('data-id');
+    if (!id) return;
+
+    deleteBtn.disabled = true;
+    try {
+      const schedules = await fetchJSON('api/schedules', {
+        method: 'DELETE',
+        body: JSON.stringify({ id }),
+      });
+      if (App.data) App.data.schedules = schedules;
+      App.scheduleEditingId = null;
+      renderSchedules();
+      renderCredentialUsers();
+      showToast('Schedule profile deleted.');
+    } catch (error) {
+      handleError(error, 'Failed to delete schedule profile');
+      deleteBtn.disabled = false;
+    }
+  });
+
+  editorEl.addEventListener('input', (event) => {
+    const timeInput = event.target.closest('.schedule-day-time');
+    if (timeInput) {
+      const ampmLabel = timeInput.parentElement?.querySelector('.schedule-day-time-ampm');
+      if (ampmLabel) ampmLabel.textContent = formatTime12h(timeInput.value);
+      return;
+    }
+
+    const nameInput = event.target.closest('.schedule-profile-name');
+    if (!nameInput || nameInput.tagName !== 'INPUT') return;
+    const id = nameInput.getAttribute('data-schedule-id');
+    if (!id || !nameInput.value.trim()) return;
+    clearTimeout(scheduleNameSaveTimer);
+    scheduleNameSaveTimer = setTimeout(() => {
+      saveScheduleProfile(id, { name: nameInput.value.trim() });
+    }, 650);
+  });
+
+  editorEl.addEventListener('change', (event) => {
+    const dayControl = event.target.closest('.schedule-day-enabled, .schedule-day-start, .schedule-day-end');
+    if (!dayControl) return;
+    const nameInput = editorEl.querySelector('.schedule-profile-name');
+    const id = nameInput?.getAttribute('data-schedule-id');
+    if (!id) return;
+    const row = dayControl.closest('.schedule-day-row');
+    if (row) {
+      const enabled = row.querySelector('.schedule-day-enabled')?.checked !== false;
+      row.dataset.dayDisabled = enabled ? 'false' : 'true';
+    }
+    saveScheduleProfile(id, { days: collectDayGridFromDom(editorEl) });
+  });
+};
+
+let lastRenderedCredentialUserHtml = null;
+
 const renderCredentialUsers = () => {
   const listEl = App.elements.credentialUserList;
   if (!listEl) return;
@@ -3545,12 +3911,9 @@ const renderCredentialUsers = () => {
 
   const preserved = collectCredentialFormValues();
   const groups = buildCredentialUserGroups();
-  if (!groups.length) {
-    listEl.innerHTML = '<p class="empty-state muted">No users or credentials yet.</p>';
-    return;
-  }
-
-  listEl.innerHTML = groups.map((group) => {
+  const html = !groups.length
+    ? '<p class="empty-state muted">No users or credentials yet.</p>'
+    : groups.map((group) => {
     const shouldOpen =
       App.credentialUserOpenKeys.has(group.key)
       || groupContainsFocusedCredential(group, preserved.focused)
@@ -3572,6 +3935,7 @@ const renderCredentialUsers = () => {
           <span class="credential-user-chevron" aria-hidden="true"></span>
         </button>
         <div class="credential-user-body" ${shouldOpen ? '' : 'hidden'}>
+          ${renderUserScheduleSelect(group)}
           ${credentialCards
             ? `<div class="credential-user-grid">${credentialCards}</div>`
             : '<p class="empty-state muted">No credentials for this user yet.</p>'}
@@ -3579,6 +3943,11 @@ const renderCredentialUsers = () => {
       </section>
     `;
   }).join('');
+
+  if (html !== lastRenderedCredentialUserHtml) {
+    lastRenderedCredentialUserHtml = html;
+    listEl.innerHTML = html;
+  }
 
   applyCredentialActivityState({
     wiegand: App.data?.wiegand || {},
@@ -4316,6 +4685,8 @@ document.addEventListener('DOMContentLoaded', () => {
     wiegandPending: document.getElementById('wiegandPending'),
     wiegandDuplicate: document.getElementById('wiegandDuplicate'),
     credentialUserList: document.getElementById('credentialUserList'),
+    scheduleProfileStrip: document.getElementById('scheduleProfileStrip'),
+    scheduleProfileEditor: document.getElementById('scheduleProfileEditor'),
     wiegandUserList: document.getElementById('wiegandUserList'),
     wiegandRegisterBtn: document.getElementById('wiegandRegisterBtn'),
     wiegandStopBtn: document.getElementById('wiegandStopBtn'),
@@ -4376,6 +4747,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEnrollmentHandlers();
   setupForms();
   setupCredentialUserHandlers();
+  setupScheduleHandlers();
   setupWiegandHandlers();
   setupRfHandlers();
   setupKeypadPinHandlers();
@@ -4403,11 +4775,13 @@ document.addEventListener('DOMContentLoaded', () => {
       stopSignalPolling();
       stopWiegandPolling();
       stopUptimeClock();
+      stopHeaderClock();
     } else {
       loadState().finally(() => {
         onPageActivated(getActivePageId());
         startStatePolling();
         startUptimeClock();
+        startHeaderClock();
       });
     }
   });
@@ -4416,5 +4790,6 @@ document.addEventListener('DOMContentLoaded', () => {
     onPageActivated('device');
     startStatePolling();
     startUptimeClock();
+    startHeaderClock();
   });
 });

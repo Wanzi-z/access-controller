@@ -1,4 +1,6 @@
+#include "esp_timer.h"
 #include "store.h"
+#include "schedule.h"
 
 #define MAX_UIDS		400
 #define MAX_UID_SIZE	50
@@ -83,6 +85,20 @@ int is_pin_authorized(const char *incomingPin, pin_user_match_t *matched_user) {
                  "}", match.name, incomingPin);
             addServerMessageToQueue(log_msg);
             ESP_LOGI(TAG, "Disabled PIN user %s attempted %s\n", match.name, incomingPin);
+            return 0;
+        }
+
+        if (!schedule_allows_access(match.uuid, (uint64_t)(esp_timer_get_time() / 1000LL))) {
+            snprintf(log_msg, sizeof(log_msg),
+                 "{\"event_type\":\"log\",\"payload\":"
+                 "{\"service_id\":\"ac_1\", "
+                 "\"type\":\"access-control\", "
+                 "\"description\":\"%s attempted access outside their schedule.\", "
+                 "\"event\":\"authentication\", "
+                 "\"value\":\"%s\"}"
+                 "}", match.name, incomingPin);
+            addServerMessageToQueue(log_msg);
+            ESP_LOGI(TAG, "%s denied by schedule\n", match.name);
             return 0;
         }
 

@@ -5,12 +5,14 @@
 #include "esp_event.h"
 #include "automation.h"
 #include "automation.c"
+#include "services/ip_timezone.c"
 #include "services/station.c"
 #include "services/drivers/i2c.c"
 #include "services/drivers/mcp23x17.c"
 #include "services/gpio.c"
 #include "services/alert_target.c"
 #include "services/store.c"
+#include "services/schedule.c"
 #include "services/wiegand_registry.c"
 #include "services/enrollment.c"
 #include "services/authorize.c"
@@ -731,6 +733,7 @@ void app_main(void) {
     mcp23x17_main();
     auth_main();
     buzzer_main();
+    schedule_init();
     wiegand_registry_init();
     wiegand_main();
     exit_main();

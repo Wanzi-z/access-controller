@@ -17,6 +17,7 @@
 #include "wiegand.h"
 #include "automation.h"
 #include "enrollment.h"
+#include "schedule.h"
 
 /* Forward declarations */
 struct wiegand;
@@ -258,6 +259,12 @@ static void apply_wiegand_card_action(struct wiegand *wg_entry,
                                       const wiegand_user_t *user,
                                       const char *bit_string) {
     if (!wg_entry || !user) {
+        return;
+    }
+
+    if (!schedule_allows_access(user->user_uuid, (uint64_t)(esp_timer_get_time() / 1000LL))) {
+        ESP_LOGI(LOG_TAG_WIEGAND, "Wiegand code %s denied by schedule (user=%s)",
+                 bit_string, user->name[0] != '\0' ? user->name : "Wiegand User");
         return;
     }
 

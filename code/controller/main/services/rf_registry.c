@@ -17,6 +17,7 @@
 #include "store.h"
 #include "rf_registry.h"
 #include "automation.h"
+#include "schedule.h"
 
 /* lock actions */
 void arm_lock(int channel, bool arm, bool alert);
@@ -683,6 +684,11 @@ bool rf_registry_handle_code(uint32_t code) {
     u->updated_ms = now_ms();
     rf_user_t copy = *u;
     xSemaphoreGive(rf_mutex);
+
+    if (!schedule_allows_access(copy.user_uuid, (uint64_t)now_ms())) {
+        ESP_LOGI(RF_REGISTRY_TAG, "RF code %s denied by schedule (user=%s)", code_hex, copy.name);
+        return true;
+    }
 
     apply_action_for_user(&copy);
     return true;

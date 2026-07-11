@@ -517,7 +517,7 @@ esp_err_t start_file_server(const char *base_path)
             sizeof(server_data->base_path));
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 58; // allow API, websocket, OTA, upload, and embedded asset routes
+    config.max_uri_handlers = 64; // allow API, websocket, OTA, upload, schedules, and embedded asset routes
     config.max_open_sockets = 7;
     config.backlog_conn = 4;
     config.lru_purge_enable = true;

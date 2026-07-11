@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=34">
+  <link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
   <header class="app-bar">
@@ -22,6 +22,7 @@
       <span class="app-subtitle">Device Manager</span>
     </div>
     <div class="header-status">
+      <span class="header-chip" id="headerClockChip" title="Device local time"><strong id="headerClock">—</strong></span>
       <span class="header-chip">AP <strong id="headerApIp">—</strong></span>
       <span class="header-chip">STA <strong id="headerStaIp">—</strong></span>
       <span class="header-chip">Server <strong id="headerServerUrl">https://open-automation.org/devices</strong></span>
@@ -66,17 +67,19 @@
                   <span>Enable lock</span>
                 </label>
                 <label class="form-switch">
-                  <input type="checkbox" id="arm_1">
-                  <span>Arm lock</span>
-                </label>
-                <label class="form-switch">
                   <input type="checkbox" id="enableContactAlert_1">
                   <span>Contact alert</span>
                 </label>
-                <label class="form-switch">
-                  <input type="checkbox" id="polarity_1">
-                  <span>Reverse polarity</span>
-                </label>
+                <div class="lock-toggle-row">
+                  <label class="form-switch lock-toggle-pill">
+                    <input type="checkbox" id="arm_1">
+                    <span>Arm lock</span>
+                  </label>
+                  <label class="form-switch lock-toggle-pill">
+                    <input type="checkbox" id="polarity_1">
+                    <span>Reverse polarity</span>
+                  </label>
+                </div>
               </div>
               <div class="control-section">
                 <h4>Lock 2</h4>
@@ -95,17 +98,19 @@
                   <span>Enable lock</span>
                 </label>
                 <label class="form-switch">
-                  <input type="checkbox" id="arm_2">
-                  <span>Arm lock</span>
-                </label>
-                <label class="form-switch">
                   <input type="checkbox" id="enableContactAlert_2">
                   <span>Contact alert</span>
                 </label>
-                <label class="form-switch">
-                  <input type="checkbox" id="polarity_2">
-                  <span>Reverse polarity</span>
-                </label>
+                <div class="lock-toggle-row">
+                  <label class="form-switch lock-toggle-pill">
+                    <input type="checkbox" id="arm_2">
+                    <span>Arm lock</span>
+                  </label>
+                  <label class="form-switch lock-toggle-pill">
+                    <input type="checkbox" id="polarity_2">
+                    <span>Reverse polarity</span>
+                  </label>
+                </div>
               </div>
             </div>
           </section>
@@ -389,6 +394,17 @@
         </div>
         <div id="credentialUserList" class="credential-user-list"></div>
       </div>
+
+      <div class="card" id="schedule-profiles-card">
+        <div class="card-header">
+          <div>
+            <h2>Schedule</h2>
+            <p class="subtitle">Time-based access profiles. Assign one to a user to restrict when their credentials work.</p>
+          </div>
+        </div>
+        <div class="schedule-profile-strip" id="scheduleProfileStrip"></div>
+        <div class="schedule-profile-editor" id="scheduleProfileEditor" hidden></div>
+      </div>
     </section>
 
     <section id="page-system" class="page" aria-labelledby="system-heading">
@@ -583,6 +599,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=34"></script>
+  <script src="script.js?v=36"></script>
 </body>
 </html>

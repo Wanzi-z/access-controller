@@ -24,6 +24,8 @@
 #include "wiegand_registry.h"
 #include "rf_registry.h"
 #include "store.h"
+#include "schedule.h"
+#include "ip_timezone.h"
 #include "esp_system.h"
 
 static const char *API_TAG = "api_server";
@@ -472,6 +474,9 @@ static cJSON *build_state_snapshot(void) {
         cJSON_AddNumberToObject(system, "minFreeHeap", esp_get_minimum_free_heap_size());
         cJSON_AddNumberToObject(system, "largestFreeBlock", heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         cJSON_AddStringToObject(system, "resetReason", api_reset_reason_name(esp_reset_reason()));
+        cJSON_AddNumberToObject(system, "unixTime", (double)automation_unix_time_for_timestamp_ms(esp_timer_get_time() / 1000ULL));
+        cJSON_AddNumberToObject(system, "utcOffsetSeconds", ip_timezone_offset_seconds());
+        cJSON_AddBoolToObject(system, "utcOffsetResolved", ip_timezone_is_resolved());
         add_firmware_info(system);
         cJSON_AddItemToObject(root, "system", system);
     }
@@ -2020,6 +2025,125 @@ static esp_err_t api_enrollment_stop_post_handler(httpd_req_t *req) {
     return send_json_response(req, build_enrollment_update_snapshot());
 }
 
+// GET /api/schedules - Fetch custom schedule profiles + per-user assignments
+static esp_err_t api_schedules_get_handler(httpd_req_t *req) {
+    return send_json_response(req, schedule_state_snapshot());
+}
+
+// POST /api/schedules - Create a new custom schedule profile
+static esp_err_t api_schedules_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *name_item = cJSON_GetObjectItemCaseSensitive(payload, "name");
+    const char *name = cJSON_IsString(name_item) ? name_item->valuestring : NULL;
+
+    cJSON *snapshot = NULL;
+    err = schedule_profile_create(name, &snapshot);
+    cJSON_Delete(payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create schedule profile");
+    }
+    return send_json_response(req, snapshot);
+}
+
+// PUT /api/schedules - Rename and/or update a custom schedule profile's day windows
+static esp_err_t api_schedules_put_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *id_item = cJSON_GetObjectItemCaseSensitive(payload, "id");
+    const cJSON *name_item = cJSON_GetObjectItemCaseSensitive(payload, "name");
+    const cJSON *days_item = cJSON_GetObjectItemCaseSensitive(payload, "days");
+    const char *id = cJSON_IsString(id_item) ? id_item->valuestring : NULL;
+    const char *name = cJSON_IsString(name_item) ? name_item->valuestring : NULL;
+
+    if (!id || id[0] == '\0') {
+        cJSON_Delete(payload);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "id required");
+    }
+
+    cJSON *snapshot = NULL;
+    err = schedule_profile_update(id, name, cJSON_IsObject(days_item) ? days_item : NULL, &snapshot);
+    cJSON_Delete(payload);
+    if (err == ESP_ERR_NOT_FOUND) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Profile not found");
+    }
+    if (err == ESP_ERR_INVALID_ARG) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid profile id");
+    }
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to update schedule profile");
+    }
+    return send_json_response(req, snapshot);
+}
+
+// DELETE /api/schedules - Remove a custom schedule profile
+static esp_err_t api_schedules_delete_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *id_item = cJSON_GetObjectItemCaseSensitive(payload, "id");
+    const char *id = cJSON_IsString(id_item) ? id_item->valuestring : NULL;
+    if (!id || id[0] == '\0') {
+        cJSON_Delete(payload);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "id required");
+    }
+
+    cJSON *snapshot = NULL;
+    err = schedule_profile_delete(id, &snapshot);
+    cJSON_Delete(payload);
+    if (err == ESP_ERR_NOT_FOUND) {
+        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Profile not found");
+    }
+    if (err == ESP_ERR_INVALID_ARG) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Cannot delete a built-in schedule");
+    }
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to delete schedule profile");
+    }
+    return send_json_response(req, snapshot);
+}
+
+// POST /api/schedules/assign - Assign (or clear, with schedule_id: "") a user's schedule
+static esp_err_t api_schedules_assign_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+    }
+
+    const cJSON *uuid_item = cJSON_GetObjectItemCaseSensitive(payload, "uuid");
+    const cJSON *schedule_item = cJSON_GetObjectItemCaseSensitive(payload, "schedule_id");
+    const char *uuid = cJSON_IsString(uuid_item) ? uuid_item->valuestring : NULL;
+    const char *schedule_id = cJSON_IsString(schedule_item) ? schedule_item->valuestring : "";
+
+    if (!uuid || uuid[0] == '\0') {
+        cJSON_Delete(payload);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "uuid required");
+    }
+
+    cJSON *snapshot = NULL;
+    err = schedule_assign_user(uuid, schedule_id, &snapshot);
+    cJSON_Delete(payload);
+    if (err == ESP_ERR_INVALID_ARG) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unknown schedule id");
+    }
+    if (err != ESP_OK) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to assign schedule");
+    }
+    return send_json_response(req, snapshot);
+}
+
 void register_api_routes(httpd_handle_t server) {
     httpd_uri_t state = {
         .uri = "/api/state",
@@ -2342,4 +2466,39 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_favicon_handler,
     };
     httpd_register_uri_handler(server, &favicon);
+
+    httpd_uri_t schedules_get = {
+        .uri = "/api/schedules",
+        .method = HTTP_GET,
+        .handler = api_schedules_get_handler,
+    };
+    httpd_register_uri_handler(server, &schedules_get);
+
+    httpd_uri_t schedules_post = {
+        .uri = "/api/schedules",
+        .method = HTTP_POST,
+        .handler = api_schedules_post_handler,
+    };
+    httpd_register_uri_handler(server, &schedules_post);
+
+    httpd_uri_t schedules_put = {
+        .uri = "/api/schedules",
+        .method = HTTP_PUT,
+        .handler = api_schedules_put_handler,
+    };
+    httpd_register_uri_handler(server, &schedules_put);
+
+    httpd_uri_t schedules_delete = {
+        .uri = "/api/schedules",
+        .method = HTTP_DELETE,
+        .handler = api_schedules_delete_handler,
+    };
+    httpd_register_uri_handler(server, &schedules_delete);
+
+    httpd_uri_t schedules_assign_post = {
+        .uri = "/api/schedules/assign",
+        .method = HTTP_POST,
+        .handler = api_schedules_assign_post_handler,
+    };
+    httpd_register_uri_handler(server, &schedules_assign_post);
 }
