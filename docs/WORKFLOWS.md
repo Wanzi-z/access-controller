@@ -220,6 +220,8 @@ When source or hardware changes, update:
 - `docs/REPOSITORY_MAP.md` for folder/file organization changes.
 - `docs/SOFTWARE.md` for firmware, API, UI, tunnel, or test changes.
 - `docs/HARDWARE.md` for KiCad, manufacturing, connector, or model changes.
+- `docs/POWER_AND_ENERGY_HARVESTING.md` when battery, power-save, or
+  energy-harvesting design decisions change.
 - `docs/WORKFLOWS.md` for build, flash, test, deployment, or hardware workflow
   changes.
 - `docs/PLAN.md` when modernization tasks change state.

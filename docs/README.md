@@ -27,6 +27,11 @@ gateway so the device UI can be reached through a server.
   and automated/UI verification runbook.
 - [Hardware](HARDWARE.md): KiCad projects, board sheets, manufacturing files,
   connectors, enclosure models, and images.
+- [Power and Energy Harvesting](POWER_AND_ENERGY_HARVESTING.md): design
+  investigation (not implemented) for a battery-powered or energy-harvesting
+  variant — WiFi power-save/latency architecture, 18650 battery sizing for a
+  1-year single charge, doorknob-twist energy harvesting as a battery-dead
+  fallback, and ESP-NOW vs. Zigbee radio tradeoffs.
 - [Workflows](WORKFLOWS.md): build, flash, test, tunnel, hardware review, and
   documentation maintenance commands.
 - [Modernization Plan](PLAN.md): existing implementation plan for the Wiegand,
