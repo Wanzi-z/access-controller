@@ -2123,40 +2123,47 @@ button.secondary.danger {
 }
 
 .enrollment-layout {
-  max-width: 760px;
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .enrollment-controls {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) 190px;
-  grid-template-rows: 40px 40px;
-  gap: 8px 12px;
+  grid-template-columns: minmax(280px, 360px) auto;
+  gap: 10px 14px;
+  align-items: stretch;
+  justify-content: center;
+  width: min(100%, 620px);
   min-width: 0;
 }
 
 .enrollment-fields {
-  display: contents;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
 }
 
-#enrollment-card #enrollUserSelect,
-#enrollment-card #enrollNewUserName {
+#credential-users-card #enrollUserSelect,
+#credential-users-card #enrollNewUserName {
   width: 100%;
   height: 40px;
   min-height: 40px;
 }
 
 .enrollment-actions {
-  grid-column: 2;
-  grid-row: 1 / span 2;
   display: flex;
   align-items: stretch;
+  justify-content: center;
   gap: 8px;
   min-width: 0;
 }
 
 #enrollStartBtn,
 #enrollStopBtn.enrollment-stop-active {
-  width: 100%;
+  width: 170px;
   min-height: 88px;
   padding: 0 18px;
   white-space: normal;
@@ -2387,15 +2394,16 @@ button.secondary.danger {
 
   .enrollment-controls {
     grid-template-rows: none;
+    width: 100%;
   }
 
   .enrollment-actions {
-    grid-column: auto;
-    grid-row: auto;
+    justify-content: stretch;
   }
 
   #enrollStartBtn,
   #enrollStopBtn.enrollment-stop-active {
+    width: 100%;
     min-height: 48px;
   }
 
