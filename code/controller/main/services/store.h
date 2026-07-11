@@ -38,6 +38,8 @@ esp_err_t record_pin_user_use_in_flash(const char *uuid, const char *pin);
 esp_err_t update_pin_user_in_flash(const char *uuid, const char *name, const char *pin, int pin_index, const char *mode, int channel_mask, int keypad_mask, int exit_seconds, bool alert, int alert_target, bool enabled);
 esp_err_t store_char(const char *key, const char *value);
 char *get_char(const char *key);
+void set_bool(const char* key, bool value);
+bool get_bool(const char* key, bool default_value);
 uint32_t get_u32(const char *key, uint32_t default_value);
 void store_u32(const char *key, uint32_t value);
 char *find_pin_in_flash(const char *pin);

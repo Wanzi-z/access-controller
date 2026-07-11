@@ -233,6 +233,13 @@ static void ensure_device_identity(void) {
 }
 
 void generate_ssid_from_device_id(char *device_id, char *ssid, size_t size) {
+    uint8_t mac[6] = {0};
+    if (esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP) == ESP_OK) {
+        snprintf(ssid, size, "ac_%02x%02x%02x", mac[3], mac[4], mac[5]);
+        return;
+    }
+
+    // Fallback only if the AP MAC cannot be read during early boot.
     char suffix[5] = "uuid";
     if (device_id && device_id[0] != '\0') {
         int count = 0;

@@ -828,6 +828,50 @@ void enableWiegand(int ch, bool val) {
     }
 }
 
+bool wiegand_is_enabled(uint8_t channel) {
+    if (channel < 1 || channel > NUM_OF_WIEGANDS) {
+        return false;
+    }
+    return wg[channel - 1].enable;
+}
+
+esp_err_t wiegand_set_enabled(uint8_t channel, bool enabled) {
+    if (channel < 1 || channel > NUM_OF_WIEGANDS) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    wg[channel - 1].enable = enabled;
+    char key[24];
+    snprintf(key, sizeof(key), "wiegand_%u_enable", (unsigned)channel);
+    set_bool(key, enabled);
+    return ESP_OK;
+}
+
+static void restore_wiegand_settings(void) {
+    for (uint8_t channel = 1; channel <= NUM_OF_WIEGANDS; channel++) {
+        char key[24];
+        snprintf(key, sizeof(key), "wiegand_%u_enable", (unsigned)channel);
+        wg[channel - 1].enable = get_bool(key, true);
+    }
+}
+
+static cJSON *wiegand_devices_snapshot(void) {
+    cJSON *array = cJSON_CreateArray();
+    if (!array) {
+        return NULL;
+    }
+    for (uint8_t i = 0; i < NUM_OF_WIEGANDS; i++) {
+        cJSON *entry = cJSON_CreateObject();
+        if (!entry) {
+            continue;
+        }
+        cJSON_AddNumberToObject(entry, "channel", wg[i].channel);
+        cJSON_AddStringToObject(entry, "name", wg[i].name);
+        cJSON_AddBoolToObject(entry, "enable", wg[i].enable);
+        cJSON_AddItemToArray(array, entry);
+    }
+    return array;
+}
+
 
 void wiegand_main(void) {
 	wg[0].pin0 = WG0_DATA0_IO;
@@ -873,6 +917,8 @@ void wiegand_main(void) {
     wg[1].incomingCodeCount = 0;
     wiegand_reset_bit_buffer(&wg[1]);
 	strcpy(wg[1].name, "Wiegand1");
+
+    restore_wiegand_settings();
 
     ESP_LOGI(LOG_TAG_WIEGAND, "Initializing Wiegand: WG0 (channel 1) GPIO%d/DATA0, GPIO%d/DATA1, enabled=%d",
              wg[0].pin0, wg[0].pin1, wg[0].enable);
@@ -1021,6 +1067,8 @@ cJSON *wiegand_state_snapshot(void) {
     cJSON_AddItemToObject(root, "users", users);
     cJSON *pin_entries = wiegand_pin_entries_snapshot();
     cJSON_AddItemToObject(root, "pinEntries", pin_entries ? pin_entries : cJSON_CreateArray());
+    cJSON *devices = wiegand_devices_snapshot();
+    cJSON_AddItemToObject(root, "devices", devices ? devices : cJSON_CreateArray());
     return root;
 }
 
@@ -1046,5 +1094,7 @@ cJSON *wiegand_state_summary_snapshot(void) {
     cJSON_AddItemToObject(root, "users", cJSON_CreateArray());
     cJSON *pin_entries = wiegand_pin_entries_snapshot();
     cJSON_AddItemToObject(root, "pinEntries", pin_entries ? pin_entries : cJSON_CreateArray());
+    cJSON *devices = wiegand_devices_snapshot();
+    cJSON_AddItemToObject(root, "devices", devices ? devices : cJSON_CreateArray());
     return root;
 }

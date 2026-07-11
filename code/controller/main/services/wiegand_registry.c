@@ -660,7 +660,7 @@ esp_err_t wiegand_registry_update_name(const char *id, const char *name) {
     return result;
 }
 
-esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, uint8_t channel, uint8_t channel_mask, bool alert, int alert_target) {
+esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, const char *user_uuid, uint8_t channel, uint8_t channel_mask, bool alert, int alert_target) {
     if (!id || !name || !mode || channel > 2 || channel_mask == 0 || channel_mask > 3) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -682,6 +682,7 @@ esp_err_t wiegand_registry_update_config(const char *id, const char *name, const
     wiegand_user_t updated = s_users[idx];
     strlcpy(updated.name, name, sizeof(updated.name));
     strlcpy(updated.mode, mode, sizeof(updated.mode));
+    strlcpy(updated.user_uuid, user_uuid ? user_uuid : "", sizeof(updated.user_uuid));
     updated.channel = channel;
     updated.channel_mask = channel_mask;
     updated.alert_target = alert_target_normalize(alert_target, alert);

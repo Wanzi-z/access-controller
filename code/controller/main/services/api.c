@@ -960,6 +960,35 @@ static esp_err_t api_wiegand_stop_post_handler(httpd_req_t *req) {
     return send_wiegand_state_response(req);
 }
 
+static esp_err_t api_wiegand_device_post_handler(httpd_req_t *req) {
+    cJSON *payload = NULL;
+    esp_err_t err = read_json_body(req, &payload);
+    if (err != ESP_OK) {
+        ESP_LOGW(API_TAG, "Invalid Wiegand device payload (%s)", esp_err_to_name(err));
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON payload");
+    }
+
+    const cJSON *channel_item = cJSON_GetObjectItemCaseSensitive(payload, "channel");
+    const cJSON *enable_item = cJSON_GetObjectItemCaseSensitive(payload, "enable");
+    int channel = cJSON_IsNumber(channel_item) ? (int)channel_item->valuedouble : 0;
+    bool has_enable = cJSON_IsBool(enable_item);
+    bool enable = has_enable ? cJSON_IsTrue(enable_item) : true;
+    cJSON_Delete(payload);
+
+    if (channel < 1 || channel > 2 || !has_enable) {
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "channel and enable are required");
+    }
+
+    err = wiegand_set_enabled((uint8_t)channel, enable);
+    if (err != ESP_OK) {
+        ESP_LOGE(API_TAG, "Failed to update Wiegand %d enable=%d (%s)", channel, enable ? 1 : 0, esp_err_to_name(err));
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to update Wiegand device");
+    }
+
+    ESP_LOGI(API_TAG, "Wiegand %d enable changed to %d", channel, enable ? 1 : 0);
+    return send_wiegand_state_response(req);
+}
+
 static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
     cJSON *payload = NULL;
     esp_err_t err = read_json_body(req, &payload);
@@ -977,8 +1006,10 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
     const cJSON *status_item = cJSON_GetObjectItemCaseSensitive(payload, "status");
     const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
     const cJSON *mode_item = cJSON_GetObjectItemCaseSensitive(payload, "mode");
+    const cJSON *user_uuid_item = cJSON_GetObjectItemCaseSensitive(payload, "userUuid");
     const char *id_raw = (cJSON_IsString(id_item) && id_item->valuestring) ? id_item->valuestring : NULL;
     const char *name_raw = (cJSON_IsString(name_item) && name_item->valuestring) ? name_item->valuestring : NULL;
+    const char *user_uuid_raw = (cJSON_IsString(user_uuid_item) && user_uuid_item->valuestring) ? user_uuid_item->valuestring : NULL;
 
     if (!id_raw || id_raw[0] == '\0' || !name_raw || name_raw[0] == '\0') {
         cJSON_Delete(payload);
@@ -994,9 +1025,15 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
     // Copy id and name to local buffers BEFORE freeing payload to avoid use-after-free
     char id[WIEGAND_USER_ID_MAX];
     char name[WIEGAND_USER_NAME_MAX];
+    char user_uuid[WIEGAND_USER_ID_MAX] = "";
     strlcpy(id, id_raw, sizeof(id));
     strlcpy(name, name_raw, sizeof(name));
     const wiegand_user_t *existing = wiegand_registry_find_by_id(id);
+    if (user_uuid_raw) {
+        strlcpy(user_uuid, user_uuid_raw, sizeof(user_uuid));
+    } else if (existing) {
+        strlcpy(user_uuid, existing->user_uuid, sizeof(user_uuid));
+    }
     uint8_t channel = existing ? existing->channel : 0;
     uint8_t channel_mask = existing ? existing->channel_mask : 3;
     bool alert = existing ? existing->alert : true;
@@ -1060,7 +1097,7 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
              (unsigned)channel,
              (unsigned)channel_mask,
              alert_target_to_string(alert_target));
-    err = wiegand_registry_update_config(id, name, mode, channel, channel_mask, alert, alert_target);
+    err = wiegand_registry_update_config(id, name, mode, user_uuid, channel, channel_mask, alert, alert_target);
     if (err == ESP_OK && existing && status != existing->status) {
         err = wiegand_registry_update_status(id, status);
     }
@@ -2053,6 +2090,13 @@ void register_api_routes(httpd_handle_t server) {
         .handler = api_wiegand_stop_post_handler,
     };
     httpd_register_uri_handler(server, &wiegand_stop_post);
+
+    httpd_uri_t wiegand_device_post = {
+        .uri = "/api/wiegand/device",
+        .method = HTTP_POST,
+        .handler = api_wiegand_device_post_handler,
+    };
+    httpd_register_uri_handler(server, &wiegand_device_post);
 
     httpd_uri_t wiegand_rename_post = {
         .uri = "/api/wiegand/rename",

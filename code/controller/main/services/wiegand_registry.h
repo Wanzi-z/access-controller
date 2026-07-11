@@ -45,7 +45,7 @@ const wiegand_user_t *wiegand_registry_find_by_id(const char *id);
 esp_err_t wiegand_registry_add(const char *code, uint8_t channel, wiegand_user_t *out_user);
 esp_err_t wiegand_registry_add_for_user(const char *code, uint8_t channel, const char *user_uuid, const char *name, bool active, wiegand_user_t *out_user);
 esp_err_t wiegand_registry_update_name(const char *id, const char *name);
-esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, uint8_t channel, uint8_t channel_mask, bool alert, int alert_target);
+esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, const char *user_uuid, uint8_t channel, uint8_t channel_mask, bool alert, int alert_target);
 esp_err_t wiegand_registry_update_status(const char *id, wiegand_user_status_t status);
 esp_err_t wiegand_registry_record_use(const char *id);
 esp_err_t wiegand_registry_remove(const char *id);

@@ -13,6 +13,7 @@ const App = {
   rfAutoSavedIds: new Set(),
   rfAutoSavingIds: new Set(),
   credentialAutoSaveTimers: new Map(),
+  credentialUserCreatePromises: new Map(),
   credentialUserOpenKeys: new Set(),
   credentialUserCollapsedKeys: new Set(),
   toastTimer: null,
@@ -519,15 +520,173 @@ const normalizeChannelMask = (value, fallback = 1) => {
   return mask >= 1 && mask <= 3 ? mask : fallback;
 };
 
+const ALERT_TARGET_CONTROLLER = 1;
+const ALERT_TARGET_WG1 = 2;
+const ALERT_TARGET_WG2 = 4;
+const ALERT_TARGET_KEYPAD = ALERT_TARGET_WG1 | ALERT_TARGET_WG2;
+const ALERT_TARGET_BOTH = ALERT_TARGET_CONTROLLER | ALERT_TARGET_KEYPAD;
+
 const normalizeAlertTarget = (value, fallbackAlert = true) => {
-  if (value === 'none' || value === 'controller' || value === 'keypad' || value === 'both') return value;
-  return fallbackAlert ? 'both' : 'none';
+  if (typeof value === 'number' || /^\d+$/.test(String(value || ''))) {
+    const mask = Number(value);
+    return mask >= 0 && mask <= ALERT_TARGET_BOTH
+      ? mask
+      : (fallbackAlert ? ALERT_TARGET_BOTH : 0);
+  }
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'none' || raw === 'off') return fallbackAlert && !raw ? ALERT_TARGET_BOTH : 0;
+  if (raw === 'controller' || raw === 'buzzer') return ALERT_TARGET_CONTROLLER;
+  if (raw === 'keypad' || raw === 'keypads' || raw === 'wg') return ALERT_TARGET_KEYPAD;
+  if (raw === 'both') return ALERT_TARGET_BOTH;
+  let mask = 0;
+  raw.split(/[\s,+|]+/).forEach((part) => {
+    if (part === 'controller' || part === 'buzzer') mask |= ALERT_TARGET_CONTROLLER;
+    if (part === 'wg1' || part === 'wiegand1' || part === 'keypad1') mask |= ALERT_TARGET_WG1;
+    if (part === 'wg2' || part === 'wiegand2' || part === 'keypad2') mask |= ALERT_TARGET_WG2;
+  });
+  return mask || (fallbackAlert ? ALERT_TARGET_BOTH : 0);
 };
 
-const alertFromTarget = (target) => normalizeAlertTarget(target) !== 'none';
+const alertFromTarget = (target) => normalizeAlertTarget(target) !== 0;
+
+const readSectionLabel = (id, fallback) => {
+  const input = document.getElementById(id);
+  const value = input?.value?.trim();
+  return value || fallback;
+};
+
+const lockLabel = (channel) => readSectionLabel(`label_enableLock_${channel}`, `Lock ${channel}`);
+
+const wiegandLabel = (channel) => readSectionLabel(`label_wiegandDevice_${channel}`, `WG ${channel}`);
+
+const enabledLockOptions = () => {
+  const locks = Array.isArray(App.data?.locks) ? App.data.locks : [];
+  const options = [1, 2].map((channel) => ({
+    bit: channel,
+    label: lockLabel(channel),
+    enabled: locks.length ? locks.some((lock) => Number(lock.channel) === channel && lock.enable !== false) : true,
+  })).filter((option) => option.enabled);
+  return options.length ? options : [1, 2].map((channel) => ({ bit: channel, label: lockLabel(channel), enabled: true }));
+};
+
+const enabledWiegandOptions = () => {
+  const devices = Array.isArray(App.data?.wiegand?.devices) ? App.data.wiegand.devices : [];
+  return [1, 2]
+    .map((channel) => ({
+      bit: channel === 1 ? ALERT_TARGET_WG1 : ALERT_TARGET_WG2,
+      label: wiegandLabel(channel),
+      enabled: devices.length
+        ? devices.some((device) => Number(device.channel) === channel && device.enable !== false)
+        : true,
+    }))
+    .filter((option) => option.enabled);
+};
+
+const multiSelectOptions = (kind) => {
+  if (kind === 'lock-target') return enabledLockOptions();
+  if (kind === 'alert-target') {
+    return [
+      { bit: ALERT_TARGET_CONTROLLER, label: 'Controller', enabled: true },
+      ...enabledWiegandOptions(),
+    ];
+  }
+  return [];
+};
+
+const normalizeMaskForOptions = (value, kind, fallback = 1) => {
+  const options = multiSelectOptions(kind);
+  const availableMask = options.reduce((mask, option) => mask | option.bit, 0);
+  const rawMask = kind === 'alert-target'
+    ? normalizeAlertTarget(value, true)
+    : normalizeChannelMask(value, fallback);
+  const selected = rawMask & availableMask;
+  if (selected) return selected;
+  if (kind === 'alert-target') return availableMask & ALERT_TARGET_CONTROLLER ? ALERT_TARGET_CONTROLLER : availableMask;
+  return options[0]?.bit || fallback;
+};
+
+const multiSelectSummary = (kind, value) => {
+  const options = multiSelectOptions(kind);
+  const mask = normalizeMaskForOptions(value, kind);
+  const labels = options.filter((option) => (mask & option.bit) !== 0).map((option) => option.label);
+  if (!labels.length) return 'None';
+  if (kind === 'lock-target' && labels.length === 2) return 'Both locks';
+  return labels.join(' + ');
+};
+
+const renderMultiCheckboxControl = (label, className, value, kind, id = '') => {
+  const normalized = normalizeMaskForOptions(value, kind);
+  const inputAttrs = [
+    'type="hidden"',
+    `class="${escapeHtml(className)} multi-select-value"`,
+    `value="${normalized}"`,
+    `data-multi-kind="${escapeHtml(kind)}"`,
+  ];
+  if (id) inputAttrs.push(`id="${escapeHtml(id)}"`);
+  const options = multiSelectOptions(kind);
+  return `
+    <label class="stacked multi-select-field">
+      <span>${escapeHtml(label)}</span>
+      <input ${inputAttrs.join(' ')}>
+      <details class="multi-select-dropdown" data-multi-kind="${escapeHtml(kind)}">
+        <summary><span class="multi-select-summary">${escapeHtml(multiSelectSummary(kind, normalized))}</span></summary>
+        <div class="multi-select-menu">
+          ${options.map((option) => `
+            <label class="multi-select-option">
+              <input type="checkbox" data-bit="${option.bit}" ${(normalized & option.bit) ? 'checked' : ''}>
+              <span>${escapeHtml(option.label)}</span>
+            </label>
+          `).join('')}
+        </div>
+      </details>
+    </label>
+  `;
+};
+
+const refreshMultiSelectControl = (input, value = input?.value) => {
+  if (!input?.classList?.contains('multi-select-value')) return;
+  const field = input.closest('.multi-select-field');
+  const details = field?.querySelector('.multi-select-dropdown');
+  const summary = field?.querySelector('.multi-select-summary');
+  const menu = field?.querySelector('.multi-select-menu');
+  const kind = input.dataset.multiKind;
+  const normalized = normalizeMaskForOptions(value, kind);
+  input.value = String(normalized);
+  if (summary) summary.textContent = multiSelectSummary(kind, normalized);
+  if (menu) {
+    menu.innerHTML = multiSelectOptions(kind).map((option) => `
+      <label class="multi-select-option">
+        <input type="checkbox" data-bit="${option.bit}" ${(normalized & option.bit) ? 'checked' : ''}>
+        <span>${escapeHtml(option.label)}</span>
+      </label>
+    `).join('');
+  }
+};
+
+const refreshAllMultiSelectControls = () => {
+  document.querySelectorAll('.multi-select-value').forEach((input) => {
+    refreshMultiSelectControl(input, input.value);
+  });
+};
+
+const isMultiSelectOpen = (root = document) => !!root.querySelector?.('.multi-select-dropdown[open]');
+
+const shouldDeferCredentialRender = () => {
+  const root = App.elements.credentialUserList;
+  if (!root) return false;
+  if (isMultiSelectOpen(root)) return true;
+  const active = document.activeElement;
+  return !!active && root.contains(active) && active.matches('input, select, textarea, summary, button');
+};
 
 const setSelectValueIfIdle = (id, value) => {
   const el = document.getElementById(id);
+  if (el?.classList?.contains('multi-select-value')) {
+    if (!el.closest('.multi-select-field')?.querySelector('.multi-select-dropdown')?.open) {
+      refreshMultiSelectControl(el, value);
+    }
+    return;
+  }
   if (el && document.activeElement !== el) {
     el.value = String(value);
   }
@@ -685,7 +844,7 @@ const applyFastSignalState = (state = {}) => {
     App.data.wiegand = mergeCredentialStateFromSummary(App.data.wiegand || {}, state.wiegand || {});
   }
   renderLivePinEntries(state.wiegand?.pinEntries || []);
-  renderWiegandDevices(state.wiegand?.pinEntries || []);
+  renderWiegandDevices(state.wiegand?.pinEntries || [], state.wiegand?.devices || App.data?.wiegand?.devices || []);
   if (Array.isArray(App.data?.keypadUsers)) {
     renderKeypadUsers(App.data.keypadUsers);
   }
@@ -764,16 +923,8 @@ const renderCredentialAlertToggle = (className, checked, label = 'Alert beep') =
   </label>
 `;
 
-const renderLockTargetSelect = (className, channelMask) => `
-  <label class="stacked">
-    <span>Target</span>
-    <select class="${className}">
-      <option value="1" ${Number(channelMask) === 1 ? 'selected' : ''}>Lock 1</option>
-      <option value="2" ${Number(channelMask) === 2 ? 'selected' : ''}>Lock 2</option>
-      <option value="3" ${Number(channelMask) === 3 ? 'selected' : ''}>Both locks</option>
-    </select>
-  </label>
-`;
+const renderLockTargetSelect = (className, channelMask) =>
+  renderMultiCheckboxControl('Target', className, channelMask, 'lock-target');
 
 const renderKeypadAccessSelect = (className, keypadMask) => `
   <label class="stacked">
@@ -786,20 +937,8 @@ const renderKeypadAccessSelect = (className, keypadMask) => `
   </label>
 `;
 
-const renderAlertTargetSelect = (className, alertTarget, alert = true) => {
-  const target = normalizeAlertTarget(alertTarget, alert);
-  return `
-    <label class="stacked">
-      <span>Alert output</span>
-      <select class="${className}">
-        <option value="both" ${target === 'both' ? 'selected' : ''}>Both</option>
-        <option value="keypad" ${target === 'keypad' ? 'selected' : ''}>Keypad</option>
-        <option value="controller" ${target === 'controller' ? 'selected' : ''}>Controller</option>
-        <option value="none" ${target === 'none' ? 'selected' : ''}>None</option>
-      </select>
-    </label>
-  `;
-};
+const renderAlertTargetSelect = (className, alertTarget, alert = true) =>
+  renderMultiCheckboxControl('Alert output', className, normalizeAlertTarget(alertTarget, alert), 'alert-target');
 
 const setupCredentialIconControls = () => {
   const removeButtons = [
@@ -817,35 +956,91 @@ const setupCredentialIconControls = () => {
   });
 };
 
+const setupMultiSelectControls = () => {
+  document.addEventListener('change', (event) => {
+    const checkbox = event.target.closest('.multi-select-menu input[type="checkbox"][data-bit]');
+    if (!checkbox) return;
+    const field = checkbox.closest('.multi-select-field');
+    const input = field?.querySelector('.multi-select-value');
+    if (!input) return;
+    const kind = input.dataset.multiKind;
+    const checked = Array.from(field.querySelectorAll('.multi-select-menu input[type="checkbox"][data-bit]:checked'));
+    let mask = checked.reduce((sum, item) => sum | Number(item.dataset.bit || 0), 0);
+    if (kind === 'lock-target' && mask === 0) {
+      checkbox.checked = true;
+      mask = Number(checkbox.dataset.bit || 0);
+    }
+    input.value = String(mask);
+    refreshMultiSelectControl(input, mask);
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+};
+
+const findRenderedCredentialCard = (container) => {
+  const id = container?.getAttribute('data-id');
+  if (!id) return null;
+  const typeClass = ['credential-card--rfid', 'credential-card--remote', 'credential-card--pin']
+    .find((className) => container.classList.contains(className));
+  return Array.from(document.querySelectorAll('.credential-card'))
+    .find((candidate) => (
+      candidate.getAttribute('data-id') === id
+      && (!typeClass || candidate.classList.contains(typeClass))
+    )) || null;
+};
+
+const credentialCardTimerKey = (container) => {
+  const id = container?.getAttribute('data-id');
+  if (!id) return container;
+  const typeClass = ['credential-card--rfid', 'credential-card--remote', 'credential-card--pin']
+    .find((className) => container.classList.contains(className)) || 'credential-card';
+  return `${typeClass}:${id}`;
+};
+
 const scheduleCredentialNameSave = (input, saveHandler) => {
   const container = input?.closest('.user-row');
   if (!container || !input.value.trim()) return;
-  const existing = App.credentialAutoSaveTimers.get(container);
+  const pendingValue = input.value;
+  const timerKey = credentialCardTimerKey(container);
+  const existing = App.credentialAutoSaveTimers.get(timerKey);
   if (existing) clearTimeout(existing);
 
   const timer = setTimeout(async () => {
-    App.credentialAutoSaveTimers.delete(container);
-    if (!container.isConnected) return;
+    App.credentialAutoSaveTimers.delete(timerKey);
+    const targetContainer = container.isConnected ? container : findRenderedCredentialCard(container);
+    if (!targetContainer) return;
+    const targetInput = targetContainer.querySelector('.user-name-input');
+    if (targetContainer !== container && targetInput && !targetInput.matches(':focus')) {
+      targetInput.value = pendingValue;
+    }
     try {
-      await saveHandler(container);
+      await saveHandler(targetContainer);
     } catch (error) {
       // The save handler already surfaces the failure.
     }
   }, 650);
 
-  App.credentialAutoSaveTimers.set(container, timer);
+  App.credentialAutoSaveTimers.set(timerKey, timer);
 };
 
-const renderWiegandDevices = (pinEntries = []) => {
+const renderWiegandDevices = (pinEntries = [], devices = App.data?.wiegand?.devices || []) => {
   [1, 2].forEach((channel) => {
     const entry = Array.isArray(pinEntries)
       ? pinEntries.find((item) => Number(item?.channel) === channel)
       : null;
+    const device = Array.isArray(devices)
+      ? devices.find((item) => Number(item?.channel) === channel)
+      : null;
     const active = !!entry?.active;
+    const enabled = device ? device.enable !== false : true;
     const codeEl = document.getElementById(`wiegandDeviceCode_${channel}`);
     const lengthEl = document.getElementById(`wiegandDeviceLength_${channel}`);
+    const enableEl = document.getElementById(`enableWiegandDevice_${channel}`);
+    const card = enableEl?.closest('.wiegand-device-card');
     if (codeEl) codeEl.textContent = entry?.code ? entry.code : '—';
     if (lengthEl) lengthEl.textContent = String(Number(entry?.length) || 0);
+    if (enableEl) enableEl.checked = enabled;
+    if (card) card.classList.toggle('is-card-disabled', !enabled);
+    setCardEnabledState(`enableWiegandDevice_${channel}`, enabled);
     applySignalDot(`wiegandDeviceSignal_${channel}`, active, 'PIN digits active', 'Idle');
   });
 };
@@ -1123,6 +1318,7 @@ const renderWiegand = (wiegand = {}) => {
     lastDuplicateCode = '',
     users = [],
     pinEntries = [],
+    devices = [],
   } = wiegand;
 
   if (App.data) {
@@ -1177,7 +1373,7 @@ const renderWiegand = (wiegand = {}) => {
   if (App.elements.wiegandRemoveAllBtn) {
     App.elements.wiegandRemoveAllBtn.disabled = registrationActive || !users.length;
   }
-  renderWiegandDevices(pinEntries);
+  renderWiegandDevices(pinEntries, devices);
   renderLivePinEntries(pinEntries);
 
   if (listEl) {
@@ -1580,6 +1776,7 @@ const renderState = (state = {}) => {
     renderLogs(state.logs);
   }
   renderWifi(state.wifi || {}, state.device?.network || {}, state.system || {});
+  refreshAllMultiSelectControls();
 };
 
 const DEVICE_STATE_ERROR_THROTTLE_MS = 15000;
@@ -1846,7 +2043,9 @@ const updateLock = async (channel, updates) => {
       method: 'POST',
       body: JSON.stringify(body),
     });
+    if (App.data) App.data.locks = Array.isArray(locks) ? locks : [];
     applyLockState(locks || []);
+    refreshAllMultiSelectControls();
   } catch (error) {
     handleError(error, 'Failed to update lock state');
   }
@@ -1955,32 +2154,15 @@ const createCardModeSelect = (modeId, latchId) => {
 };
 
 const createCardTargetSelect = (targetId) => {
-  const wrap = document.createElement('label');
-  wrap.className = 'card-target-select stacked';
-  wrap.innerHTML = `
-    <span>Target</span>
-    <select id="${targetId}">
-      <option value="1">Lock 1</option>
-      <option value="2">Lock 2</option>
-      <option value="3">Both locks</option>
-    </select>
-  `;
-  return wrap;
+  const holder = document.createElement('div');
+  holder.innerHTML = renderMultiCheckboxControl('Target', '', 3, 'lock-target', targetId).trim();
+  return holder.firstElementChild;
 };
 
 const createCardAlertTargetSelect = (targetId) => {
-  const wrap = document.createElement('label');
-  wrap.className = 'card-alert-target-select stacked';
-  wrap.innerHTML = `
-    <span>Alert output</span>
-    <select id="${targetId}">
-      <option value="both">Both</option>
-      <option value="keypad">Keypad</option>
-      <option value="controller">Controller</option>
-      <option value="none">None</option>
-    </select>
-  `;
-  return wrap;
+  const holder = document.createElement('div');
+  holder.innerHTML = renderMultiCheckboxControl('Alert output', '', ALERT_TARGET_BOTH, 'alert-target', targetId).trim();
+  return holder.firstElementChild;
 };
 
 const setupControlCardChrome = () => {
@@ -2009,11 +2191,16 @@ const setupControlCardChrome = () => {
 
     const titleWrap = document.createElement('div');
     titleWrap.className = 'control-card-title';
-    if (titleEl) {
+    if (titleEl?.classList?.contains('section-label')) {
       titleWrap.appendChild(titleEl);
     } else {
-      const title = document.createElement('h4');
-      title.textContent = config.label;
+      if (titleEl) titleEl.remove();
+      const title = document.createElement('input');
+      title.type = 'text';
+      title.id = `label_${config.enableId}`;
+      title.className = 'section-label';
+      title.value = config.label;
+      title.setAttribute('aria-label', `${config.label} label`);
       titleWrap.appendChild(title);
     }
     header.appendChild(titleWrap);
@@ -2039,10 +2226,10 @@ const setupControlCardChrome = () => {
 
     if (config.targetId) {
       const targetWrap = createCardTargetSelect(config.targetId);
-      const targetSelect = targetWrap.querySelector('select');
-      if (targetSelect) {
-        targetSelect.value = String(channel);
-        targetSelect.addEventListener('change', (event) => {
+      const targetInput = targetWrap.querySelector('.multi-select-value');
+      if (targetInput) {
+        refreshMultiSelectControl(targetInput, 3);
+        targetInput.addEventListener('change', (event) => {
           config.update(channel, { channel_mask: Number(event.target.value) });
         });
       }
@@ -2051,11 +2238,11 @@ const setupControlCardChrome = () => {
 
     if (config.alertTargetId) {
       const alertWrap = createCardAlertTargetSelect(config.alertTargetId);
-      const alertSelect = alertWrap.querySelector('select');
+      const alertInput = alertWrap.querySelector('.multi-select-value');
       const alertEl = document.getElementById(config.alertId);
-      if (alertSelect) {
-        alertSelect.value = alertEl?.checked === false ? 'none' : 'both';
-        alertSelect.addEventListener('change', (event) => {
+      if (alertInput) {
+        refreshMultiSelectControl(alertInput, alertEl?.checked === false ? 0 : ALERT_TARGET_BOTH);
+        alertInput.addEventListener('change', (event) => {
           const alert_target = normalizeAlertTarget(event.target.value, true);
           if (alertEl) alertEl.checked = alertFromTarget(alert_target);
           config.update(channel, { alert_target, alert: alertFromTarget(alert_target) });
@@ -2089,6 +2276,62 @@ const setupControlCardChrome = () => {
     section.insertBefore(header, section.firstChild);
     enableEl.closest('label')?.classList.add('hidden-card-control');
     setCardEnabledState(config.enableId, enableEl.checked);
+  });
+};
+
+const updateWiegandDevice = async (channel, patch) => {
+  try {
+    const wiegand = await fetchJSON('api/wiegand/device', {
+      method: 'POST',
+      body: JSON.stringify({ channel, ...patch }),
+    });
+    if (App.data) App.data.wiegand = wiegand;
+    renderWiegand(wiegand);
+    refreshAllMultiSelectControls();
+    return wiegand;
+  } catch (error) {
+    handleError(error, `Failed to update Wiegand ${channel}`);
+    throw error;
+  }
+};
+
+const setupWiegandDeviceControls = () => {
+  [1, 2].forEach((channel) => {
+    const signalEl = document.getElementById(`wiegandDeviceSignal_${channel}`);
+    const card = signalEl?.closest('.wiegand-device-card');
+    const titleRow = signalEl?.closest('.wiegand-device-title');
+    if (!card || !titleRow || document.getElementById(`enableWiegandDevice_${channel}`)) return;
+
+    const existingTitle = titleRow.querySelector('h4, .section-label');
+    if (existingTitle && !existingTitle.classList.contains('section-label')) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.id = `label_wiegandDevice_${channel}`;
+      input.className = 'section-label';
+      input.value = `WG ${channel}`;
+      input.setAttribute('aria-label', `Wiegand ${channel} label`);
+      existingTitle.replaceWith(input);
+    }
+
+    const enableInput = document.createElement('input');
+    enableInput.type = 'checkbox';
+    enableInput.id = `enableWiegandDevice_${channel}`;
+    enableInput.className = 'hidden-card-control';
+    enableInput.checked = true;
+    card.appendChild(enableInput);
+
+    const enableButton = createCardEnableButton(enableInput.id, `Wiegand ${channel}`);
+    enableButton.addEventListener('click', async () => {
+      const next = !enableInput.checked;
+      enableButton.disabled = true;
+      try {
+        await updateWiegandDevice(channel, { enable: next });
+      } finally {
+        enableButton.disabled = false;
+      }
+    });
+    titleRow.appendChild(enableButton);
+    setCardEnabledState(enableInput.id, true);
   });
 };
 
@@ -2547,6 +2790,12 @@ const setupWiegandHandlers = () => {
       const id = container.getAttribute('data-id');
       const existing = (App.data?.wiegand?.users || []).find((user) => user.id === id) || {};
       const name = input.value.trim() || existing.name || 'RFID Card';
+      const existingUserUuid = credentialOwnerUuid(existing);
+      const existingName = credentialOwnerName(existing);
+      let userUuid = existingUserUuid;
+      if (!userUuid || credentialUserNameKey(name) !== credentialUserNameKey(existingName)) {
+        userUuid = await ensureCredentialUserForName(name);
+      }
       const channel = parseInt(container.getAttribute('data-channel') || `${existing.channel || 0}`, 10) || 0;
       const mode = modeInput?.value || existing.mode || 'momentary';
       const channel_mask = channelInput ? Number(channelInput.value) : (existing.channel_mask || 3);
@@ -2560,7 +2809,7 @@ const setupWiegandHandlers = () => {
       try {
         const wiegand = await fetchJSON('api/wiegand/rename', {
           method: 'POST',
-          body: JSON.stringify({ id, name, channel, channel_mask, alert, alert_target, enabled, mode }),
+          body: JSON.stringify({ id, name, userUuid, channel, channel_mask, alert, alert_target, enabled, mode }),
         });
         renderWiegand(wiegand);
         if (!quiet) showToast('RFID card updated.');
@@ -3002,14 +3251,7 @@ const buildKeypadUserRow = (user, index, existingValue) => {
               <option value="power_off" ${mode === 'power_off' ? 'selected' : ''}>Power OFF</option>
             </select>
           </label>
-          <label class="stacked">
-            <span>Target</span>
-            <select class="pin-channel-select">
-              <option value="1" ${channelMask === 1 ? 'selected' : ''}>Lock 1</option>
-              <option value="2" ${channelMask === 2 ? 'selected' : ''}>Lock 2</option>
-              <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both locks</option>
-            </select>
-          </label>
+          ${renderLockTargetSelect('pin-channel-select', channelMask)}
           ${renderKeypadAccessSelect('pin-keypad-select', keypadMask)}
           ${renderAlertTargetSelect('pin-alert-target-select', alertTarget, alert)}
           <label class="stacked">
@@ -3034,6 +3276,51 @@ const credentialOwnerUuid = (item = {}) => (
 );
 
 const credentialOwnerName = (item = {}) => normalizeCredentialUserName(item.userName || item.name);
+
+const findCredentialUserByName = (name) => {
+  const key = credentialUserNameKey(name);
+  return (Array.isArray(App.data?.keypadUsers) ? App.data.keypadUsers : [])
+    .find((user) => credentialUserNameKey(user?.name) === key) || null;
+};
+
+const ensureCredentialUserForName = async (name) => {
+  const normalized = normalizeCredentialUserName(name);
+  const key = credentialUserNameKey(normalized);
+  const existing = findCredentialUserByName(normalized);
+  if (existing?.uuid) return existing.uuid;
+  const pending = App.credentialUserCreatePromises.get(key);
+  if (pending) return pending;
+
+  const createPromise = (async () => {
+    let users = await fetchJSON(`api/keypad/users?t=${Date.now()}`);
+    let list = Array.isArray(users) ? users : [];
+    if (App.data) App.data.keypadUsers = list;
+    const latest = list.find((user) => credentialUserNameKey(user?.name) === key);
+    if (latest?.uuid) return latest.uuid;
+
+    users = await fetchJSON('api/keypad/user', {
+      method: 'POST',
+      body: JSON.stringify({ name: normalized, pin: '' }),
+    });
+    if (!Array.isArray(users) || !users.length) {
+      users = await fetchJSON(`api/keypad/users?t=${Date.now()}`);
+    }
+
+    list = Array.isArray(users) ? users : [];
+    if (App.data) App.data.keypadUsers = list;
+
+    const created = [...list].reverse()
+      .find((user) => credentialUserNameKey(user?.name) === key);
+    return created?.uuid || '';
+  })();
+
+  App.credentialUserCreatePromises.set(key, createPromise);
+  try {
+    return await createPromise;
+  } finally {
+    App.credentialUserCreatePromises.delete(key);
+  }
+};
 
 const collectCredentialFormValues = () => {
   const root = App.elements.credentialUserList
@@ -3247,6 +3534,7 @@ const groupMatchesActiveEnrollment = (group) => {
 const renderCredentialUsers = () => {
   const listEl = App.elements.credentialUserList;
   if (!listEl) return;
+  if (shouldDeferCredentialRender()) return;
 
   const preserved = collectCredentialFormValues();
   const groups = buildCredentialUserGroups();
@@ -4004,8 +4292,11 @@ const setupEditableLabels = () => {
       } catch (e) { labels = {}; }
       labels[id] = input.value;
       localStorage.setItem(LABEL_STORAGE_KEY, JSON.stringify(labels));
+      refreshAllMultiSelectControls();
     });
+    input.addEventListener('input', refreshAllMultiSelectControls);
   });
+  refreshAllMultiSelectControls();
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -4068,7 +4359,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   bindNavigation();
   setupCredentialIconControls();
+  setupMultiSelectControls();
   setupControlCardChrome();
+  setupWiegandDeviceControls();
   setupLockHandlers();
   setupExitHandlers();
   setupFobHandlers();

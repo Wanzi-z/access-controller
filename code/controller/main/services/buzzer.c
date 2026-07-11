@@ -41,22 +41,22 @@ static void alert_output_internal(int beeps, int channel, int target, bool force
     target = alert_target_normalize(target, true);
     if (target == ALERT_TARGET_NONE) return;
 
-    bool both_keypads = (channel == 0);
-    uint8_t push_pin = (channel == 2) ? MCP_PUSH1_IO : MCP_PUSH0_IO;
+    bool push_wg1 = (target & ALERT_TARGET_WG1) != 0;
+    bool push_wg2 = (target & ALERT_TARGET_WG2) != 0;
 
-    ESP_LOGI(BUZZER_TAG, "alert_output: beeps=%d, channel=%d, target=%s, MCP_PIN=%d%s",
-             beeps, channel, alert_target_to_string(target), push_pin, both_keypads ? " + both" : "");
+    ESP_LOGI(BUZZER_TAG, "alert_output: beeps=%d, channel=%d, target=%s, wg1=%d wg2=%d",
+             beeps, channel, alert_target_to_string(target), push_wg1 ? 1 : 0, push_wg2 ? 1 : 0);
 
     for (int i = 0; i < beeps; i++) {
         if (target & ALERT_TARGET_CONTROLLER) {
             gpio_set_level(bzr.pin, 1);
         }
         
-        if (target & ALERT_TARGET_KEYPAD) {
-            keypad_push_set(push_pin, true);
-            if (both_keypads) {
-                keypad_push_set(MCP_PUSH1_IO, true);
-            }
+        if (push_wg1) {
+            keypad_push_set(MCP_PUSH0_IO, true);
+        }
+        if (push_wg2) {
+            keypad_push_set(MCP_PUSH1_IO, true);
         }
         
         vTaskDelay(pdMS_TO_TICKS(KEYPAD_PUSH_ACTIVE_MS));
@@ -65,11 +65,11 @@ static void alert_output_internal(int beeps, int channel, int target, bool force
             gpio_set_level(bzr.pin, 0);
         }
         
-        if (target & ALERT_TARGET_KEYPAD) {
-            keypad_push_set(push_pin, false);
-            if (both_keypads) {
-                keypad_push_set(MCP_PUSH1_IO, false);
-            }
+        if (push_wg1) {
+            keypad_push_set(MCP_PUSH0_IO, false);
+        }
+        if (push_wg2) {
+            keypad_push_set(MCP_PUSH1_IO, false);
         }
         
         vTaskDelay(pdMS_TO_TICKS(KEYPAD_PUSH_IDLE_MS));
