@@ -22,6 +22,8 @@ struct fob
 	bool toggleState;
 	int delay;
 	int channel;
+	int channel_mask;
+	int alert_target;
 	char mode[12];
 	cJSON *payload;
 	char settings[1000];
@@ -43,6 +45,34 @@ static bool fob_json_bool(const cJSON *item)
 		return strcmp(item->valuestring, "true") == 0 || strcmp(item->valuestring, "1") == 0;
 	}
 	return false;
+}
+
+static int fob_json_int(const cJSON *item, int fallback)
+{
+	if (cJSON_IsNumber(item)) return item->valueint;
+	if (cJSON_IsString(item) && item->valuestring) return atoi(item->valuestring);
+	return fallback;
+}
+
+static int fob_alert_channel(struct fob *fb)
+{
+	int mask = fb->channel_mask;
+	if (mask <= 0 || mask > 3) mask = 1 << (fb->channel - 1);
+	return mask == 3 ? 0 : ((mask & 1) ? 1 : 2);
+}
+
+static void fob_apply_locks(struct fob *fb, bool arm, const char *source, bool do_alert)
+{
+	int mask = fb->channel_mask;
+	if (mask <= 0 || mask > 3) mask = 1 << (fb->channel - 1);
+	for (int bit = 0; bit < 2; bit++) {
+		if ((mask & (1 << bit)) == 0) continue;
+		lock_set_action_source(source);
+		arm_lock(bit + 1, arm, false);
+	}
+	if (do_alert && fb->alert) {
+		alert_output_signal_force(1, fob_alert_channel(fb), fb->alert_target);
+	}
 }
 
 static const char *fob_mode_from_latch(bool latch)
@@ -108,8 +138,7 @@ void check_fob_timer (struct fob *fb)
 {
   if (fb->count >= fb->delay && !fb->expired) {
 			ESP_LOGI(TAG, "Re-arming lock from fob %d service.", fb->channel);
-	        lock_set_action_source("fob_auto");
-			arm_lock(fb->channel, true, true);
+			fob_apply_locks(fb, true, "fob_auto", false);
 			fb->expired = true;
   } else fb->count++;
 }
@@ -147,21 +176,18 @@ void check_fobs (struct fob *fb)
 	if (strcmp(mode, "latch") == 0 && fb->isPressed != fb->prevPress) {
 		// Latch mode: FOB state directly controls lock state
 		ESP_LOGI(TAG, "Fob %d state changed to %s (latch mode)", fb->channel, fb->isPressed ? "activated" : "deactivated");
-	        lock_set_action_source("fob_latch");
-			arm_lock(fb->channel, fb->isPressed, true);
+		fob_apply_locks(fb, fb->isPressed, "fob_latch", true);
 		enableExit(fb->channel, fb->isPressed);
 		enableKeypad(fb->channel, fb->isPressed);
 	} else if (strcmp(mode, "toggle") == 0 && fb->isPressed && !fb->prevPress) {
 		fb->toggleState = !fb->toggleState;
 		ESP_LOGI(TAG, "Fob %d toggled lock to %s", fb->channel, fb->toggleState ? "armed" : "disarmed");
-	        lock_set_action_source("fob_toggle");
-			arm_lock(fb->channel, fb->toggleState, true);
+		fob_apply_locks(fb, fb->toggleState, "fob_toggle", true);
 		start_fob_timer(fb, false);
 	} else if (strcmp(mode, "momentary") == 0 && fb->isPressed && !fb->prevPress) {
 		// Momentary mode: active edge triggers unlock and timer
 		ESP_LOGI(TAG, "Fob %d activated (momentary mode) - disarming lock", fb->channel);
-	        lock_set_action_source("fob_active");
-			arm_lock(fb->channel, false, true);
+		fob_apply_locks(fb, false, "fob_active", true);
 		start_fob_timer(fb, true);
 	}
 
@@ -171,7 +197,26 @@ void check_fobs (struct fob *fb)
 void alertOnFob (int ch, bool val)
 {
 	for (int i=0; i < NUM_OF_FOBS; i++)
-		if (fobs[i].channel == ch) fobs[i].alert = val;
+		if (fobs[i].channel == ch) {
+			fobs[i].alert = val;
+			fobs[i].alert_target = alert_target_from_bool(val);
+		}
+}
+
+void setFobAlertTarget (int ch, int val)
+{
+	for (int i=0; i < NUM_OF_FOBS; i++)
+		if (fobs[i].channel == ch) {
+			fobs[i].alert_target = alert_target_normalize(val, fobs[i].alert);
+			fobs[i].alert = fobs[i].alert_target != ALERT_TARGET_NONE;
+		}
+}
+
+void setFobChannelMask (int ch, int val)
+{
+	if (val <= 0 || val > 3) return;
+	for (int i=0; i < NUM_OF_FOBS; i++)
+		if (fobs[i].channel == ch) fobs[i].channel_mask = val;
 }
 
 static void test_fob_signal(struct fob *fb)
@@ -180,20 +225,17 @@ static void test_fob_signal(struct fob *fb)
 	const char *mode = fob_current_mode(fb);
 	if (strcmp(mode, "latch") == 0) {
 		ESP_LOGI(TAG, "Fob %d test - latch active", fb->channel);
-		lock_set_action_source("fob_test");
-		arm_lock(fb->channel, true, true);
+		fob_apply_locks(fb, true, "fob_test", true);
 		enableExit(fb->channel, true);
 		enableKeypad(fb->channel, true);
 	} else if (strcmp(mode, "toggle") == 0) {
 		fb->toggleState = !fb->toggleState;
 		ESP_LOGI(TAG, "Fob %d test toggled lock to %s", fb->channel, fb->toggleState ? "armed" : "disarmed");
-		lock_set_action_source("fob_test");
-		arm_lock(fb->channel, fb->toggleState, true);
+		fob_apply_locks(fb, fb->toggleState, "fob_test", true);
 		start_fob_timer(fb, false);
 	} else {
 		ESP_LOGI(TAG, "Fob %d test - disarming lock", fb->channel);
-		lock_set_action_source("fob_test");
-		arm_lock(fb->channel, false, true);
+		fob_apply_locks(fb, false, "fob_test", true);
 		start_fob_timer(fb, true);
 	}
 }
@@ -207,11 +249,13 @@ int storeFobSettings()
 		strcpy(type, fobs[i].type);
 		sprintf(fobs[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s, \"mode\": \"%s\"}}",
+			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"alert_target\": \"%s\", \"channel_mask\": %d, \"delay\": %d, \"latch\": %s, \"mode\": \"%s\"}}",
 			type,
 			i+1,
 			(fobs[i].enable) ? "true" : "false",
 			(fobs[i].alert) ? "true" : "false",
+			alert_target_to_string(fobs[i].alert_target),
+			fobs[i].channel_mask,
 			fobs[i].delay,
 			(fobs[i].latch) ? "true" : "false",
 			fob_current_mode(&fobs[i]));
@@ -258,6 +302,8 @@ cJSON *fob_state_snapshot(void) {
         cJSON_AddNumberToObject(entry, "channel", fobs[i].channel);
         cJSON_AddBoolToObject(entry, "enable", fobs[i].enable);
         cJSON_AddBoolToObject(entry, "alert", fobs[i].alert);
+        cJSON_AddStringToObject(entry, "alert_target", alert_target_to_string(fobs[i].alert_target));
+        cJSON_AddNumberToObject(entry, "channel_mask", fobs[i].channel_mask);
         cJSON_AddNumberToObject(entry, "delay", fobs[i].delay);
         cJSON_AddBoolToObject(entry, "latch", fobs[i].latch);
         cJSON_AddStringToObject(entry, "mode", fob_current_mode(&fobs[i]));
@@ -297,7 +343,18 @@ void handle_fob_message(cJSON * payload)
 
 		if (cJSON_GetObjectItem(payload,"alert")) {
 			val = fob_json_bool(cJSON_GetObjectItem(payload,"alert"));
-			fobs[ch - 1].alert = val;
+			alertOnFob(ch, val);
+		}
+
+		cJSON *alert_target = cJSON_GetObjectItem(payload, "alert_target");
+		if (cJSON_IsString(alert_target) && alert_target->valuestring) {
+			setFobAlertTarget(ch, alert_target_from_string(alert_target->valuestring, fobs[ch - 1].alert));
+		} else if (cJSON_IsNumber(alert_target)) {
+			setFobAlertTarget(ch, alert_target->valueint);
+		}
+
+		if (cJSON_GetObjectItem(payload,"channel_mask")) {
+			setFobChannelMask(ch, fob_json_int(cJSON_GetObjectItem(payload,"channel_mask"), fobs[ch - 1].channel_mask));
 		}
 
 		if (cJSON_GetObjectItem(payload,"delay")) {
@@ -341,8 +398,10 @@ void fob_main()
 	fobs[0].pin = FOB_MCP_IO_1;
 	fobs[0].delay = 4;
 	fobs[0].channel = 1;
+	fobs[0].channel_mask = 1;
 	fobs[0].enable = false;
 	fobs[0].alert = true;
+	fobs[0].alert_target = ALERT_TARGET_BOTH;
 	fobs[0].latch = false;  // Default to momentary mode
 	fobs[0].toggleState = false;
 	fob_set_mode(&fobs[0], "momentary");
@@ -351,8 +410,10 @@ void fob_main()
 	fobs[1].pin = FOB_MCP_IO_2;
 	fobs[1].delay = 4;
 	fobs[1].channel = 2;
+	fobs[1].channel_mask = 2;
 	fobs[1].enable = false;
 	fobs[1].alert = true;
+	fobs[1].alert_target = ALERT_TARGET_BOTH;
 	fobs[1].latch = false;  // Default to momentary mode
 	fobs[1].toggleState = false;
 	fob_set_mode(&fobs[1], "momentary");

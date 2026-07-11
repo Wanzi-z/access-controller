@@ -247,66 +247,56 @@ static bool wiegand_card_channel_matches(const wiegand_user_t *user, int reader_
     return user && (user->channel == 0 || user->channel == reader_channel);
 }
 
-static int wiegand_card_action_channel(const wiegand_user_t *user, int reader_channel) {
-    if (user && user->channel >= 1 && user->channel <= NUM_OF_WIEGANDS) {
-        return user->channel;
-    }
-    return reader_channel;
-}
+static void pin_user_start_rearm_timer(TimerHandle_t *timer_slot, int channel, int seconds);
 
-static void start_wiegand_timer_for_action(struct wiegand *ctx, bool val, int channel, bool alert) {
-    if (!ctx) {
-        return;
-    }
-    start_keypress_timer(ctx, false);
-    if (val) {
-        ctx->rearm_channel = (channel >= 1 && channel <= NUM_OF_WIEGANDS) ? channel : ctx->channel;
-        ctx->rearm_alert = alert;
-        ctx->expired = false;
-        ctx->count = 0;
-    } else {
-        ctx->expired = true;
-        ctx->incomingCodeCount = 0;
-    }
+static int alert_channel_from_mask(int mask) {
+    if (mask <= 0 || mask > 3) mask = 1;
+    return mask == 3 ? 0 : ((mask & 1) ? 1 : 2);
 }
 
 static void apply_wiegand_card_action(struct wiegand *wg_entry,
                                       const wiegand_user_t *user,
-                                      int action_channel,
                                       const char *bit_string) {
-    if (!wg_entry || !user || action_channel < 1 || action_channel > NUM_OF_WIEGANDS) {
+    if (!wg_entry || !user) {
         return;
     }
 
+    int channel_mask = user->channel_mask;
+    if (channel_mask <= 0 || channel_mask > 3) {
+        channel_mask = 1 << (wg_entry->channel - 1);
+    }
     const char *mode = user->mode[0] != '\0' ? user->mode : "momentary";
-    if (strcmp(mode, "toggle") == 0) {
-        int idx = action_channel - 1;
-        wiegand_card_toggle_state[idx] = !wiegand_card_toggle_state[idx];
-        lock_set_action_source("wg_toggle");
-        arm_lock(action_channel, wiegand_card_toggle_state[idx], false);
-        start_wiegand_timer_for_action(wg_entry, false, action_channel, false);
-        ESP_LOGI(LOG_TAG_WIEGAND,
-                 "Wiegand code %s toggle mode on channel %d -> %s",
-                 bit_string,
-                 action_channel,
-                 wiegand_card_toggle_state[idx] ? "armed" : "disarmed");
-    } else if (strcmp(mode, "latch") == 0) {
-        lock_set_action_source("wg_latch");
-        arm_lock(action_channel, false, false);
-        start_wiegand_timer_for_action(wg_entry, false, action_channel, false);
-        ESP_LOGI(LOG_TAG_WIEGAND,
-                 "Wiegand code %s latch mode disarmed channel %d",
-                 bit_string,
-                 action_channel);
-    } else {
-        lock_set_action_source("wg_code");
-        arm_lock(action_channel, false, false);
-        start_wiegand_timer_for_action(wg_entry, true, action_channel, false);
+    bool did_action = false;
+    for (int bit = 0; bit < NUM_OF_WIEGANDS; bit++) {
+        if ((channel_mask & (1 << bit)) == 0) continue;
+        int action_channel = bit + 1;
+        if (strcmp(mode, "toggle") == 0) {
+            wiegand_card_toggle_state[bit] = !wiegand_card_toggle_state[bit];
+            lock_set_action_source("wg_toggle");
+            arm_lock(action_channel, wiegand_card_toggle_state[bit], false);
+            ESP_LOGI(LOG_TAG_WIEGAND,
+                     "Wiegand code %s toggle mode on channel %d -> %s",
+                     bit_string,
+                     action_channel,
+                     wiegand_card_toggle_state[bit] ? "armed" : "disarmed");
+        } else if (strcmp(mode, "latch") == 0) {
+            lock_set_action_source("wg_latch");
+            arm_lock(action_channel, false, false);
+            ESP_LOGI(LOG_TAG_WIEGAND,
+                     "Wiegand code %s latch mode disarmed channel %d",
+                     bit_string,
+                     action_channel);
+        } else {
+            lock_set_action_source("wg_code");
+            arm_lock(action_channel, false, false);
+            pin_user_start_rearm_timer(pin_user_momentary_timers, action_channel, wg_entry->delay);
+        }
+        did_action = true;
     }
 
     wiegand_registry_record_use(user->id);
-    if (user->alert) {
-        beep_keypad(1, action_channel);
+    if (did_action && user->alert) {
+        alert_output_signal(1, alert_channel_from_mask(channel_mask), user->alert_target);
     }
 }
 
@@ -333,15 +323,14 @@ static void wiegand_process_code(struct wiegand *wg_entry, const char *bit_strin
         existing->status == WIEGAND_USER_STATUS_ACTIVE &&
         wiegand_card_channel_matches(existing, wg_entry->channel)) {
         const char *display_name = (existing->name[0] != '\0') ? existing->name : "Wiegand User";
-        int action_channel = wiegand_card_action_channel(existing, wg_entry->channel);
         ESP_LOGI(LOG_TAG_WIEGAND,
-                 "Authorized Wiegand code %s (user=%s, mode=%s, channel=%d, alert=%d) while registering",
+                 "Authorized Wiegand code %s (user=%s, mode=%s, lock_mask=0x%x, alert=%d) while registering",
                  bit_string,
                  display_name,
                  existing->mode[0] != '\0' ? existing->mode : "momentary",
-                 action_channel,
+                 existing->channel_mask,
                  existing->alert ? 1 : 0);
-        apply_wiegand_card_action(wg_entry, existing, action_channel, bit_string);
+        apply_wiegand_card_action(wg_entry, existing, bit_string);
         return;
     }
 
@@ -387,20 +376,19 @@ static void wiegand_process_code(struct wiegand *wg_entry, const char *bit_strin
         user->status == WIEGAND_USER_STATUS_ACTIVE &&
         wiegand_card_channel_matches(user, wg_entry->channel)) {
         const char *display_name = (user->name[0] != '\0') ? user->name : "Wiegand User";
-        int action_channel = wiegand_card_action_channel(user, wg_entry->channel);
         char log_msg[256];
         snprintf(log_msg, sizeof(log_msg),
                  "{\"event_type\":\"log\",\"payload\":{\"service_id\":\"ac_1\",\"type\":\"access-control\",\"description\":\"%s authorized via Wiegand\",\"event\":\"authentication\",\"value\":\"%s\"}}",
                  display_name, bit_string);
         // addServerMessageToQueue(log_msg); // This line is removed
         ESP_LOGI(LOG_TAG_WIEGAND,
-                 "Authorized Wiegand code %s (user=%s, mode=%s, channel=%d, alert=%d)",
+                 "Authorized Wiegand code %s (user=%s, mode=%s, lock_mask=0x%x, alert=%d)",
                  bit_string,
                  display_name,
                  user->mode[0] != '\0' ? user->mode : "momentary",
-                 action_channel,
+                 user->channel_mask,
                  user->alert ? 1 : 0);
-        apply_wiegand_card_action(wg_entry, user, action_channel, bit_string);
+        apply_wiegand_card_action(wg_entry, user, bit_string);
     } else {
         ESP_LOGW(LOG_TAG_WIEGAND, "Unauthorized Wiegand code %s on channel %d", bit_string, wg_entry->channel);
     }
@@ -520,11 +508,19 @@ static void pin_user_start_rearm_timer(TimerHandle_t *timer_slot, int channel, i
     }
 }
 
-static void apply_pin_user_action(const pin_user_match_t *user) {
+static bool apply_pin_user_action(const pin_user_match_t *user, int reader_channel) {
     if (!user) {
-        return;
+        return false;
+    }
+    if (reader_channel < 1 || reader_channel > NUM_OF_WIEGANDS) {
+        return false;
+    }
+    if ((user->keypad_mask & (1 << (reader_channel - 1))) == 0) {
+        ESP_LOGW(LOG_TAG_WIEGAND, "PIN user %s not allowed from keypad channel %d", user->name, reader_channel);
+        return false;
     }
 
+    bool did_action = false;
     for (int bit = 0; bit < NUM_OF_WIEGANDS; bit++) {
         if ((user->channel_mask & (1 << bit)) == 0) {
             continue;
@@ -563,14 +559,17 @@ static void apply_pin_user_action(const pin_user_match_t *user) {
                      user->name, channel, user->exit_seconds);
         }
 
-        if (user->alert) {
-            beep_keypad(1, channel);
-        }
+        did_action = true;
+    }
+
+    if (did_action && user->alert) {
+        alert_output_signal(1, reader_channel, user->alert_target);
     }
 
     char msg[160];
-    snprintf(msg, sizeof(msg), "PIN %s mode=%s chmask=0x%x", user->name, user->mode, user->channel_mask);
+    snprintf(msg, sizeof(msg), "PIN %s mode=%s chmask=0x%x keypad=0x%x", user->name, user->mode, user->channel_mask, user->keypad_mask);
     automation_record_log(msg);
+    return did_action;
 }
 
 static bool handleKeyCode(struct wiegand *ctx) {
@@ -679,9 +678,13 @@ static bool handleKeyCode(struct wiegand *ctx) {
             } else {
                 pin_user_match_t pin_user;
                 if (is_pin_authorized(ctx->code, &pin_user)) {
-                    apply_pin_user_action(&pin_user);
-                    ESP_LOGI(LOG_TAG_WIEGAND, "PIN accepted on reader channel %d (%s, user=%s)",
-                             ctx->channel, ctx->code, pin_user.name);
+                    if (apply_pin_user_action(&pin_user, ctx->channel)) {
+                        ESP_LOGI(LOG_TAG_WIEGAND, "PIN accepted on reader channel %d (%s, user=%s)",
+                                 ctx->channel, ctx->code, pin_user.name);
+                    } else {
+                        beep_keypad(2, ctx->channel);
+                        ESP_LOGW(LOG_TAG_WIEGAND, "PIN user %s rejected on keypad channel %d", pin_user.name, ctx->channel);
+                    }
                 } else {
                     beep_keypad(2, ctx->channel);
                     ESP_LOGW(LOG_TAG_WIEGAND, "PIN rejected on channel %d (%s)", ctx->channel, ctx->code);

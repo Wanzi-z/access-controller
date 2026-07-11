@@ -1081,7 +1081,8 @@ body {
 }
 
 .device-lock-grid {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+  justify-content: start;
 }
 
 .device-exit-grid {
@@ -1089,7 +1090,8 @@ body {
 }
 
 .wiegand-device-grid {
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 320px));
+  justify-content: start;
 }
 
 .wiegand-device-card,
@@ -1125,8 +1127,9 @@ body {
 }
 
 .wiegand-status-bar {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(260px, 620px) auto;
   align-items: end;
+  justify-content: start;
 }
 
 .wiegand-actions {
@@ -1197,7 +1200,9 @@ body {
   padding: 8px 10px;
 }
 
-.card-mode-select {
+.card-mode-select,
+.card-target-select,
+.card-alert-target-select {
   grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
@@ -1205,7 +1210,17 @@ body {
   min-width: 0;
 }
 
-.card-mode-select > span {
+.card-target-select {
+  grid-column: 1 / 2;
+}
+
+.card-alert-target-select {
+  grid-column: 2 / -1;
+}
+
+.card-mode-select > span,
+.card-target-select > span,
+.card-alert-target-select > span {
   color: var(--color-muted);
   font-size: 0.68rem;
   font-weight: 800;
@@ -1214,7 +1229,9 @@ body {
   text-transform: uppercase;
 }
 
-.card-mode-select select {
+.card-mode-select select,
+.card-target-select select,
+.card-alert-target-select select {
   width: 100%;
   min-height: 36px;
   padding: 7px 9px;
@@ -2338,9 +2355,10 @@ button.secondary.danger {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .card-mode-select {
+  .card-mode-select,
+  .card-target-select,
+  .card-alert-target-select {
     grid-column: 1 / -1;
-    grid-row: 2;
   }
 
   .card-enable-text {

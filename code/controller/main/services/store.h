@@ -18,8 +18,10 @@ typedef struct {
     char pin[PIN_USER_PIN_MAX];
     char mode[PIN_USER_MODE_MAX];
     int channel_mask;
+    int keypad_mask;
     int exit_seconds;
     bool alert;
+    int alert_target;
     bool enabled;
 } pin_user_match_t;
 
@@ -33,7 +35,7 @@ void modify_user_from_flash(const char *uuid, const char *newName, const char *n
 esp_err_t append_user_pin_to_flash(const char *uuid, const char *pin, bool *out_added);
 esp_err_t upsert_user_pin_to_flash(const char *uuid, const char *name, const char *pin, bool *out_added);
 esp_err_t record_pin_user_use_in_flash(const char *uuid, const char *pin);
-esp_err_t update_pin_user_in_flash(const char *uuid, const char *name, const char *pin, int pin_index, const char *mode, int channel_mask, int exit_seconds, bool alert, bool enabled);
+esp_err_t update_pin_user_in_flash(const char *uuid, const char *name, const char *pin, int pin_index, const char *mode, int channel_mask, int keypad_mask, int exit_seconds, bool alert, int alert_target, bool enabled);
 esp_err_t store_char(const char *key, const char *value);
 char *get_char(const char *key);
 uint32_t get_u32(const char *key, uint32_t default_value);

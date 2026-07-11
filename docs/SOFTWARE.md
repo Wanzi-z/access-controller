@@ -83,7 +83,8 @@ logs periodic heap/NVS/uptime status once per minute.
 | `ws_server.c`, `ws_client.c` | WebSocket-related server/client code retained in the firmware tree. |
 | `tunnel.c` | ESP32 tunnel client that speaks the Node gateway frame protocol. |
 | `utilities_server.c` | Utility server functions. |
-| `buzzer.c` | Keypad/buzzer feedback using MCP push pins. |
+| `alert_target.c` | Shared alert-output target parsing (`none`, `controller`, `keypad`, `both`). |
+| `buzzer.c` | Controller buzzer and keypad push-line feedback using MCP push pins. |
 
 ### Keypad Push Feedback
 
@@ -97,18 +98,25 @@ The keypad push pulse must be long enough for the installed Wiegand keypad to
 recognize it. A 100 ms pulse was observed to be flaky; the production pulse is
 750 ms active followed by 100 ms idle.
 
-Auxiliary input feedback is intentionally different from lock/contact-alert
-feedback. When an exit, motion, keypad-button, or fob input triggers a lock
-action, `lock.c` treats the source as aux input feedback and calls
-`beep_keypad_force(1, 0)`. Channel `0` means "pulse both keypad push outputs".
-This makes every aux action audible when only one keypad is installed, and also
-keeps the second push output active for installations with two keypads.
+Auxiliary input feedback is configured per input through `alert_target`:
 
-Normal per-lock feedback still uses the lock channel, except for aux inputs and
-auto-rearm suppression rules:
+- `none`: no audible feedback
+- `controller`: pulse only the controller buzzer
+- `keypad`: pulse only the Wiegand keypad push/beep line
+- `both`: pulse the controller buzzer and keypad push/beep line
+
+Exit, keypad-button, physical fob, and motion inputs also persist a
+`channel_mask` lock target. `1` targets lock 1, `2` targets lock 2, and `3`
+targets both locks. Auto re-arm sources re-arm silently so the keypad does not
+beep when the lock closes again.
+
+Credential feedback uses the same target names. RFID cards and RF remotes store
+`channel_mask` for lock target selection. PIN users store both `channel_mask`
+for lock target selection and `keypad_mask` for which keypad readers may accept
+that PIN. Successful PIN feedback pulses the reader keypad that accepted the
+PIN when `alert_target` includes `keypad`.
 
 - Auto re-arm sources do not beep.
-- Aux input sources force feedback and pulse both keypad outputs.
 - PIN-entry suppression still prevents unrelated beeps while a PIN is being
   typed, except for the successful PIN feedback path.
 
@@ -175,25 +183,25 @@ Routes are registered in `code/controller/main/services/api.c`.
 | `GET` | `/api/state` | Full state snapshot: device UUID, locks, exits, fobs, keypads, motions, Wiegand, RF, and Wi-Fi summary. |
 | `GET` | `/api/logs` | Persistent system log snapshot. |
 | `POST` | `/api/lock` | Update lock enable, arm, contact-alert, and polarity settings. |
-| `POST` | `/api/exit` | Update exit button enable, alert, and delay settings. |
-| `POST` | `/api/fob` | Update physical fob enable, alert, and latch settings. |
-| `POST` | `/api/keypad` | Update keypad button enable, alert, and delay settings. |
-| `POST` | `/api/motion` | Update motion enable, alert, and delay settings. |
+| `POST` | `/api/exit` | Update exit button enable, mode, `channel_mask`, `alert_target`, and delay settings. |
+| `POST` | `/api/fob` | Update physical fob enable, mode, `channel_mask`, `alert_target`, and delay settings. |
+| `POST` | `/api/keypad` | Update keypad-button enable, mode, `channel_mask`, `alert_target`, and delay settings. |
+| `POST` | `/api/motion` | Update motion enable, mode, `channel_mask`, `alert_target`, and delay settings. |
 | `GET` | `/api/keypad/users` | List PIN users. |
 | `POST` | `/api/keypad/user` | Create PIN user with name and 4-8 digit PIN. |
-| `PUT` | `/api/keypad/user` | Rename/update a PIN user. |
+| `PUT` | `/api/keypad/user` | Rename/update a PIN user, including mode, lock `channel_mask`, reader `keypad_mask`, `alert_target`, and exit seconds. |
 | `DELETE` | `/api/keypad/user` | Delete PIN user by UUID. |
 | `GET` | `/api/wiegand` | Wiegand registration/users state. |
 | `POST` | `/api/wiegand/register` | Start RFID/card registration for all channels or one channel. |
 | `POST` | `/api/wiegand/stop` | Stop Wiegand registration and optionally promote pending users. |
-| `POST` | `/api/wiegand/rename` | Rename a Wiegand user and promote it active on success. |
+| `POST` | `/api/wiegand/rename` | Rename/configure a Wiegand user, including reader filter `channel`, lock `channel_mask`, mode, and `alert_target`; promotes it active on success. |
 | `POST` | `/api/wiegand/delete` | Delete a Wiegand user by ID. |
 | `GET` | `/api/rf` | RF remote registry state. |
 | `POST` | `/api/rf/register` | Start RF remote registration. |
 | `POST` | `/api/rf/stop` | Stop RF remote registration. |
 | `POST` | `/api/rf/rename` | Rename an RF remote. |
 | `POST` | `/api/rf/delete` | Delete an RF remote. |
-| `POST` | `/api/rf/config` | Update RF mode, channel mask, exit seconds, and alert. |
+| `POST` | `/api/rf/config` | Update RF mode, lock `channel_mask`, exit seconds, `alert_target`, and enabled state. |
 | `POST` | `/api/buzzer/error-beep` | Force keypad feedback. `channel` may be `1`, `2`, or `0` for both push outputs. |
 | `POST` | `/api/keypad/push-test` | Isolated push-line diagnostic. Accepts `channel`, `pulses`, `activeMs`, `idleMs`, and `activeHigh`; it toggles only the keypad push output, not locks or aux handlers. |
 | `GET` | `/api/wifi` | State snapshot with Wi-Fi information. |

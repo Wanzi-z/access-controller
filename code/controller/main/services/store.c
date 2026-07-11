@@ -79,11 +79,17 @@ static void add_default_pin_user_config(cJSON *user) {
     if (!cJSON_GetObjectItemCaseSensitive(user, "channel_mask")) {
         cJSON_AddNumberToObject(user, "channel_mask", 1);
     }
+    if (!cJSON_GetObjectItemCaseSensitive(user, "keypad_mask")) {
+        cJSON_AddNumberToObject(user, "keypad_mask", 3);
+    }
     if (!cJSON_GetObjectItemCaseSensitive(user, "exit_seconds")) {
         cJSON_AddNumberToObject(user, "exit_seconds", 4);
     }
     if (!cJSON_GetObjectItemCaseSensitive(user, "alert")) {
         cJSON_AddBoolToObject(user, "alert", true);
+    }
+    if (!cJSON_GetObjectItemCaseSensitive(user, "alert_target")) {
+        cJSON_AddStringToObject(user, "alert_target", "both");
     }
     if (!cJSON_GetObjectItemCaseSensitive(user, "enabled")) {
         cJSON_AddBoolToObject(user, "enabled", true);
@@ -100,10 +106,12 @@ static void fill_pin_user_match(cJSON *user, const char *matched_pin, pin_user_m
     const cJSON *name = cJSON_GetObjectItemCaseSensitive(user, "name");
     const cJSON *mode = cJSON_GetObjectItemCaseSensitive(user, "mode");
     const cJSON *channel_mask = cJSON_GetObjectItemCaseSensitive(user, "channel_mask");
+    const cJSON *keypad_mask = cJSON_GetObjectItemCaseSensitive(user, "keypad_mask");
     const cJSON *channel = cJSON_GetObjectItemCaseSensitive(user, "channel");
     const cJSON *exit_seconds = cJSON_GetObjectItemCaseSensitive(user, "exit_seconds");
     const cJSON *delay = cJSON_GetObjectItemCaseSensitive(user, "delay");
     const cJSON *alert = cJSON_GetObjectItemCaseSensitive(user, "alert");
+    const cJSON *alert_target = cJSON_GetObjectItemCaseSensitive(user, "alert_target");
     const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(user, "enabled");
 
     strlcpy(out_user->uuid,
@@ -128,6 +136,10 @@ static void fill_pin_user_match(cJSON *user, const char *matched_pin, pin_user_m
     if (out_user->channel_mask <= 0 || out_user->channel_mask > 3) {
         out_user->channel_mask = 1;
     }
+    out_user->keypad_mask = cJSON_IsNumber(keypad_mask) ? (int)keypad_mask->valuedouble : 3;
+    if (out_user->keypad_mask <= 0 || out_user->keypad_mask > 3) {
+        out_user->keypad_mask = 3;
+    }
 
     if (cJSON_IsNumber(exit_seconds)) {
         out_user->exit_seconds = (int)exit_seconds->valuedouble;
@@ -141,6 +153,14 @@ static void fill_pin_user_match(cJSON *user, const char *matched_pin, pin_user_m
     }
 
     out_user->alert = json_bool_or_default(alert, true);
+    if (cJSON_IsString(alert_target) && alert_target->valuestring) {
+        out_user->alert_target = alert_target_from_string(alert_target->valuestring, out_user->alert);
+    } else if (cJSON_IsNumber(alert_target)) {
+        out_user->alert_target = alert_target_normalize(alert_target->valueint, out_user->alert);
+    } else {
+        out_user->alert_target = alert_target_from_bool(out_user->alert);
+    }
+    out_user->alert = out_user->alert_target != ALERT_TARGET_NONE;
     out_user->enabled = json_bool_or_default(enabled, true);
 }
 
@@ -1084,8 +1104,10 @@ esp_err_t update_pin_user_in_flash(const char *uuid,
                                    int pin_index,
                                    const char *mode,
                                    int channel_mask,
+                                   int keypad_mask,
                                    int exit_seconds,
                                    bool alert,
+                                   int alert_target,
                                    bool enabled) {
     if (!uuid || uuid[0] == '\0' || !name || name[0] == '\0' || !mode) {
         return ESP_ERR_INVALID_ARG;
@@ -1093,7 +1115,7 @@ esp_err_t update_pin_user_in_flash(const char *uuid,
     if (pin && pin[0] != '\0' && (strlen(pin) < 4 || strlen(pin) > 8)) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (!pin_user_mode_is_valid(mode) || channel_mask <= 0 || channel_mask > 3) {
+    if (!pin_user_mode_is_valid(mode) || channel_mask <= 0 || channel_mask > 3 || keypad_mask <= 0 || keypad_mask > 3) {
         return ESP_ERR_INVALID_ARG;
     }
     if (exit_seconds <= 0) {
@@ -1155,10 +1177,15 @@ esp_err_t update_pin_user_in_flash(const char *uuid,
         cJSON_AddStringToObject(user, "mode", mode);
         cJSON_DeleteItemFromObject(user, "channel_mask");
         cJSON_AddNumberToObject(user, "channel_mask", channel_mask);
+        cJSON_DeleteItemFromObject(user, "keypad_mask");
+        cJSON_AddNumberToObject(user, "keypad_mask", keypad_mask);
         cJSON_DeleteItemFromObject(user, "exit_seconds");
         cJSON_AddNumberToObject(user, "exit_seconds", exit_seconds);
         cJSON_DeleteItemFromObject(user, "alert");
-        cJSON_AddBoolToObject(user, "alert", alert);
+        int normalized_alert_target = alert_target_normalize(alert_target, alert);
+        cJSON_AddBoolToObject(user, "alert", normalized_alert_target != ALERT_TARGET_NONE);
+        cJSON_DeleteItemFromObject(user, "alert_target");
+        cJSON_AddStringToObject(user, "alert_target", alert_target_to_string(normalized_alert_target));
         cJSON_DeleteItemFromObject(user, "enabled");
         cJSON_AddBoolToObject(user, "enabled", enabled);
 

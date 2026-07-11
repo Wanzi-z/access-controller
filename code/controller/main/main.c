@@ -9,6 +9,7 @@
 #include "services/drivers/i2c.c"
 #include "services/drivers/mcp23x17.c"
 #include "services/gpio.c"
+#include "services/alert_target.c"
 #include "services/store.c"
 #include "services/wiegand_registry.c"
 #include "services/enrollment.c"

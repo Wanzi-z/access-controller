@@ -971,7 +971,9 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
     const cJSON *id_item = cJSON_GetObjectItemCaseSensitive(payload, "id");
     const cJSON *name_item = cJSON_GetObjectItemCaseSensitive(payload, "name");
     const cJSON *channel_item = cJSON_GetObjectItemCaseSensitive(payload, "channel");
+    const cJSON *channel_mask_item = cJSON_GetObjectItemCaseSensitive(payload, "channel_mask");
     const cJSON *alert_item = cJSON_GetObjectItemCaseSensitive(payload, "alert");
+    const cJSON *alert_target_item = cJSON_GetObjectItemCaseSensitive(payload, "alert_target");
     const cJSON *status_item = cJSON_GetObjectItemCaseSensitive(payload, "status");
     const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
     const cJSON *mode_item = cJSON_GetObjectItemCaseSensitive(payload, "mode");
@@ -996,7 +998,9 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
     strlcpy(name, name_raw, sizeof(name));
     const wiegand_user_t *existing = wiegand_registry_find_by_id(id);
     uint8_t channel = existing ? existing->channel : 0;
+    uint8_t channel_mask = existing ? existing->channel_mask : 3;
     bool alert = existing ? existing->alert : true;
+    int alert_target = existing ? existing->alert_target : alert_target_from_bool(alert);
     char mode[WIEGAND_USER_MODE_MAX];
     strlcpy(mode, (existing && existing->mode[0] != '\0') ? existing->mode : "momentary", sizeof(mode));
     wiegand_user_status_t status = existing ? existing->status : WIEGAND_USER_STATUS_ACTIVE;
@@ -1008,8 +1012,23 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
         }
         channel = (uint8_t)requested_channel;
     }
+    if (cJSON_IsNumber(channel_mask_item)) {
+        int requested_mask = (int)channel_mask_item->valuedouble;
+        if (requested_mask <= 0 || requested_mask > 3) {
+            cJSON_Delete(payload);
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid channel mask");
+        }
+        channel_mask = (uint8_t)requested_mask;
+    }
     if (cJSON_IsBool(alert_item)) {
         alert = cJSON_IsTrue(alert_item);
+    }
+    if (cJSON_IsString(alert_target_item) && alert_target_item->valuestring) {
+        alert_target = alert_target_from_string(alert_target_item->valuestring, alert);
+    } else if (cJSON_IsNumber(alert_target_item)) {
+        alert_target = alert_target_normalize(alert_target_item->valueint, alert);
+    } else {
+        alert_target = alert_target_normalize(alert_target, alert);
     }
     if (cJSON_IsString(mode_item) && mode_item->valuestring) {
         if (strcmp(mode_item->valuestring, "momentary") != 0 &&
@@ -1034,13 +1053,14 @@ static esp_err_t api_wiegand_rename_post_handler(httpd_req_t *req) {
     cJSON_Delete(payload);
 
     ESP_LOGI(API_TAG,
-             "Updating Wiegand user %s name='%s' mode=%s channel=%u alert=%s",
+             "Updating Wiegand user %s name='%s' mode=%s reader=%u channel_mask=%u alert_target=%s",
              id,
              name,
              mode,
              (unsigned)channel,
-             alert ? "true" : "false");
-    err = wiegand_registry_update_config(id, name, mode, channel, alert);
+             (unsigned)channel_mask,
+             alert_target_to_string(alert_target));
+    err = wiegand_registry_update_config(id, name, mode, channel, channel_mask, alert, alert_target);
     if (err == ESP_OK && existing && status != existing->status) {
         err = wiegand_registry_update_status(id, status);
     }
@@ -1488,6 +1508,7 @@ static cJSON *keypad_users_snapshot(void) {
     for (uint32_t i = 0; i < user_count; i++) {
         cJSON *user = load_user_from_flash(i + 1);
         if (user) {
+            add_default_pin_user_config(user);
             const cJSON *last_used_ms = cJSON_GetObjectItemCaseSensitive(user, "last_used_ms");
             if (cJSON_IsNumber(last_used_ms) && last_used_ms->valuedouble > 0) {
                 uint64_t used_ms = (uint64_t)last_used_ms->valuedouble;
@@ -1625,8 +1646,10 @@ static esp_err_t api_keypad_user_put_handler(httpd_req_t *req) {
     const cJSON *pin_index_item = cJSON_GetObjectItemCaseSensitive(payload, "pinIndex");
     const cJSON *mode_item = cJSON_GetObjectItemCaseSensitive(payload, "mode");
     const cJSON *channel_item = cJSON_GetObjectItemCaseSensitive(payload, "channel_mask");
+    const cJSON *keypad_item = cJSON_GetObjectItemCaseSensitive(payload, "keypad_mask");
     const cJSON *exit_item = cJSON_GetObjectItemCaseSensitive(payload, "exit_seconds");
     const cJSON *alert_item = cJSON_GetObjectItemCaseSensitive(payload, "alert");
+    const cJSON *alert_target_item = cJSON_GetObjectItemCaseSensitive(payload, "alert_target");
     const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
 
     const char *uuid = cJSON_IsString(uuid_item) ? uuid_item->valuestring : NULL;
@@ -1635,8 +1658,15 @@ static esp_err_t api_keypad_user_put_handler(httpd_req_t *req) {
     int pin_index = cJSON_IsNumber(pin_index_item) ? (int)pin_index_item->valuedouble : -1;
     const char *mode = cJSON_IsString(mode_item) ? mode_item->valuestring : "momentary";
     int channel_mask = cJSON_IsNumber(channel_item) ? (int)channel_item->valuedouble : 1;
+    int keypad_mask = cJSON_IsNumber(keypad_item) ? (int)keypad_item->valuedouble : 3;
     int exit_seconds = cJSON_IsNumber(exit_item) ? (int)exit_item->valuedouble : 4;
     bool alert = alert_item ? cJSON_IsTrue(alert_item) : true;
+    int alert_target = alert_target_from_bool(alert);
+    if (cJSON_IsString(alert_target_item) && alert_target_item->valuestring) {
+        alert_target = alert_target_from_string(alert_target_item->valuestring, alert);
+    } else if (cJSON_IsNumber(alert_target_item)) {
+        alert_target = alert_target_normalize(alert_target_item->valueint, alert);
+    }
     bool enabled = enabled_item ? cJSON_IsTrue(enabled_item) : true;
 
     if (!uuid || !name) {
@@ -1647,7 +1677,7 @@ static esp_err_t api_keypad_user_put_handler(httpd_req_t *req) {
         cJSON_Delete(payload);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "PIN must be 4-8 digits");
     }
-    if (!pin_mode_is_valid(mode) || channel_mask <= 0 || channel_mask > 3) {
+    if (!pin_mode_is_valid(mode) || channel_mask <= 0 || channel_mask > 3 || keypad_mask <= 0 || keypad_mask > 3) {
         cJSON_Delete(payload);
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid mode/channel");
     }
@@ -1655,8 +1685,9 @@ static esp_err_t api_keypad_user_put_handler(httpd_req_t *req) {
         exit_seconds = 4;
     }
 
-    ESP_LOGI(API_TAG, "Updating keypad user: uuid=%s, name=%s, mode=%s, channel_mask=%d", uuid, name, mode, channel_mask);
-    err = update_pin_user_in_flash(uuid, name, pin, pin_index, mode, channel_mask, exit_seconds, alert, enabled);
+    ESP_LOGI(API_TAG, "Updating keypad user: uuid=%s, name=%s, mode=%s, channel_mask=%d keypad_mask=%d alert_target=%s",
+             uuid, name, mode, channel_mask, keypad_mask, alert_target_to_string(alert_target));
+    err = update_pin_user_in_flash(uuid, name, pin, pin_index, mode, channel_mask, keypad_mask, exit_seconds, alert, alert_target, enabled);
     cJSON_Delete(payload);
     if (err == ESP_ERR_NOT_FOUND) {
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "User not found");
@@ -1851,12 +1882,19 @@ static esp_err_t api_rf_config_post_handler(httpd_req_t *req) {
     const cJSON *ch_item = cJSON_GetObjectItemCaseSensitive(payload, "channel_mask");
     const cJSON *exit_item = cJSON_GetObjectItemCaseSensitive(payload, "exit_seconds");
     const cJSON *alert_item = cJSON_GetObjectItemCaseSensitive(payload, "alert");
+    const cJSON *alert_target_item = cJSON_GetObjectItemCaseSensitive(payload, "alert_target");
     const cJSON *enabled_item = cJSON_GetObjectItemCaseSensitive(payload, "enabled");
     const char *id = cJSON_IsString(id_item) ? id_item->valuestring : NULL;
     const char *mode = cJSON_IsString(mode_item) ? mode_item->valuestring : NULL;
     int ch_mask = cJSON_IsNumber(ch_item) ? (int)ch_item->valuedouble : 0;
     int exit_s = cJSON_IsNumber(exit_item) ? (int)exit_item->valuedouble : 0;
     bool alert = alert_item ? cJSON_IsTrue(alert_item) : true;
+    int alert_target = alert_target_from_bool(alert);
+    if (cJSON_IsString(alert_target_item) && alert_target_item->valuestring) {
+        alert_target = alert_target_from_string(alert_target_item->valuestring, alert);
+    } else if (cJSON_IsNumber(alert_target_item)) {
+        alert_target = alert_target_normalize(alert_target_item->valueint, alert);
+    }
     bool enabled = enabled_item ? cJSON_IsTrue(enabled_item) : true;
 
     if (!id || !mode || ch_mask <= 0) {
@@ -1864,7 +1902,7 @@ static esp_err_t api_rf_config_post_handler(httpd_req_t *req) {
         return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "id, mode, channel_mask required");
     }
 
-    err = rf_registry_update_config(id, mode, ch_mask, exit_s, alert, enabled);
+    err = rf_registry_update_config(id, mode, ch_mask, exit_s, alert, alert_target, enabled);
     cJSON_Delete(payload);
     if (err == ESP_ERR_NOT_FOUND) {
         return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "RF code not found");

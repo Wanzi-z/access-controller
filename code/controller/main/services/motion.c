@@ -25,6 +25,8 @@ struct motionButton
 	bool toggleState;
 	int delay;
 	int channel;
+	int channel_mask;
+	int alert_target;
 	char mode[12];
 	char settings[1000];
 	char key[50];
@@ -46,6 +48,34 @@ static bool motion_json_bool(const cJSON *item)
 		return strcmp(item->valuestring, "true") == 0 || strcmp(item->valuestring, "1") == 0;
 	}
 	return false;
+}
+
+static int motion_json_int(const cJSON *item, int fallback)
+{
+	if (cJSON_IsNumber(item)) return item->valueint;
+	if (cJSON_IsString(item) && item->valuestring) return atoi(item->valuestring);
+	return fallback;
+}
+
+static int motion_alert_channel(struct motionButton *mot)
+{
+	int mask = mot->channel_mask;
+	if (mask <= 0 || mask > 3) mask = 1 << (mot->channel - 1);
+	return mask == 3 ? 0 : ((mask & 1) ? 1 : 2);
+}
+
+static void motion_apply_locks(struct motionButton *mot, bool arm, const char *source, bool do_alert)
+{
+	int mask = mot->channel_mask;
+	if (mask <= 0 || mask > 3) mask = 1 << (mot->channel - 1);
+	for (int bit = 0; bit < 2; bit++) {
+		if ((mask & (1 << bit)) == 0) continue;
+		lock_set_action_source(source);
+		arm_lock(bit + 1, arm, false);
+	}
+	if (do_alert && mot->alert) {
+		alert_output_signal_force(1, motion_alert_channel(mot), mot->alert_target);
+	}
 }
 
 static const char *motion_mode_from_latch(bool latch)
@@ -104,11 +134,13 @@ int storeMotionSettings()
 		strcpy(type, motions[i].type);
 		sprintf(motions[i].settings,
 			"{\"eventType\":\"%s\", "
-			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"delay\": %d, \"latch\": %s, \"mode\": \"%s\"}}",
+			"\"payload\":{\"channel\":%d, \"enable\": %s, \"alert\": %s, \"alert_target\": \"%s\", \"channel_mask\": %d, \"delay\": %d, \"latch\": %s, \"mode\": \"%s\"}}",
 			type,
 			i+1,
 			(motions[i].enable) ? "true" : "false",
 			(motions[i].alert) ? "true" : "false",
+			alert_target_to_string(motions[i].alert_target),
+			motions[i].channel_mask,
 			motions[i].delay,
 			(motions[i].latch) ? "true" : "false",
 			motion_current_mode(&motions[i]));
@@ -169,7 +201,26 @@ void enableMotion (int ch, bool val)
 void alertOnMotion (int ch, bool val)
 {
 	for (int i=0; i < NUM_OF_MOTIONS; i++)
-		if (motions[i].channel == ch) motions[i].alert = val;
+		if (motions[i].channel == ch) {
+			motions[i].alert = val;
+			motions[i].alert_target = alert_target_from_bool(val);
+		}
+}
+
+void setMotionAlertTarget (int ch, int val)
+{
+	for (int i=0; i < NUM_OF_MOTIONS; i++)
+		if (motions[i].channel == ch) {
+			motions[i].alert_target = alert_target_normalize(val, motions[i].alert);
+			motions[i].alert = motions[i].alert_target != ALERT_TARGET_NONE;
+		}
+}
+
+void setMotionChannelMask (int ch, int val)
+{
+	if (val <= 0 || val > 3) return;
+	for (int i=0; i < NUM_OF_MOTIONS; i++)
+		if (motions[i].channel == ch) motions[i].channel_mask = val;
 }
 
 void setMotionArmDelay (int ch, int val)
@@ -206,19 +257,16 @@ static void test_motion_signal(struct motionButton *mot)
 	const char *mode = motion_current_mode(mot);
 	if (strcmp(mode, "latch") == 0) {
 		ESP_LOGI(TAG, "Motion channel %d test - latch active", mot->channel);
-		lock_set_action_source("motion_test");
-		arm_lock(mot->channel, true, true);
+		motion_apply_locks(mot, true, "motion_test", true);
 		start_motion_timer(mot, false);
 	} else if (strcmp(mode, "toggle") == 0) {
 		mot->toggleState = !mot->toggleState;
 		ESP_LOGI(TAG, "Motion channel %d test toggled lock to %s", mot->channel, mot->toggleState ? "armed" : "disarmed");
-		lock_set_action_source("motion_test");
-		arm_lock(mot->channel, mot->toggleState, true);
+		motion_apply_locks(mot, mot->toggleState, "motion_test", true);
 		start_motion_timer(mot, false);
 	} else {
 		ESP_LOGI(TAG, "Motion channel %d test - disarming lock", mot->channel);
-		lock_set_action_source("motion_test");
-		arm_lock(mot->channel, false, true);
+		motion_apply_locks(mot, false, "motion_test", true);
 		start_motion_timer(mot, true);
 	}
 }
@@ -234,19 +282,16 @@ void check_motion (struct motionButton *mot)
 	const char *mode = motion_current_mode(mot);
 	if (strcmp(mode, "latch") == 0 && mot->isPressed != mot->prevPress) {
 		ESP_LOGI(TAG, "Motion channel %d state changed to %s (latch mode)", mot->channel, mot->isPressed ? "active" : "inactive");
-	        lock_set_action_source("motion_latch");
-			arm_lock(mot->channel, mot->isPressed, true);
+		motion_apply_locks(mot, mot->isPressed, "motion_latch", true);
 		start_motion_timer(mot, false);
 	} else if (strcmp(mode, "toggle") == 0 && mot->isPressed && !mot->prevPress) {
 		mot->toggleState = !mot->toggleState;
 		ESP_LOGI(TAG, "Motion channel %d toggled lock to %s", mot->channel, mot->toggleState ? "armed" : "disarmed");
-	        lock_set_action_source("motion_toggle");
-			arm_lock(mot->channel, mot->toggleState, true);
+		motion_apply_locks(mot, mot->toggleState, "motion_toggle", true);
 		start_motion_timer(mot, false);
 	} else if (strcmp(mode, "momentary") == 0 && mot->isPressed && !mot->prevPress) {
 		ESP_LOGI(TAG, "Motion detected on channel %d - disarming lock", mot->channel);
-	        lock_set_action_source("motion");
-			arm_lock(mot->channel, false, true);
+		motion_apply_locks(mot, false, "motion", true);
 		start_motion_timer(mot, true);
 	}
 
@@ -281,6 +326,17 @@ void handle_motion_message(cJSON * payload)
 	 		alertOnMotion(ch, tmp);
 	 	}
 
+		cJSON *alert_target = cJSON_GetObjectItem(payload, "alert_target");
+		if (cJSON_IsString(alert_target) && alert_target->valuestring) {
+			setMotionAlertTarget(ch, alert_target_from_string(alert_target->valuestring, motions[ch - 1].alert));
+		} else if (cJSON_IsNumber(alert_target)) {
+			setMotionAlertTarget(ch, alert_target->valueint);
+		}
+
+		if (cJSON_GetObjectItem(payload,"channel_mask")) {
+			setMotionChannelMask(ch, motion_json_int(cJSON_GetObjectItem(payload,"channel_mask"), motions[ch - 1].channel_mask));
+		}
+
 	 	if (cJSON_GetObjectItem(payload,"enable")) {
 			tmp = motion_json_bool(cJSON_GetObjectItem(payload,"enable"));
 	 		enableMotion(ch, tmp);
@@ -309,8 +365,7 @@ void motion_timer_func(struct motionButton *mot)
 {
 	if (mot->count >= mot->delay && !mot->expired) {
 		ESP_LOGI(TAG, "Re-arming lock from motion %d service.", mot->channel);
-	        lock_set_action_source("motion_auto");
-			arm_lock(mot->channel, true, true);
+		motion_apply_locks(mot, true, "motion_auto", false);
 		mot->expired = true;
 	} else {
 		mot->count++;
@@ -353,6 +408,8 @@ cJSON *motion_state_snapshot(void)
 		cJSON_AddNumberToObject(item, "channel", motions[i].channel);
 		cJSON_AddBoolToObject(item, "enable", motions[i].enable);
 		cJSON_AddBoolToObject(item, "alert", motions[i].alert);
+		cJSON_AddStringToObject(item, "alert_target", alert_target_to_string(motions[i].alert_target));
+		cJSON_AddNumberToObject(item, "channel_mask", motions[i].channel_mask);
 		cJSON_AddNumberToObject(item, "delay", motions[i].delay);
 		cJSON_AddBoolToObject(item, "latch", motions[i].latch);
 		cJSON_AddStringToObject(item, "mode", motion_current_mode(&motions[i]));
@@ -369,7 +426,9 @@ void motion_main()
 	motions[0].pin = MOTION_MCP_IO_1;
 	motions[0].delay = 4;
 	motions[0].channel = 1;
+	motions[0].channel_mask = 1;
 	motions[0].alert = true;
+	motions[0].alert_target = ALERT_TARGET_BOTH;
 	motions[0].enable = true;
 	motions[0].latch = false;
 	motions[0].toggleState = false;
@@ -379,7 +438,9 @@ void motion_main()
 	motions[1].pin = MOTION_MCP_IO_2;
 	motions[1].delay = 4;
 	motions[1].channel = 2;
+	motions[1].channel_mask = 2;
 	motions[1].alert = true;
+	motions[1].alert_target = ALERT_TARGET_BOTH;
 	motions[1].enable = true;
 	motions[1].latch = false;
 	motions[1].toggleState = false;

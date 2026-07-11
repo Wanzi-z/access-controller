@@ -40,6 +40,7 @@ typedef struct {
     int channel_mask;       /* bit0 -> ch1, bit1 -> ch2 */
     int exit_seconds;       /* only used for exit mode */
     bool alert;             /* play buzzer */
+    int alert_target;
     bool enabled;
     bool has_last_rx;
     rf_rx_metrics_t last_rx;
@@ -126,6 +127,7 @@ static void rf_persist_locked(void) {
         cJSON_AddNumberToObject(obj, "channel_mask", (double)u->channel_mask);
         cJSON_AddNumberToObject(obj, "exit_seconds", (double)u->exit_seconds);
         cJSON_AddBoolToObject(obj, "alert", u->alert);
+        cJSON_AddStringToObject(obj, "alert_target", alert_target_to_string(u->alert_target));
         cJSON_AddBoolToObject(obj, "enabled", u->enabled);
         cJSON_AddItemToArray(arr, obj);
     }
@@ -171,6 +173,7 @@ static void load_from_nvs_locked(void) {
         const cJSON *cmask = cJSON_GetObjectItemCaseSensitive(obj, "channel_mask");
         const cJSON *exit_s = cJSON_GetObjectItemCaseSensitive(obj, "exit_seconds");
         const cJSON *alert = cJSON_GetObjectItemCaseSensitive(obj, "alert");
+        const cJSON *alert_target = cJSON_GetObjectItemCaseSensitive(obj, "alert_target");
         const cJSON *enabled = cJSON_GetObjectItemCaseSensitive(obj, "enabled");
 
         if (!cJSON_IsString(id) || !cJSON_IsString(code)) continue;
@@ -190,6 +193,14 @@ static void load_from_nvs_locked(void) {
         tmp.channel_mask = cJSON_IsNumber(cmask) ? (int)cmask->valuedouble : 0x1; /* default ch1 */
         tmp.exit_seconds = cJSON_IsNumber(exit_s) ? (int)exit_s->valuedouble : 4;
         tmp.alert = cJSON_IsBool(alert) ? cJSON_IsTrue(alert) : true;
+        if (cJSON_IsString(alert_target) && alert_target->valuestring) {
+            tmp.alert_target = alert_target_from_string(alert_target->valuestring, tmp.alert);
+        } else if (cJSON_IsNumber(alert_target)) {
+            tmp.alert_target = alert_target_normalize(alert_target->valueint, tmp.alert);
+        } else {
+            tmp.alert_target = alert_target_from_bool(tmp.alert);
+        }
+        tmp.alert = tmp.alert_target != ALERT_TARGET_NONE;
         tmp.enabled = cJSON_IsBool(enabled) ? cJSON_IsTrue(enabled) : true;
 
         if (tmp.name[0] == '\0') {
@@ -305,6 +316,7 @@ esp_err_t rf_registry_add_for_user(uint32_t code, size_t pulse_count, const char
     u->channel_mask = 0x1;   /* default channel 1 */
     u->exit_seconds = 4;
     u->alert = true;
+    u->alert_target = ALERT_TARGET_BOTH;
     u->enabled = true;
     if (rf_registration_active) {
         rf_pending++;
@@ -399,6 +411,7 @@ static cJSON *serialize_state_locked(void) {
             cJSON_AddNumberToObject(uobj, "channel_mask", (double)u->channel_mask);
             cJSON_AddNumberToObject(uobj, "exit_seconds", (double)u->exit_seconds);
             cJSON_AddBoolToObject(uobj, "alert", u->alert);
+            cJSON_AddStringToObject(uobj, "alert_target", alert_target_to_string(u->alert_target));
             cJSON_AddBoolToObject(uobj, "enabled", u->enabled);
             if (u->has_last_rx) {
                 cJSON *rx = cJSON_CreateObject();
@@ -463,6 +476,7 @@ static cJSON *serialize_summary_locked(void) {
             cJSON_AddNumberToObject(uobj, "channel_mask", (double)u->channel_mask);
             cJSON_AddNumberToObject(uobj, "exit_seconds", (double)u->exit_seconds);
             cJSON_AddBoolToObject(uobj, "alert", u->alert);
+            cJSON_AddStringToObject(uobj, "alert_target", alert_target_to_string(u->alert_target));
             cJSON_AddBoolToObject(uobj, "enabled", u->enabled);
             cJSON_AddItemToArray(arr, uobj);
         }
@@ -559,8 +573,14 @@ static void start_rearm_timer(TimerHandle_t *timer_slot, int channel, int second
     }
 }
 
+static int rf_alert_channel_from_mask(int mask) {
+    if (mask <= 0 || mask > 3) mask = 1;
+    return mask == 3 ? 0 : ((mask & 1) ? 1 : 2);
+}
+
 static void apply_mode_action(const rf_user_t *u) {
     if (!u) return;
+    bool did_action = false;
     for (int bit = 0; bit < 2; bit++) {
         if ((u->channel_mask & (1 << bit)) == 0) continue;
         int channel = bit + 1;
@@ -568,36 +588,39 @@ static void apply_mode_action(const rf_user_t *u) {
             rf_toggle_state[bit] = !rf_toggle_state[bit];
             arm_lock(channel, rf_toggle_state[bit], false);
             log_action(u, rf_toggle_state[bit] ? "toggle->on" : "toggle->off");
-            if (u->alert) beep_keypad(1, channel);
+            did_action = true;
         } else if (!strcmp(u->mode, "momentary")) {
             arm_lock(channel, false, false); // off while signal present
             start_rearm_timer(rf_momentary_timers, channel, u->exit_seconds > 0 ? u->exit_seconds : 1);
             log_action(u, "momentary (off then re-arm)");
-            if (u->alert) beep_keypad(1, channel);
+            did_action = true;
         } else if (!strcmp(u->mode, "latch")) {
             arm_lock(channel, false, false);
             log_action(u, "latch");
-            if (u->alert) beep_keypad(1, channel);
+            did_action = true;
         } else if (!strcmp(u->mode, "exit")) {
             arm_lock(channel, false, false);
             start_rearm_timer(rf_exit_timers, channel, u->exit_seconds > 0 ? u->exit_seconds : 4);
             log_action(u, "exit pulse");
-            if (u->alert) beep_keypad(1, channel);
+            did_action = true;
         } else if (!strcmp(u->mode, "power_on")) {
             arm_lock(channel, true, false);
             log_action(u, "power_on");
-            if (u->alert) beep_keypad(1, channel);
+            did_action = true;
         } else if (!strcmp(u->mode, "power_off")) {
             arm_lock(channel, false, false);
             log_action(u, "power_off");
-            if (u->alert) beep_keypad(1, channel);
+            did_action = true;
         } else {
             log_action(u, "unknown");
         }
     }
+    if (did_action && u->alert) {
+        alert_output_signal(1, rf_alert_channel_from_mask(u->channel_mask), u->alert_target);
+    }
 }
 
-esp_err_t rf_registry_update_config(const char *id, const char *mode, int channel_mask, int exit_seconds, bool alert, bool enabled) {
+esp_err_t rf_registry_update_config(const char *id, const char *mode, int channel_mask, int exit_seconds, bool alert, int alert_target, bool enabled) {
     if (!id || !mode) return ESP_ERR_INVALID_ARG;
     if (!is_valid_mode(mode)) return ESP_ERR_INVALID_ARG;
     if (channel_mask <= 0 || channel_mask > 0x3) return ESP_ERR_INVALID_ARG;
@@ -612,7 +635,8 @@ esp_err_t rf_registry_update_config(const char *id, const char *mode, int channe
     strlcpy(u->mode, mode, sizeof(u->mode));
     u->channel_mask = channel_mask;
     u->exit_seconds = exit_seconds;
-    u->alert = alert;
+    u->alert_target = alert_target_normalize(alert_target, alert);
+    u->alert = u->alert_target != ALERT_TARGET_NONE;
     u->enabled = enabled;
     u->updated_ms = now_ms();
     rf_persist_locked();

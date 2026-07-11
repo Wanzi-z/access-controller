@@ -35,46 +35,61 @@ static void keypad_push_set(uint8_t push_pin, bool active) {
     }
 }
 
-static void beep_keypad_internal(int beeps, int channel, bool force) {
+static void alert_output_internal(int beeps, int channel, int target, bool force) {
     if (!bzr.enable) return;
     if (bzr.quietTestMode && !force) return;
+    target = alert_target_normalize(target, true);
+    if (target == ALERT_TARGET_NONE) return;
 
     bool both_keypads = (channel == 0);
     uint8_t push_pin = (channel == 2) ? MCP_PUSH1_IO : MCP_PUSH0_IO;
 
-    ESP_LOGI(BUZZER_TAG, "beep_keypad: beeps=%d, channel=%d, MCP_PIN=%d%s",
-             beeps, channel, push_pin, both_keypads ? " + both" : "");
+    ESP_LOGI(BUZZER_TAG, "alert_output: beeps=%d, channel=%d, target=%s, MCP_PIN=%d%s",
+             beeps, channel, alert_target_to_string(target), push_pin, both_keypads ? " + both" : "");
 
     for (int i = 0; i < beeps; i++) {
-        // Beep the onboard buzzer
-        gpio_set_level(bzr.pin, 1);
+        if (target & ALERT_TARGET_CONTROLLER) {
+            gpio_set_level(bzr.pin, 1);
+        }
         
-        // Also pulse the keypad PUSH signal via MCP23017.
-        // NOTE: This pin drives a transistor, so we pulse HIGH to assert the PUSH line.
-        keypad_push_set(push_pin, true);
-        if (both_keypads) {
-            keypad_push_set(MCP_PUSH1_IO, true);
+        if (target & ALERT_TARGET_KEYPAD) {
+            keypad_push_set(push_pin, true);
+            if (both_keypads) {
+                keypad_push_set(MCP_PUSH1_IO, true);
+            }
         }
         
         vTaskDelay(pdMS_TO_TICKS(KEYPAD_PUSH_ACTIVE_MS));
         
-        gpio_set_level(bzr.pin, 0);
+        if (target & ALERT_TARGET_CONTROLLER) {
+            gpio_set_level(bzr.pin, 0);
+        }
         
-        keypad_push_set(push_pin, false);
-        if (both_keypads) {
-            keypad_push_set(MCP_PUSH1_IO, false);
+        if (target & ALERT_TARGET_KEYPAD) {
+            keypad_push_set(push_pin, false);
+            if (both_keypads) {
+                keypad_push_set(MCP_PUSH1_IO, false);
+            }
         }
         
         vTaskDelay(pdMS_TO_TICKS(KEYPAD_PUSH_IDLE_MS));
     }
 }
 
+void alert_output_signal(int beeps, int channel, int target) {
+    alert_output_internal(beeps, channel, target, false);
+}
+
+void alert_output_signal_force(int beeps, int channel, int target) {
+    alert_output_internal(beeps, channel, target, true);
+}
+
 void beep_keypad(int beeps, int channel) {
-    beep_keypad_internal(beeps, channel, false);
+    alert_output_internal(beeps, channel, ALERT_TARGET_BOTH, false);
 }
 
 void beep_keypad_force(int beeps, int channel) {
-    beep_keypad_internal(beeps, channel, true);
+    alert_output_internal(beeps, channel, ALERT_TARGET_BOTH, true);
 }
 
 void keypad_push_test(int channel, int pulses, int active_ms, int idle_ms, bool active_high) {

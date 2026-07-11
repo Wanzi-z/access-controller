@@ -89,6 +89,15 @@ static void assign_defaults(wiegand_user_t *user) {
         user->status != WIEGAND_USER_STATUS_PENDING) {
         user->status = WIEGAND_USER_STATUS_ACTIVE;
     }
+    if (user->channel_mask == 0 || user->channel_mask > 3) {
+        if (user->channel >= 1 && user->channel <= 2) {
+            user->channel_mask = (uint8_t)(1 << (user->channel - 1));
+        } else {
+            user->channel_mask = 3;
+        }
+    }
+    user->alert_target = alert_target_normalize(user->alert_target, user->alert);
+    user->alert = user->alert_target != ALERT_TARGET_NONE;
 }
 
 static cJSON *serialize_user(const wiegand_user_t *user) {
@@ -102,8 +111,10 @@ static cJSON *serialize_user(const wiegand_user_t *user) {
     cJSON_AddStringToObject(obj, "mode", user->mode);
     cJSON_AddStringToObject(obj, "userUuid", user->user_uuid);
     cJSON_AddNumberToObject(obj, "channel", user->channel);
+    cJSON_AddNumberToObject(obj, "channel_mask", user->channel_mask);
     cJSON_AddNumberToObject(obj, "status", user->status);
     cJSON_AddBoolToObject(obj, "alert", user->alert);
+    cJSON_AddStringToObject(obj, "alert_target", alert_target_to_string(user->alert_target));
     cJSON_AddNumberToObject(obj, "sequence", user->sequence);
     cJSON_AddNumberToObject(obj, "created_at_ms", (double)user->created_at_ms);
     cJSON_AddNumberToObject(obj, "updated_at_ms", (double)user->updated_at_ms);
@@ -172,8 +183,10 @@ static bool deserialize_user(const cJSON *obj, wiegand_user_t *out_user) {
     parse_string_field(obj, "userUuid", out_user->user_uuid, sizeof(out_user->user_uuid));
 
     const cJSON *channel = cJSON_GetObjectItemCaseSensitive(obj, "channel");
+    const cJSON *channel_mask = cJSON_GetObjectItemCaseSensitive(obj, "channel_mask");
     const cJSON *status = cJSON_GetObjectItemCaseSensitive(obj, "status");
     const cJSON *alert = cJSON_GetObjectItemCaseSensitive(obj, "alert");
+    const cJSON *alert_target = cJSON_GetObjectItemCaseSensitive(obj, "alert_target");
     const cJSON *sequence = cJSON_GetObjectItemCaseSensitive(obj, "sequence");
     const cJSON *created_at = cJSON_GetObjectItemCaseSensitive(obj, "created_at_ms");
     const cJSON *updated_at = cJSON_GetObjectItemCaseSensitive(obj, "updated_at_ms");
@@ -181,8 +194,16 @@ static bool deserialize_user(const cJSON *obj, wiegand_user_t *out_user) {
     const cJSON *last_used_unix_time = cJSON_GetObjectItemCaseSensitive(obj, "last_used_unix_time");
 
     out_user->channel = cJSON_IsNumber(channel) ? (uint8_t)channel->valuedouble : 0;
+    out_user->channel_mask = cJSON_IsNumber(channel_mask) ? (uint8_t)channel_mask->valuedouble : 0;
     out_user->status = cJSON_IsNumber(status) ? (wiegand_user_status_t)status->valuedouble : WIEGAND_USER_STATUS_ACTIVE;
     out_user->alert = cJSON_IsBool(alert) ? cJSON_IsTrue(alert) : true;
+    if (cJSON_IsString(alert_target) && alert_target->valuestring) {
+        out_user->alert_target = alert_target_from_string(alert_target->valuestring, out_user->alert);
+    } else if (cJSON_IsNumber(alert_target)) {
+        out_user->alert_target = alert_target_normalize(alert_target->valueint, out_user->alert);
+    } else {
+        out_user->alert_target = alert_target_from_bool(out_user->alert);
+    }
     out_user->sequence = cJSON_IsNumber(sequence) ? (uint32_t)sequence->valuedouble : 0;
     out_user->created_at_ms = cJSON_IsNumber(created_at) ? (uint64_t)created_at->valuedouble : current_time_ms();
     out_user->updated_at_ms = cJSON_IsNumber(updated_at) ? (uint64_t)updated_at->valuedouble : out_user->created_at_ms;
@@ -550,8 +571,10 @@ esp_err_t wiegand_registry_add_for_user(const char *code,
 
     wiegand_user_t user = {
         .channel = channel,
+        .channel_mask = (channel >= 1 && channel <= 2) ? (uint8_t)(1 << (channel - 1)) : 3,
         .status = active ? WIEGAND_USER_STATUS_ACTIVE : WIEGAND_USER_STATUS_PENDING,
         .alert = true,
+        .alert_target = ALERT_TARGET_BOTH,
         .sequence = next_sequence(),
         .created_at_ms = current_time_ms(),
         .updated_at_ms = current_time_ms(),
@@ -637,8 +660,8 @@ esp_err_t wiegand_registry_update_name(const char *id, const char *name) {
     return result;
 }
 
-esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, uint8_t channel, bool alert) {
-    if (!id || !name || !mode || channel > 2) {
+esp_err_t wiegand_registry_update_config(const char *id, const char *name, const char *mode, uint8_t channel, uint8_t channel_mask, bool alert, int alert_target) {
+    if (!id || !name || !mode || channel > 2 || channel_mask == 0 || channel_mask > 3) {
         return ESP_ERR_INVALID_ARG;
     }
     if (strcmp(mode, "momentary") != 0 && strcmp(mode, "toggle") != 0 && strcmp(mode, "latch") != 0) {
@@ -660,7 +683,9 @@ esp_err_t wiegand_registry_update_config(const char *id, const char *name, const
     strlcpy(updated.name, name, sizeof(updated.name));
     strlcpy(updated.mode, mode, sizeof(updated.mode));
     updated.channel = channel;
-    updated.alert = alert;
+    updated.channel_mask = channel_mask;
+    updated.alert_target = alert_target_normalize(alert_target, alert);
+    updated.alert = updated.alert_target != ALERT_TARGET_NONE;
     assign_defaults(&updated);
     esp_err_t result = update_user_locked((size_t)idx, &updated);
     xSemaphoreGive(s_mutex);

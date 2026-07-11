@@ -512,11 +512,38 @@ const normalizeCardMode = (mode, latch) => {
   return latch ? 'latch' : 'momentary';
 };
 
+const normalizeChannelMask = (value, fallback = 1) => {
+  const mask = Number(value);
+  return mask >= 1 && mask <= 3 ? mask : fallback;
+};
+
+const normalizeAlertTarget = (value, fallbackAlert = true) => {
+  if (value === 'none' || value === 'controller' || value === 'keypad' || value === 'both') return value;
+  return fallbackAlert ? 'both' : 'none';
+};
+
+const alertFromTarget = (target) => normalizeAlertTarget(target) !== 'none';
+
+const setSelectValueIfIdle = (id, value) => {
+  const el = document.getElementById(id);
+  if (el && document.activeElement !== el) {
+    el.value = String(value);
+  }
+};
+
 const setCardModeState = (modeId, mode, latch) => {
   const modeEl = document.getElementById(modeId);
   if (modeEl && document.activeElement !== modeEl) {
     modeEl.value = normalizeCardMode(mode, latch);
   }
+};
+
+const setCardTargetState = (targetId, channelMask, fallback = 1) => {
+  setSelectValueIfIdle(targetId, normalizeChannelMask(channelMask, fallback));
+};
+
+const setCardAlertTargetState = (targetId, alertTarget, alert = true) => {
+  setSelectValueIfIdle(targetId, normalizeAlertTarget(alertTarget, alert));
 };
 
 const applyLockState = (locks = []) => {
@@ -555,6 +582,8 @@ const applyExitState = (exits = []) => {
     if (enableEl) enableEl.checked = !!exit.enable;
     setCardEnabledState(`enableExit_${ch}`, !!exit.enable);
     if (alertEl) alertEl.checked = !!exit.alert;
+    setCardTargetState(`targetExit_${ch}`, exit.channel_mask, ch);
+    setCardAlertTargetState(`alertTargetExit_${ch}`, exit.alert_target, !!exit.alert);
     if (latchEl) latchEl.checked = !!exit.latch;
     setCardModeState(`modeExit_${ch}`, exit.mode, !!exit.latch);
     if (delayEl) delayEl.value = exit.delay ?? 0;
@@ -573,6 +602,8 @@ const applyFobState = (fobs = []) => {
     if (enableEl) enableEl.checked = !!fob.enable;
     setCardEnabledState(`enableFob_${ch}`, !!fob.enable);
     if (alertEl) alertEl.checked = !!fob.alert;
+    setCardTargetState(`targetFob_${ch}`, fob.channel_mask, ch);
+    setCardAlertTargetState(`alertTargetFob_${ch}`, fob.alert_target, !!fob.alert);
     if (latchEl) latchEl.checked = !!fob.latch;
     setCardModeState(`modeFob_${ch}`, fob.mode, !!fob.latch);
     if (delayEl) delayEl.value = fob.delay ?? 4;
@@ -591,6 +622,8 @@ const applyKeypadState = (keypads = []) => {
     if (enableEl) enableEl.checked = !!pad.enable;
     setCardEnabledState(`enableKeypad_${ch}`, !!pad.enable);
     if (alertEl) alertEl.checked = !!pad.alert;
+    setCardTargetState(`targetKeypad_${ch}`, pad.channel_mask, ch);
+    setCardAlertTargetState(`alertTargetKeypad_${ch}`, pad.alert_target, !!pad.alert);
     if (latchEl) latchEl.checked = !!pad.latch;
     setCardModeState(`modeKeypad_${ch}`, pad.mode, !!pad.latch);
     if (delayEl) delayEl.value = pad.delay ?? 0;
@@ -609,6 +642,8 @@ const applyMotionState = (motions = []) => {
     if (enableEl) enableEl.checked = !!motion.enable;
     setCardEnabledState(`enableMotion_${ch}`, !!motion.enable);
     if (alertEl) alertEl.checked = !!motion.alert;
+    setCardTargetState(`targetMotion_${ch}`, motion.channel_mask, ch);
+    setCardAlertTargetState(`alertTargetMotion_${ch}`, motion.alert_target, !!motion.alert);
     if (latchEl) latchEl.checked = !!motion.latch;
     setCardModeState(`modeMotion_${ch}`, motion.mode, !!motion.latch);
     if (delayEl) delayEl.value = motion.delay ?? 4;
@@ -730,6 +765,43 @@ const renderCredentialAlertToggle = (className, checked, label = 'Alert beep') =
   </label>
 `;
 
+const renderLockTargetSelect = (className, channelMask) => `
+  <label class="stacked">
+    <span>Lock target</span>
+    <select class="${className}">
+      <option value="1" ${Number(channelMask) === 1 ? 'selected' : ''}>Lock 1</option>
+      <option value="2" ${Number(channelMask) === 2 ? 'selected' : ''}>Lock 2</option>
+      <option value="3" ${Number(channelMask) === 3 ? 'selected' : ''}>Both locks</option>
+    </select>
+  </label>
+`;
+
+const renderKeypadAccessSelect = (className, keypadMask) => `
+  <label class="stacked">
+    <span>Keypad access</span>
+    <select class="${className}">
+      <option value="1" ${Number(keypadMask) === 1 ? 'selected' : ''}>Keypad 1</option>
+      <option value="2" ${Number(keypadMask) === 2 ? 'selected' : ''}>Keypad 2</option>
+      <option value="3" ${Number(keypadMask) === 3 ? 'selected' : ''}>Both keypads</option>
+    </select>
+  </label>
+`;
+
+const renderAlertTargetSelect = (className, alertTarget, alert = true) => {
+  const target = normalizeAlertTarget(alertTarget, alert);
+  return `
+    <label class="stacked">
+      <span>Alert output</span>
+      <select class="${className}">
+        <option value="both" ${target === 'both' ? 'selected' : ''}>Both</option>
+        <option value="keypad" ${target === 'keypad' ? 'selected' : ''}>Keypad</option>
+        <option value="controller" ${target === 'controller' ? 'selected' : ''}>Controller</option>
+        <option value="none" ${target === 'none' ? 'selected' : ''}>None</option>
+      </select>
+    </label>
+  `;
+};
+
 const setupCredentialIconControls = () => {
   const removeButtons = [
     { button: App.elements.wiegandRemoveAllBtn, label: 'Remove all RFID cards' },
@@ -791,6 +863,8 @@ const buildWiegandUserRow = (user, existingValue) => {
   const channelNum = user.channel || 0;
   const userId = escapeHtml(user.id || '');
   const alert = preserved.alert !== undefined ? !!preserved.alert : (user.alert !== false);
+  const alertTarget = normalizeAlertTarget(preserved.alert_target ?? user.alert_target, alert);
+  const channelMask = normalizeChannelMask(preserved.channel_mask ?? user.channel_mask, channelNum ? (1 << (channelNum - 1)) : 3);
   const mode = preserved.mode || user.mode || 'momentary';
   const enabled = user.status === 1;
   const metrics = `
@@ -808,7 +882,6 @@ const buildWiegandUserRow = (user, existingValue) => {
         </div>
         <div class="credential-card-actions">
           ${renderCredentialEnableButton(enabled, 'toggle-wiegand-enabled', user.id || '')}
-          ${renderCredentialAlertToggle('wiegand-alert-checkbox', alert, 'Toggle RFID alert beep')}
           ${renderCredentialIconButton('delete-wiegand', user.id || '', 'Delete RFID card', 'credential-remove-icon')}
         </div>
       </div>
@@ -829,6 +902,10 @@ const buildWiegandUserRow = (user, existingValue) => {
             <option value="latch" ${mode === 'latch' ? 'selected' : ''}>Latch</option>
           </select>
         </label>
+        <div class="user-config">
+          ${renderLockTargetSelect('wiegand-channel-select', channelMask)}
+          ${renderAlertTargetSelect('wiegand-alert-target-select', alertTarget, alert)}
+        </div>
         ${metrics}
       </div>
     </div>
@@ -1115,13 +1192,16 @@ const renderWiegand = (wiegand = {}) => {
         const id = row.getAttribute('data-id');
         if (!id) return;
         const nameInput = row.querySelector('.user-name-input');
-        const alertInput = row.querySelector('.wiegand-alert-checkbox');
         const modeInput = row.querySelector('.wiegand-mode-select');
-        if (nameInput || alertInput || modeInput) {
+        const channelInput = row.querySelector('.wiegand-channel-select');
+        const alertTargetInput = row.querySelector('.wiegand-alert-target-select');
+        if (nameInput || modeInput || channelInput || alertTargetInput) {
           existingValues[id] = {
             name: nameInput ? nameInput.value : undefined,
-            alert: alertInput ? alertInput.checked : undefined,
             mode: modeInput ? modeInput.value : undefined,
+            channel_mask: channelInput ? Number(channelInput.value) : undefined,
+            alert_target: alertTargetInput ? alertTargetInput.value : undefined,
+            alert: alertTargetInput ? alertFromTarget(alertTargetInput.value) : undefined,
           };
           if (document.activeElement === nameInput) {
             focusedId = id;
@@ -1160,6 +1240,7 @@ const buildRfUserRow = (user, existingValue) => {
   const channelMask = existingValue?.channel_mask || user.channel_mask || 1;
   const exitSeconds = existingValue?.exit_seconds ?? user.exit_seconds ?? 4;
   const alert = existingValue?.alert ?? (user.alert ?? true);
+  const alertTarget = normalizeAlertTarget(existingValue?.alert_target ?? user.alert_target, alert);
   const enabled = existingValue?.enabled ?? (user.enabled !== false);
   const metrics = buildRfUserMetrics(user);
 
@@ -1172,7 +1253,6 @@ const buildRfUserRow = (user, existingValue) => {
         </div>
         <div class="credential-card-actions">
           ${renderCredentialEnableButton(enabled, 'toggle-rf-enabled', user.id || '')}
-          ${renderCredentialAlertToggle('rf-alert-checkbox', alert, 'Toggle remote alert beep')}
           ${renderCredentialIconButton('delete-rf', user.id || '', 'Delete remote', 'credential-remove-icon')}
         </div>
       </div>
@@ -1201,6 +1281,7 @@ const buildRfUserRow = (user, existingValue) => {
               <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both locks</option>
             </select>
           </label>
+          ${renderAlertTargetSelect('rf-alert-target-select', alertTarget, alert)}
           <label class="stacked">
             <span>Exit duration (s)</span>
             <input type="number" class="rf-exit-seconds" min="1" step="1" value="${exitSeconds}">
@@ -1219,6 +1300,7 @@ const getRfUserDefaults = (user = {}) => ({
   channel_mask: Number(user.channel_mask) || 1,
   exit_seconds: Number(user.exit_seconds) || 4,
   alert: user.alert ?? true,
+  alert_target: normalizeAlertTarget(user.alert_target, user.alert ?? true),
   enabled: user.enabled !== false,
 });
 
@@ -1286,14 +1368,15 @@ const autoSaveRfUser = async (user) => {
     }
     await fetchJSON('api/rf/config', {
       method: 'POST',
-      body: JSON.stringify({
-        id: config.id,
-        mode: config.mode,
-        channel_mask: config.channel_mask,
-        exit_seconds: config.exit_seconds,
-        alert: !!config.alert,
-        enabled: config.enabled !== false,
-      }),
+        body: JSON.stringify({
+          id: config.id,
+          mode: config.mode,
+          channel_mask: config.channel_mask,
+          exit_seconds: config.exit_seconds,
+          alert: !!config.alert,
+          alert_target: config.alert_target,
+          enabled: config.enabled !== false,
+        }),
     });
     App.rfAutoSavedIds.add(config.id);
   } catch (error) {
@@ -1408,13 +1491,14 @@ const renderRf = (rf = {}) => {
         const modeSel = row.querySelector('.rf-mode-select');
         const chSel = row.querySelector('.rf-channel-select');
         const exitInput = row.querySelector('.rf-exit-seconds');
-        const alertInput = row.querySelector('.rf-alert-checkbox');
+        const alertTargetInput = row.querySelector('.rf-alert-target-select');
         existingValues[id] = {
           name: nameInput ? nameInput.value : undefined,
           mode: modeSel ? modeSel.value : undefined,
           channel_mask: chSel ? Number(chSel.value) : undefined,
           exit_seconds: exitInput ? Number(exitInput.value) : undefined,
-          alert: alertInput ? alertInput.checked : undefined,
+          alert_target: alertTargetInput ? alertTargetInput.value : undefined,
+          alert: alertTargetInput ? alertFromTarget(alertTargetInput.value) : undefined,
           enabled: row.dataset.enabled !== 'false',
         };
       });
@@ -1865,18 +1949,47 @@ const createCardModeSelect = (modeId, latchId) => {
   return wrap;
 };
 
+const createCardTargetSelect = (targetId) => {
+  const wrap = document.createElement('label');
+  wrap.className = 'card-target-select stacked';
+  wrap.innerHTML = `
+    <span>Lock target</span>
+    <select id="${targetId}">
+      <option value="1">Lock 1</option>
+      <option value="2">Lock 2</option>
+      <option value="3">Both locks</option>
+    </select>
+  `;
+  return wrap;
+};
+
+const createCardAlertTargetSelect = (targetId) => {
+  const wrap = document.createElement('label');
+  wrap.className = 'card-alert-target-select stacked';
+  wrap.innerHTML = `
+    <span>Alert output</span>
+    <select id="${targetId}">
+      <option value="both">Both</option>
+      <option value="keypad">Keypad</option>
+      <option value="controller">Controller</option>
+      <option value="none">None</option>
+    </select>
+  `;
+  return wrap;
+};
+
 const setupControlCardChrome = () => {
   const configs = [
     { label: 'Lock 1', enableId: 'enableLock_1', update: updateLock },
     { label: 'Lock 2', enableId: 'enableLock_2', update: updateLock },
-    { label: 'Exit 1', enableId: 'enableExit_1', latchId: 'latchExit_1', modeId: 'modeExit_1', update: updateExit, endpoint: 'exit', apply: applyExitState },
-    { label: 'Exit 2', enableId: 'enableKeypad_1', latchId: 'latchKeypad_1', modeId: 'modeKeypad_1', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
-    { label: 'Exit 3', enableId: 'enableFob_1', latchId: 'latchFob_1', modeId: 'modeFob_1', update: updateFob, endpoint: 'fob', apply: applyFobState },
-    { label: 'Exit 4', enableId: 'enableMotion_1', latchId: 'latchMotion_1', modeId: 'modeMotion_1', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
-    { label: 'Exit 5', enableId: 'enableExit_2', latchId: 'latchExit_2', modeId: 'modeExit_2', update: updateExit, endpoint: 'exit', apply: applyExitState },
-    { label: 'Exit 6', enableId: 'enableKeypad_2', latchId: 'latchKeypad_2', modeId: 'modeKeypad_2', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
-    { label: 'Exit 7', enableId: 'enableFob_2', latchId: 'latchFob_2', modeId: 'modeFob_2', update: updateFob, endpoint: 'fob', apply: applyFobState },
-    { label: 'Exit 8', enableId: 'enableMotion_2', latchId: 'latchMotion_2', modeId: 'modeMotion_2', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
+    { label: 'Exit 1', enableId: 'enableExit_1', alertId: 'alertExit_1', latchId: 'latchExit_1', modeId: 'modeExit_1', targetId: 'targetExit_1', alertTargetId: 'alertTargetExit_1', update: updateExit, endpoint: 'exit', apply: applyExitState },
+    { label: 'Exit 2', enableId: 'enableKeypad_1', alertId: 'alertKeypad_1', latchId: 'latchKeypad_1', modeId: 'modeKeypad_1', targetId: 'targetKeypad_1', alertTargetId: 'alertTargetKeypad_1', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
+    { label: 'Exit 3', enableId: 'enableFob_1', alertId: 'alertFob_1', latchId: 'latchFob_1', modeId: 'modeFob_1', targetId: 'targetFob_1', alertTargetId: 'alertTargetFob_1', update: updateFob, endpoint: 'fob', apply: applyFobState },
+    { label: 'Exit 4', enableId: 'enableMotion_1', alertId: 'alertMotion_1', latchId: 'latchMotion_1', modeId: 'modeMotion_1', targetId: 'targetMotion_1', alertTargetId: 'alertTargetMotion_1', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
+    { label: 'Exit 5', enableId: 'enableExit_2', alertId: 'alertExit_2', latchId: 'latchExit_2', modeId: 'modeExit_2', targetId: 'targetExit_2', alertTargetId: 'alertTargetExit_2', update: updateExit, endpoint: 'exit', apply: applyExitState },
+    { label: 'Exit 6', enableId: 'enableKeypad_2', alertId: 'alertKeypad_2', latchId: 'latchKeypad_2', modeId: 'modeKeypad_2', targetId: 'targetKeypad_2', alertTargetId: 'alertTargetKeypad_2', update: updateKeypad, endpoint: 'keypad', apply: applyKeypadState },
+    { label: 'Exit 7', enableId: 'enableFob_2', alertId: 'alertFob_2', latchId: 'latchFob_2', modeId: 'modeFob_2', targetId: 'targetFob_2', alertTargetId: 'alertTargetFob_2', update: updateFob, endpoint: 'fob', apply: applyFobState },
+    { label: 'Exit 8', enableId: 'enableMotion_2', alertId: 'alertMotion_2', latchId: 'latchMotion_2', modeId: 'modeMotion_2', targetId: 'targetMotion_2', alertTargetId: 'alertTargetMotion_2', update: updateMotion, endpoint: 'motion', apply: applyMotionState },
   ];
 
   configs.forEach((config) => {
@@ -1915,6 +2028,34 @@ const setupControlCardChrome = () => {
       }
       header.appendChild(modeWrap);
       latchEl?.closest('label')?.classList.add('hidden-card-control');
+    }
+
+    if (config.targetId) {
+      const targetWrap = createCardTargetSelect(config.targetId);
+      const targetSelect = targetWrap.querySelector('select');
+      if (targetSelect) {
+        targetSelect.value = String(channel);
+        targetSelect.addEventListener('change', (event) => {
+          config.update(channel, { channel_mask: Number(event.target.value) });
+        });
+      }
+      header.appendChild(targetWrap);
+    }
+
+    if (config.alertTargetId) {
+      const alertWrap = createCardAlertTargetSelect(config.alertTargetId);
+      const alertSelect = alertWrap.querySelector('select');
+      const alertEl = document.getElementById(config.alertId);
+      if (alertSelect) {
+        alertSelect.value = alertEl?.checked === false ? 'none' : 'both';
+        alertSelect.addEventListener('change', (event) => {
+          const alert_target = normalizeAlertTarget(event.target.value, true);
+          if (alertEl) alertEl.checked = alertFromTarget(alert_target);
+          config.update(channel, { alert_target, alert: alertFromTarget(alert_target) });
+        });
+      }
+      header.appendChild(alertWrap);
+      alertEl?.closest('label')?.classList.add('hidden-card-control');
     }
 
     if (config.endpoint) {
@@ -2366,16 +2507,19 @@ const setupWiegandHandlers = () => {
     const saveWiegandCard = async (container, trigger, { quiet = false } = {}) => {
       if (!container) return null;
       const input = container.querySelector('.user-name-input');
-      const alertInput = container.querySelector('.wiegand-alert-checkbox');
       const modeInput = container.querySelector('.wiegand-mode-select');
+      const channelInput = container.querySelector('.wiegand-channel-select');
+      const alertTargetInput = container.querySelector('.wiegand-alert-target-select');
       if (!input) return null;
 
       const id = container.getAttribute('data-id');
       const existing = (App.data?.wiegand?.users || []).find((user) => user.id === id) || {};
       const name = input.value.trim() || existing.name || 'RFID Card';
       const channel = parseInt(container.getAttribute('data-channel') || `${existing.channel || 0}`, 10) || 0;
-      const alert = alertInput ? alertInput.checked : existing.alert !== false;
       const mode = modeInput?.value || existing.mode || 'momentary';
+      const channel_mask = channelInput ? Number(channelInput.value) : (existing.channel_mask || 3);
+      const alert_target = normalizeAlertTarget(alertTargetInput?.value || existing.alert_target, existing.alert !== false);
+      const alert = alertFromTarget(alert_target);
       const enabled = container.dataset.enabled !== 'false';
       if (!id) return null;
 
@@ -2384,7 +2528,7 @@ const setupWiegandHandlers = () => {
       try {
         const wiegand = await fetchJSON('api/wiegand/rename', {
           method: 'POST',
-          body: JSON.stringify({ id, name, channel, alert, enabled, mode }),
+          body: JSON.stringify({ id, name, channel, channel_mask, alert, alert_target, enabled, mode }),
         });
         renderWiegand(wiegand);
         if (!quiet) showToast('RFID card updated.');
@@ -2448,31 +2592,23 @@ const setupWiegandHandlers = () => {
     });
 
     listEl.addEventListener('change', async (event) => {
-      const alertInput = event.target.closest('.wiegand-alert-checkbox');
-      const modeInput = event.target.closest('.wiegand-mode-select');
-      if (!alertInput && !modeInput) return;
-      const container = (alertInput || modeInput).closest('.user-row');
+      const control = event.target.closest('.wiegand-mode-select, .wiegand-channel-select, .wiegand-alert-target-select');
+      if (!control) return;
+      const container = control.closest('.user-row');
       if (!container) return;
 
-      const control = alertInput || modeInput;
-      const previous = alertInput ? !alertInput.checked : modeInput?.dataset.previousValue || '';
+      const previous = control.classList.contains('wiegand-mode-select') ? control.dataset.previousValue || '' : control.value;
       control.disabled = true;
       try {
         await saveWiegandCard(container, control, { quiet: true });
-        if (alertInput) {
-          alertInput.closest('.credential-alert-toggle')?.classList.toggle('is-active', alertInput.checked);
-          showToast(`RFID alert ${alertInput.checked ? 'enabled' : 'disabled'}.`);
-        } else if (modeInput) {
-          modeInput.dataset.previousValue = modeInput.value;
-          showToast(`RFID mode set to ${modeInput.options[modeInput.selectedIndex].text}.`);
+        if (control.classList.contains('wiegand-mode-select')) {
+          control.dataset.previousValue = control.value;
+          showToast(`RFID mode set to ${control.options[control.selectedIndex].text}.`);
+        } else {
+          showToast('RFID card updated.');
         }
       } catch (error) {
-        if (alertInput) {
-          alertInput.checked = previous;
-          alertInput.closest('.credential-alert-toggle')?.classList.toggle('is-active', alertInput.checked);
-        } else if (modeInput) {
-          modeInput.value = previous;
-        }
+        control.value = previous;
       } finally {
         control.disabled = false;
       }
@@ -2542,13 +2678,14 @@ const setupRfHandlers = () => {
       const modeSelect = container.querySelector('.rf-mode-select');
       const channelSelect = container.querySelector('.rf-channel-select');
       const exitInput = container.querySelector('.rf-exit-seconds');
-      const alertCb = container.querySelector('.rf-alert-checkbox');
+      const alertTargetSelect = container.querySelector('.rf-alert-target-select');
       const id = container.getAttribute('data-id');
       const name = nameInput?.value.trim();
       const mode = modeSelect?.value || 'momentary';
       const channel_mask = channelSelect ? Number(channelSelect.value) : 0;
       const exit_seconds = exitInput ? Number(exitInput.value || 0) : 0;
-      const alert = alertCb ? !!alertCb.checked : true;
+      const alert_target = normalizeAlertTarget(alertTargetSelect?.value, true);
+      const alert = alertFromTarget(alert_target);
       const enabled = container.dataset.enabled !== 'false';
 
       if (!id) {
@@ -2569,7 +2706,7 @@ const setupRfHandlers = () => {
         });
         const rf = await fetchJSON('api/rf/config', {
           method: 'POST',
-          body: JSON.stringify({ id, mode, channel_mask, exit_seconds, alert, enabled }),
+          body: JSON.stringify({ id, mode, channel_mask, exit_seconds, alert, alert_target, enabled }),
         });
         renderRf(rf);
         if (!quiet) showToast('Remote updated.');
@@ -2635,28 +2772,17 @@ const setupRfHandlers = () => {
     });
 
     listEl.addEventListener('change', async (event) => {
-      const control = event.target.closest('.rf-mode-select, .rf-channel-select, .rf-exit-seconds, .rf-alert-checkbox');
+      const control = event.target.closest('.rf-mode-select, .rf-channel-select, .rf-exit-seconds, .rf-alert-target-select');
       if (!control) return;
 
       const container = control.closest('.user-row');
       if (!container) return;
 
-      const isAlert = control.classList.contains('rf-alert-checkbox');
-      const previousChecked = isAlert ? !control.checked : null;
       control.disabled = true;
       try {
         await saveRfCard(container, control, { quiet: true });
-        if (isAlert) {
-          control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
-          showToast(`Remote alert ${control.checked ? 'enabled' : 'disabled'}.`);
-        }
       } catch (error) {
-        if (isAlert) {
-          control.checked = previousChecked;
-          control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
-        } else {
-          await loadState();
-        }
+        await loadState();
       } finally {
         control.disabled = false;
       }
@@ -2708,8 +2834,10 @@ const getPinUserDefaults = (user = {}) => ({
   pin: Array.isArray(user.pins) && user.pins.length ? String(user.pins[0] || '') : String(user.pin || ''),
   mode: user.mode || 'momentary',
   channel_mask: Number(user.channel_mask || user.channel || 1) || 1,
+  keypad_mask: Number(user.keypad_mask || 3) || 3,
   exit_seconds: Number(user.exit_seconds || user.delay || 4) || 4,
   alert: user.alert ?? true,
+  alert_target: normalizeAlertTarget(user.alert_target, user.alert ?? true),
   enabled: user.enabled !== false,
 });
 
@@ -2762,8 +2890,10 @@ const livePinCredentialRows = () => {
       pinIndex: -1,
       mode: 'typing',
       channel_mask: Number(entry.channel) === 2 ? 2 : 1,
+      keypad_mask: Number(entry.channel) === 2 ? 2 : 1,
       exit_seconds: 4,
       alert: true,
+      alert_target: 'both',
       enabled: true,
     }));
 };
@@ -2798,8 +2928,10 @@ const buildKeypadUserRow = (user, index, existingValue) => {
   const pin = escapeHtml(preserved.pin !== undefined ? preserved.pin : defaults.pin);
   const mode = preserved.mode || defaults.mode || 'momentary';
   const channelMask = Number(preserved.channel_mask ?? defaults.channel_mask) || 1;
+  const keypadMask = Number(preserved.keypad_mask ?? defaults.keypad_mask) || 3;
   const exitSeconds = Number(preserved.exit_seconds ?? defaults.exit_seconds) || 4;
   const alert = preserved.alert !== undefined ? !!preserved.alert : !!defaults.alert;
+  const alertTarget = normalizeAlertTarget(preserved.alert_target ?? defaults.alert_target, alert);
   const enabled = preserved.enabled !== undefined ? !!preserved.enabled : !!defaults.enabled;
   const uuid = escapeHtml(user.uuid || '');
   const credentialId = escapeHtml(user.credentialId || user.uuid || '');
@@ -2814,7 +2946,6 @@ const buildKeypadUserRow = (user, index, existingValue) => {
         </div>
         <div class="credential-card-actions">
           ${renderCredentialEnableButton(enabled, 'toggle-pin-enabled', user.uuid || '')}
-          ${renderCredentialAlertToggle('pin-alert-checkbox', alert, 'Toggle PIN alert beep')}
           ${renderCredentialIconButton('delete-pin', user.uuid || '', 'Delete PIN code', 'credential-remove-icon', `data-pin-index="${pinIndex}"`)}
         </div>
       </div>
@@ -2847,6 +2978,8 @@ const buildKeypadUserRow = (user, index, existingValue) => {
               <option value="3" ${channelMask === 3 ? 'selected' : ''}>Both locks</option>
             </select>
           </label>
+          ${renderKeypadAccessSelect('pin-keypad-select', keypadMask)}
+          ${renderAlertTargetSelect('pin-alert-target-select', alertTarget, alert)}
           <label class="stacked">
             <span>Exit duration (s)</span>
             <input type="number" class="pin-exit-seconds" min="1" step="1" value="${exitSeconds}">
@@ -2900,7 +3033,6 @@ const renderKeypadUsers = (users = []) => {
   }
   if (!listEl) return;
   const credentialRows = [
-    ...livePinCredentialRows(),
     ...expandPinUserCredentials(users),
   ];
 
@@ -2919,15 +3051,18 @@ const renderKeypadUsers = (users = []) => {
       const pinInput = row.querySelector('.pin-code-input');
       const modeInput = row.querySelector('.pin-mode-select');
       const channelInput = row.querySelector('.pin-channel-select');
+      const keypadInput = row.querySelector('.pin-keypad-select');
       const exitInput = row.querySelector('.pin-exit-seconds');
-      const alertInput = row.querySelector('.pin-alert-checkbox');
+      const alertTargetInput = row.querySelector('.pin-alert-target-select');
       existingValues[credentialId] = {
         name: nameInput ? nameInput.value : undefined,
         pin: pinInput ? pinInput.value : undefined,
         mode: modeInput ? modeInput.value : undefined,
         channel_mask: channelInput ? Number(channelInput.value) : undefined,
+        keypad_mask: keypadInput ? Number(keypadInput.value) : undefined,
         exit_seconds: exitInput ? Number(exitInput.value) : undefined,
-        alert: alertInput ? alertInput.checked : undefined,
+        alert_target: alertTargetInput ? alertTargetInput.value : undefined,
+        alert: alertTargetInput ? alertFromTarget(alertTargetInput.value) : undefined,
         enabled: row.dataset.enabled !== 'false',
       };
       if (document.activeElement && row.contains(document.activeElement)) {
@@ -3226,17 +3361,20 @@ const setupKeypadPinHandlers = () => {
       const pinInput = container?.querySelector('.pin-code-input');
       const modeInput = container?.querySelector('.pin-mode-select');
       const channelInput = container?.querySelector('.pin-channel-select');
+      const keypadInput = container?.querySelector('.pin-keypad-select');
       const exitInput = container?.querySelector('.pin-exit-seconds');
-      const alertInput = container?.querySelector('.pin-alert-checkbox');
+      const alertTargetInput = container?.querySelector('.pin-alert-target-select');
       const uuid = container?.getAttribute('data-uuid');
       const pinIndex = Number(container?.dataset.pinIndex ?? -1);
       const name = nameInput?.value.trim();
       const pin = pinInput?.value.trim();
       const mode = modeInput?.value || 'momentary';
       const channelMask = Number(channelInput?.value || 1);
+      const keypadMask = Number(keypadInput?.value || 3);
       const exitSeconds = Number(exitInput?.value || 4);
       const enabled = container?.dataset.enabled !== 'false';
-      const alert = alertInput ? alertInput.checked : true;
+      const alert_target = normalizeAlertTarget(alertTargetInput?.value, true);
+      const alert = alertFromTarget(alert_target);
 
       if (!uuid || !name) {
         showToast('Please provide a name.');
@@ -3258,8 +3396,10 @@ const setupKeypadPinHandlers = () => {
             pinIndex,
             mode,
             channel_mask: channelMask,
+            keypad_mask: keypadMask,
             exit_seconds: exitSeconds > 0 ? exitSeconds : 4,
             alert,
+            alert_target,
             enabled,
           }),
         });
@@ -3330,18 +3470,12 @@ const setupKeypadPinHandlers = () => {
     });
 
     listEl.addEventListener('change', (event) => {
-      const control = event.target.closest('.pin-mode-select, .pin-channel-select, .pin-exit-seconds, .pin-alert-checkbox');
+      const control = event.target.closest('.pin-mode-select, .pin-channel-select, .pin-keypad-select, .pin-exit-seconds, .pin-alert-target-select');
       if (!control) return;
       const container = control.closest('.credential-card--pin');
       if (!container) return;
-      if (control.classList.contains('pin-alert-checkbox')) {
-        control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
-      }
       savePinUser(container, control, { quiet: true }).catch(() => {
-        if (control.classList.contains('pin-alert-checkbox')) {
-          control.checked = !control.checked;
-          control.closest('.credential-alert-toggle')?.classList.toggle('is-active', control.checked);
-        }
+        loadKeypadUsers();
       });
     });
   }
