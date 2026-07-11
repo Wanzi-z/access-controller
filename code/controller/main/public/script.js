@@ -612,6 +612,7 @@ const multiSelectSummary = (kind, value) => {
   const labels = options.filter((option) => (mask & option.bit) !== 0).map((option) => option.label);
   if (!labels.length) return 'None';
   if (kind === 'lock-target' && labels.length === 2) return 'Both locks';
+  if (kind === 'alert-target' && labels.length === options.length) return 'All outputs';
   return labels.join(' + ');
 };
 
