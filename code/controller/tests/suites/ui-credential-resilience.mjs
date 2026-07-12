@@ -116,6 +116,7 @@ const wiegandState = {
   users: [
     {
       id: 'card-1',
+      userUuid: 'pin-user-1',
       code: '00000000000000000000101010101010',
       name: 'Alice Card',
       mode: 'momentary',
@@ -135,6 +136,7 @@ const rfState = {
   users: [
     {
       id: 'rf-1',
+      userUuid: 'pin-user-1',
       code: '1A2B3C4D',
       name: 'Garage Remote',
       mode: 'momentary',
@@ -151,6 +153,7 @@ const rfState = {
 async function startMockServer() {
   let keypadFailuresRemaining = 1;
   let credentialDetailsAvailable = true;
+  const deleteLog = [];
 
   const server = createServer((req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
@@ -192,6 +195,24 @@ async function startMockServer() {
       json(res, 200, rfState);
       return;
     }
+    if (url.pathname === '/api/wiegand/delete' && req.method === 'POST') {
+      deleteLog.push('rfid');
+      wiegandState.users.splice(0, wiegandState.users.length);
+      json(res, 200, wiegandState);
+      return;
+    }
+    if (url.pathname === '/api/rf/delete' && req.method === 'POST') {
+      deleteLog.push('remote');
+      rfState.users.splice(0, rfState.users.length);
+      json(res, 200, rfState);
+      return;
+    }
+    if (url.pathname === '/api/keypad/user' && req.method === 'DELETE') {
+      deleteLog.push('user');
+      keypadUsers.splice(0, keypadUsers.length);
+      json(res, 200, keypadUsers);
+      return;
+    }
 
     const rel = url.pathname === '/' ? 'index.html' : url.pathname.replace(/^\/+/, '');
     const filePath = join(publicDir, rel);
@@ -220,6 +241,9 @@ async function startMockServer() {
     baseUrl: `http://127.0.0.1:${port}`,
     failCredentialDetails() {
       credentialDetailsAvailable = false;
+    },
+    getDeleteLog() {
+      return [...deleteLog];
     },
     close: () => new Promise((resolveClose) => server.close(resolveClose)),
   };
@@ -260,13 +284,26 @@ export default async function run(_api, report) {
 
     const t0 = Date.now();
     await page.goto(server.baseUrl, { waitUntil: 'domcontentloaded' });
-    await page.locator('#wiegandUserList .user-name-input[value="Alice Card"]').waitFor();
-    await page.locator('#rfUserList .user-name-input[value="Garage Remote"]').waitFor();
-    report.pass('Detailed RFID and remote credentials render after page load', '', Date.now() - t0);
+    await page.waitForSelector('.credential-user-group');
+    const startsCollapsed = await page.evaluate(() => {
+      const toggle = document.querySelector('.credential-user-group button[data-action="toggle-user-group"]');
+      return toggle?.getAttribute('aria-expanded') === 'false';
+    });
+    if (startsCollapsed) {
+      report.pass('User group starts collapsed on page load', '', Date.now() - t0);
+    } else {
+      report.fail('User group starts collapsed on page load', 'aria-expanded was not "false" on initial render', Date.now() - t0);
+    }
+
+    const tExpand = Date.now();
+    await page.click('.credential-user-group button[data-action="toggle-user-group"]');
+    await page.locator('#credentialUserList .user-name-input[value="Alice Card"]').waitFor();
+    await page.locator('#credentialUserList .user-name-input[value="Garage Remote"]').waitFor();
+    report.pass('Detailed RFID and remote credentials render after expanding the user', '', Date.now() - tExpand);
 
     const t1 = Date.now();
     try {
-      await page.locator('#keypadUserList .user-name-input[value="Alice PIN"]').waitFor({ timeout: 3000 });
+      await page.locator('#credentialUserList .user-name-input[value="Alice PIN"]').waitFor({ timeout: 3000 });
       report.pass('PIN users retry after an initial endpoint failure', '', Date.now() - t1);
     } catch (error) {
       report.fail('PIN users retry after an initial endpoint failure', error.message, Date.now() - t1);
@@ -274,23 +311,23 @@ export default async function run(_api, report) {
 
     const tIcons = Date.now();
     const credentialControlState = await page.evaluate(() => {
-      const cardLists = document.querySelectorAll('#wiegandUserList, #keypadUserList, #rfUserList');
+      const cardLists = document.querySelectorAll('#credentialUserList');
       const listText = Array.from(cardLists).map((el) => el.textContent || '').join('\n');
       return {
         actionRows: document.querySelectorAll('.credential-card .credential-card-actions').length,
         iconButtons: document.querySelectorAll('.credential-card .credential-icon-button').length,
-        sectionIconButtons: document.querySelectorAll('#wiegandRemoveAllBtn.credential-icon-button, #keypadRemoveAllBtn.credential-icon-button, #rfRemoveAllBtn.credential-icon-button').length,
+        userRemoveButtons: document.querySelectorAll('.credential-user-header button[data-action="delete-user"]').length,
         enableText: document.querySelectorAll('.credential-card .card-enable-text').length,
         hasCardSaveText: /\bSave\b/.test(listText),
         hasCardDeleteText: /\bDelete\b/.test(listText),
         hasAlertText: /Alert \(beep\)/.test(listText),
-        lastUsedText: document.querySelector('#wiegandUserList .credential-last-used')?.textContent?.trim() || '',
+        lastUsedText: document.querySelector('#credentialUserList .credential-last-used')?.textContent?.trim() || '',
       };
     });
     if (
       credentialControlState.actionRows === 3 &&
-      credentialControlState.iconButtons >= 5 &&
-      credentialControlState.sectionIconButtons === 3 &&
+      credentialControlState.iconButtons === 3 &&
+      credentialControlState.userRemoveButtons === 1 &&
       credentialControlState.enableText === 0 &&
       !credentialControlState.hasCardSaveText &&
       !credentialControlState.hasCardDeleteText &&
@@ -306,9 +343,9 @@ export default async function run(_api, report) {
     server.failCredentialDetails();
     const t2 = Date.now();
     await page.waitForTimeout(900);
-    const cardVisible = await isVisible(page, '#wiegandUserList .user-name-input[value="Alice Card"]');
-    const remoteVisible = await isVisible(page, '#rfUserList .user-name-input[value="Garage Remote"]');
-    const pinVisible = await isVisible(page, '#keypadUserList .user-name-input[value="Alice PIN"]');
+    const cardVisible = await isVisible(page, '#credentialUserList .user-name-input[value="Alice Card"]');
+    const remoteVisible = await isVisible(page, '#credentialUserList .user-name-input[value="Garage Remote"]');
+    const pinVisible = await isVisible(page, '#credentialUserList .user-name-input[value="Alice PIN"]');
     if (cardVisible && remoteVisible && pinVisible) {
       report.pass('Summary/busy state refresh does not erase visible credential lists', '', Date.now() - t2);
     } else {
@@ -316,6 +353,29 @@ export default async function run(_api, report) {
         'Summary/busy state refresh does not erase visible credential lists',
         `visible: rfid=${cardVisible} remote=${remoteVisible} pin=${pinVisible}`,
         Date.now() - t2
+      );
+    }
+
+    const tDelete = Date.now();
+    let confirmationText = '';
+    page.once('dialog', async (dialog) => {
+      confirmationText = dialog.message();
+      await dialog.accept();
+    });
+    await page.locator(
+      '.credential-user-group[data-user-key="uuid:pin-user-1"] button[data-action="delete-user"]'
+    ).click();
+    await page.waitForFunction(() => !document.querySelector(
+      '.credential-user-group[data-user-key="uuid:pin-user-1"]'
+    ));
+    const deleteLog = server.getDeleteLog();
+    if (/3 credentials/.test(confirmationText) && deleteLog.join(',') === 'rfid,remote,user') {
+      report.pass('Delete-user icon removes every associated credential and the user', confirmationText, Date.now() - tDelete);
+    } else {
+      report.fail(
+        'Delete-user icon removes every associated credential and the user',
+        `confirmation=${JSON.stringify(confirmationText)} calls=${deleteLog.join(',')}`,
+        Date.now() - tDelete
       );
     }
 
