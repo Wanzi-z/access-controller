@@ -20,7 +20,6 @@ const App = {
   credentialAutoSaveTimers: new Map(),
   credentialUserCreatePromises: new Map(),
   credentialUserOpenKeys: new Set(),
-  credentialUserCollapsedKeys: new Set(),
   scheduleEditingId: null,
   toastTimer: null,
   elements: {},
@@ -332,6 +331,18 @@ const buildLastUsedMetric = (lastUsed, emptyText = 'Not used yet') => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const ACTIVE_PAGE_STORAGE_KEY = 'ac_active_page';
+
+const getStoredActivePageId = () => {
+  try {
+    const stored = localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY);
+    const known = App.elements.navItems.map((item) => item.dataset.target);
+    return known.includes(stored) ? stored : 'device';
+  } catch (error) {
+    return 'device';
+  }
+};
+
 const setActivePage = (targetId) => {
   App.elements.pages.forEach((section) => {
     section.classList.toggle('active', section.id === `page-${targetId}`);
@@ -340,6 +351,12 @@ const setActivePage = (targetId) => {
   App.elements.navItems.forEach((item) => {
     item.classList.toggle('active', item.dataset.target === targetId);
   });
+
+  try {
+    localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, targetId);
+  } catch (error) {
+    // Private browsing / storage disabled -- the tab just won't survive a refresh.
+  }
 };
 
 const bindNavigation = () => {
@@ -604,7 +621,7 @@ const readSectionLabel = (id, fallback) => {
 
 const lockLabel = (channel) => readSectionLabel(`label_enableLock_${channel}`, `Lock ${channel}`);
 
-const wiegandLabel = (channel) => readSectionLabel(`label_wiegandDevice_${channel}`, `WG ${channel}`);
+const wiegandLabel = (channel) => readSectionLabel(`label_wiegandDevice_${channel}`, `Wiegand ${channel}`);
 
 const enabledLockOptions = () => {
   const locks = Array.isArray(App.data?.locks) ? App.data.locks : [];
@@ -2391,7 +2408,7 @@ const setupWiegandDeviceControls = () => {
       input.type = 'text';
       input.id = `label_wiegandDevice_${channel}`;
       input.className = 'section-label';
-      input.value = `WG ${channel}`;
+      input.value = `Wiegand ${channel}`;
       input.setAttribute('aria-label', `Wiegand ${channel} label`);
       existingTitle.replaceWith(input);
     }
@@ -2558,32 +2575,46 @@ const setupEnrollmentHandlers = () => {
     if (!name) return null;
 
     try {
-      let users = await fetchJSON('api/keypad/user', {
-        method: 'POST',
-        body: JSON.stringify({ name, pin: '' }),
-      });
-      if (!Array.isArray(users) || !users.length) {
-        users = await fetchJSON(`api/keypad/users?t=${Date.now()}`);
-      }
+      // Reuse an existing user with this name (PIN-based or RFID/remote-only) instead
+      // of unconditionally minting a new one -- typing a name that already exists
+      // should join that person, not create a duplicate.
+      const uuid = await ensureCredentialUserForName(name);
+      if (!uuid) return null;
+      const users = await fetchJSON(`api/keypad/users?t=${Date.now()}`);
       const list = Array.isArray(users) ? users : [];
-      const created = [...list].reverse().find((user) => user.name === name) || list[list.length - 1];
       if (App.data) App.data.keypadUsers = list;
       renderKeypadUsers(list);
-      if (created?.uuid && userSelect) userSelect.value = created.uuid;
+      if (userSelect) userSelect.value = `uuid:${uuid}`;
       if (newUserName) newUserName.value = '';
-      return created?.uuid || null;
+      return uuid;
     } catch (error) {
       handleError(error, 'Failed to add user');
       return null;
     }
   };
 
+  const resolveSelectedUserUuid = async () => {
+    const selected = userSelect?.value || '';
+    if (selected.startsWith('uuid:')) return selected.slice('uuid:'.length);
+    if (selected.startsWith('name:')) {
+      const group = buildCredentialUserGroups().find((candidate) => candidate.key === selected);
+      return ensureCredentialUserForName(group?.name || 'Default User');
+    }
+    // No existing users at all yet (dropdown fell back to the generic placeholder) --
+    // resolve/create the real "Default User" record so it's reusable next time
+    // instead of relying on the device to silently reuse whichever user happens to
+    // be record #1.
+    return ensureCredentialUserForName('Default User');
+  };
+
   if (startBtn) {
     startBtn.addEventListener('click', async () => {
-      let userUuid = userSelect?.value || '';
+      let userUuid = '';
       if ((newUserName?.value || '').trim()) {
         userUuid = await addUser() || '';
         if (!userUuid) return;
+      } else {
+        userUuid = await resolveSelectedUserUuid() || '';
       }
 
       startBtn.disabled = true;
@@ -2751,7 +2782,59 @@ const setupCredentialUserHandlers = () => {
   const listEl = App.elements.credentialUserList;
   if (!listEl) return;
 
-  listEl.addEventListener('click', (event) => {
+  listEl.addEventListener('click', async (event) => {
+    const deleteUserBtn = event.target.closest('button[data-action="delete-user"]');
+    if (deleteUserBtn) {
+      const key = deleteUserBtn.getAttribute('data-id');
+      if (!key) return;
+      const group = buildCredentialUserGroups().find((candidate) => candidate.key === key);
+      if (!group) return;
+
+      const total = group.rfid.length + group.pins.length + group.remotes.length;
+      const confirmMessage = total
+        ? `Delete ${group.name} and ${total} credential${total === 1 ? '' : 's'}? This can't be undone.`
+        : `Delete ${group.name}? This can't be undone.`;
+      if (!window.confirm(confirmMessage)) return;
+
+      deleteUserBtn.disabled = true;
+      try {
+        for (const user of group.rfid) {
+          if (!user.id) continue;
+          const wiegand = await fetchJSON('api/wiegand/delete', {
+            method: 'POST',
+            body: JSON.stringify({ id: user.id }),
+          });
+          renderWiegand(wiegand);
+        }
+
+        for (const user of group.remotes) {
+          if (!user.id) continue;
+          const rf = await fetchJSON('api/rf/delete', {
+            method: 'POST',
+            body: JSON.stringify({ id: user.id }),
+          });
+          renderRf(rf);
+        }
+
+        if (group.uuid) {
+          const latestUsers = await fetchJSON('api/keypad/user', {
+            method: 'DELETE',
+            body: JSON.stringify({ uuid: group.uuid }),
+          });
+          renderKeypadUsers(Array.isArray(latestUsers) ? latestUsers : []);
+        }
+
+        App.credentialUserOpenKeys.delete(key);
+        renderCredentialUsers();
+        showToast(`${group.name} deleted.`);
+      } catch (error) {
+        handleError(error, `Failed to delete ${group.name}`);
+      } finally {
+        deleteUserBtn.disabled = false;
+      }
+      return;
+    }
+
     const toggle = event.target.closest('button[data-action="toggle-user-group"]');
     if (!toggle) return;
     const key = toggle.getAttribute('data-user-key');
@@ -2760,10 +2843,8 @@ const setupCredentialUserHandlers = () => {
     const isOpen = toggle.getAttribute('aria-expanded') === 'true';
     if (isOpen) {
       App.credentialUserOpenKeys.delete(key);
-      App.credentialUserCollapsedKeys.add(key);
     } else {
       App.credentialUserOpenKeys.add(key);
-      App.credentialUserCollapsedKeys.delete(key);
     }
     // Re-render is skipped whenever focus sits inside the list (see
     // shouldDeferCredentialRender) so it doesn't clobber an in-progress edit.
@@ -3363,8 +3444,15 @@ const credentialOwnerName = (item = {}) => normalizeCredentialUserName(item.user
 
 const findCredentialUserByName = (name) => {
   const key = credentialUserNameKey(name);
-  return (Array.isArray(App.data?.keypadUsers) ? App.data.keypadUsers : [])
-    .find((user) => credentialUserNameKey(user?.name) === key) || null;
+  const direct = (Array.isArray(App.data?.keypadUsers) ? App.data.keypadUsers : [])
+    .find((user) => credentialUserNameKey(user?.name) === key);
+  if (direct) return direct;
+
+  // No PIN/keypad record yet, but the name may already exist purely as an RFID or
+  // remote credential tag -- treat that as the same person so a second credential
+  // added under the same displayed name joins them instead of minting a new user.
+  const group = buildCredentialUserGroups().find((candidate) => credentialUserNameKey(candidate.name) === key);
+  return group?.uuid ? { uuid: group.uuid, name: group.name } : null;
 };
 
 const ensureCredentialUserForName = async (name) => {
@@ -3917,8 +4005,7 @@ const renderCredentialUsers = () => {
     const shouldOpen =
       App.credentialUserOpenKeys.has(group.key)
       || groupContainsFocusedCredential(group, preserved.focused)
-      || groupMatchesActiveEnrollment(group)
-      || (!App.credentialUserCollapsedKeys.has(group.key) && groups.length === 1);
+      || groupMatchesActiveEnrollment(group);
     const credentialCards = [
       ...group.rfid.map((user) => buildWiegandUserRow(user, preserved.rfid[user.id])),
       ...group.pins.map((user, index) => buildKeypadUserRow(user, index, preserved.pin[user.credentialId || user.uuid])),
@@ -3927,13 +4014,16 @@ const renderCredentialUsers = () => {
 
     return `
       <section class="credential-user-group ${shouldOpen ? 'is-open' : ''}" data-user-key="${escapeHtml(group.key)}">
-        <button type="button" class="credential-user-header" data-action="toggle-user-group" data-user-key="${escapeHtml(group.key)}" aria-expanded="${shouldOpen ? 'true' : 'false'}">
-          <span class="credential-user-title">
-            <strong>${escapeHtml(group.name)}</strong>
-          </span>
-          <span class="credential-user-summary">${escapeHtml(credentialGroupSummary(group))}</span>
-          <span class="credential-user-chevron" aria-hidden="true"></span>
-        </button>
+        <div class="credential-user-header">
+          <button type="button" class="credential-user-toggle" data-action="toggle-user-group" data-user-key="${escapeHtml(group.key)}" aria-expanded="${shouldOpen ? 'true' : 'false'}">
+            <span class="credential-user-title">
+              <strong>${escapeHtml(group.name)}</strong>
+            </span>
+            <span class="credential-user-summary">${escapeHtml(credentialGroupSummary(group))}</span>
+            <span class="credential-user-chevron" aria-hidden="true"></span>
+          </button>
+          ${renderCredentialIconButton('delete-user', group.key, `Delete ${group.name} and all their credentials`, 'credential-remove-icon credential-user-remove')}
+        </div>
         <div class="credential-user-body" ${shouldOpen ? '' : 'hidden'}>
           ${renderUserScheduleSelect(group)}
           ${credentialCards
@@ -4012,7 +4102,7 @@ const renderKeypadUsers = (users = []) => {
   if (App.data) {
     App.data.keypadUsers = Array.isArray(users) ? users : [];
   }
-  renderEnrollmentUserOptions(users);
+  renderEnrollmentUserOptions();
   if (App.elements.keypadRemoveAllBtn) {
     App.elements.keypadRemoveAllBtn.disabled = !users.length;
   }
@@ -4077,25 +4167,25 @@ const renderKeypadUsers = (users = []) => {
   renderCredentialUsers();
 };
 
-const renderEnrollmentUserOptions = (users = []) => {
+const renderEnrollmentUserOptions = () => {
   const select = App.elements.enrollUserSelect;
   if (!select) return;
 
   const previous = select.value;
-  if (!users.length) {
+  // Source from the full merged user list (not just keypadUsers) so a person who so
+  // far only has an RFID card or remote still shows up as a selectable existing user
+  // instead of forcing every next credential into a brand-new "Default User".
+  const groups = buildCredentialUserGroups();
+  if (!groups.length) {
     select.innerHTML = '<option value="">Default User</option>';
     return;
   }
 
-  select.innerHTML = users
-    .map((user, index) => {
-      const uuid = escapeHtml(user.uuid || '');
-      const name = escapeHtml(user.name || `User ${index + 1}`);
-      return `<option value="${uuid}">${name}</option>`;
-    })
+  select.innerHTML = groups
+    .map((group) => `<option value="${escapeHtml(group.key)}">${escapeHtml(group.name)}</option>`)
     .join('');
 
-  if (previous && users.some((user) => user.uuid === previous)) {
+  if (previous && groups.some((group) => group.key === previous)) {
     select.value = previous;
   }
 };
@@ -4735,6 +4825,11 @@ document.addEventListener('DOMContentLoaded', () => {
     otaStatus: document.getElementById('otaStatus'),
   };
 
+  // Restore whichever tab was active before the last refresh immediately, so the
+  // page doesn't flash to Device before switching to the remembered tab.
+  const initialPageId = getStoredActivePageId();
+  setActivePage(initialPageId);
+
   bindNavigation();
   setupCredentialIconControls();
   setupMultiSelectControls();
@@ -4787,7 +4882,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   loadState().finally(() => {
-    onPageActivated('device');
+    onPageActivated(getActivePageId());
     startStatePolling();
     startUptimeClock();
     startHeaderClock();
