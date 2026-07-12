@@ -689,11 +689,11 @@ static bool handleKeyCode(struct wiegand *ctx) {
                         ESP_LOGI(LOG_TAG_WIEGAND, "PIN accepted on reader channel %d (%s, user=%s)",
                                  ctx->channel, ctx->code, pin_user.name);
                     } else {
-                        beep_keypad(2, ctx->channel);
+                        // No beep: rejected PINs stay silent (only success/enrollment-capture beep).
                         ESP_LOGW(LOG_TAG_WIEGAND, "PIN user %s rejected on keypad channel %d", pin_user.name, ctx->channel);
                     }
                 } else {
-                    beep_keypad(2, ctx->channel);
+                    // No beep: wrong/disabled/schedule-denied PINs stay silent.
                     ESP_LOGW(LOG_TAG_WIEGAND, "PIN rejected on channel %d (%s)", ctx->channel, ctx->code);
                 }
             }
