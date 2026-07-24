@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "automation.h"
+#include "wiegand_format.h"
 #include "wiegand_registry.h"
 #include "store.h"
 
@@ -163,7 +164,10 @@ static bool parse_string_field(const cJSON *obj, const char *key, char *out, siz
     return true;
 }
 
-static bool deserialize_user(const cJSON *obj, wiegand_user_t *out_user) {
+static bool deserialize_user(const cJSON *obj,
+                             wiegand_user_t *out_user,
+                             wiegand_code_polarity_t *polarity_out,
+                             bool *code_changed_out) {
     if (!cJSON_IsObject(obj) || !out_user) {
         return false;
     }
@@ -177,6 +181,17 @@ static bool deserialize_user(const cJSON *obj, wiegand_user_t *out_user) {
     if (!parse_string_field(obj, "code", out_user->code, sizeof(out_user->code))) {
         ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY, "User missing code");
         return false;
+    }
+    char raw_code[WIEGAND_USER_CODE_MAX];
+    char normalized_code[WIEGAND_USER_CODE_MAX];
+    strlcpy(raw_code, out_user->code, sizeof(raw_code));
+    if (!wiegand_code_normalize(raw_code, normalized_code, sizeof(normalized_code), polarity_out)) {
+        ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY, "User has invalid Wiegand code");
+        return false;
+    }
+    strlcpy(out_user->code, normalized_code, sizeof(out_user->code));
+    if (code_changed_out) {
+        *code_changed_out = strcmp(raw_code, normalized_code) != 0;
     }
     parse_string_field(obj, "name", out_user->name, sizeof(out_user->name));
     parse_string_field(obj, "mode", out_user->mode, sizeof(out_user->mode));
@@ -273,8 +288,12 @@ const wiegand_user_t *wiegand_registry_get(size_t index) {
 
 static ssize_t find_index_by_code(const char *code) {
     if (!code) return -1;
+    char normalized[WIEGAND_USER_CODE_MAX];
+    if (!wiegand_code_normalize(code, normalized, sizeof(normalized), NULL)) {
+        return -1;
+    }
     for (size_t i = 0; i < s_user_count; i++) {
-        if (strcmp(s_users[i].code, code) == 0) {
+        if (strcmp(s_users[i].code, normalized) == 0) {
             return (ssize_t)i;
         }
     }
@@ -416,6 +435,7 @@ static esp_err_t persist_locked(void) {
 
 static esp_err_t load_locked(void) {
     bool loaded_from_legacy_nvs = false;
+    bool registry_changed = false;
     char *json_str = NULL;
     esp_err_t read_err = read_registry_file(&json_str);
     if (read_err == ESP_ERR_NOT_FOUND) {
@@ -462,7 +482,47 @@ static esp_err_t load_locked(void) {
         cJSON *item = cJSON_GetArrayItem(array, i);
         if (item) {
             wiegand_user_t user;
-            if (deserialize_user(item, &user)) {
+            wiegand_code_polarity_t polarity = WIEGAND_CODE_POLARITY_UNKNOWN;
+            bool code_changed = false;
+            if (deserialize_user(item, &user, &polarity, &code_changed)) {
+                if (polarity != WIEGAND_CODE_POLARITY_UNKNOWN && user.channel >= 1 && user.channel <= 2) {
+                    char polarity_key[24];
+                    snprintf(polarity_key, sizeof(polarity_key), "wiegand_%u_pol", (unsigned)user.channel);
+                    uint32_t stored_polarity = get_u32(polarity_key, WIEGAND_CODE_POLARITY_UNKNOWN);
+                    if (stored_polarity == WIEGAND_CODE_POLARITY_UNKNOWN) {
+                        store_u32(polarity_key, (uint32_t)polarity);
+                    }
+                }
+                registry_changed = registry_changed || code_changed;
+                ssize_t duplicate_idx = find_index_by_code(user.code);
+                if (duplicate_idx >= 0) {
+                    wiegand_user_t *existing = &s_users[duplicate_idx];
+                    ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY,
+                             "Merging duplicate Wiegand credential %s (stored polarity differed)",
+                             user.code);
+                    if (existing->user_uuid[0] == '\0' && user.user_uuid[0] != '\0') {
+                        strlcpy(existing->user_uuid, user.user_uuid, sizeof(existing->user_uuid));
+                    }
+                    if (existing->channel != user.channel) {
+                        existing->channel = 0;
+                    }
+                    existing->channel_mask |= user.channel_mask;
+                    if (existing->channel_mask == 0 || existing->channel_mask > 3) {
+                        existing->channel_mask = 3;
+                    }
+                    if (user.status == WIEGAND_USER_STATUS_ACTIVE) {
+                        existing->status = WIEGAND_USER_STATUS_ACTIVE;
+                    }
+                    if (user.last_used_ms > existing->last_used_ms) {
+                        existing->last_used_ms = user.last_used_ms;
+                        existing->last_used_unix_time = user.last_used_unix_time;
+                    }
+                    if (user.updated_at_ms > existing->updated_at_ms) {
+                        existing->updated_at_ms = user.updated_at_ms;
+                    }
+                    registry_changed = true;
+                    continue;
+                }
                 if (s_user_count < WIEGAND_USER_MAX_COUNT) {
                     if (!ensure_capacity_locked(s_user_count + 1)) {
                         cJSON_Delete(array);
@@ -471,19 +531,25 @@ static esp_err_t load_locked(void) {
                     s_users[s_user_count++] = user;
                 } else {
                     ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY, "Registry full while loading; truncating");
+                    registry_changed = true;
                     break;
                 }
+            } else {
+                registry_changed = true;
+                ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY,
+                         "Discarding invalid stored Wiegand credential at index %u",
+                         (unsigned)i);
             }
         }
     }
 
     cJSON_Delete(array);
     sort_users();
-    if (loaded_from_legacy_nvs && s_user_count > 0) {
+    if (loaded_from_legacy_nvs || registry_changed) {
         esp_err_t migrate_err = persist_locked();
         if (migrate_err == ESP_OK) {
             ESP_LOGI(LOG_TAG_WIEGAND_REGISTRY,
-                     "Migrated %u Wiegand users from NVS string to SPIFFS",
+                     "Migrated and normalized %u Wiegand users",
                      (unsigned)s_user_count);
         } else {
             ESP_LOGW(LOG_TAG_WIEGAND_REGISTRY,
@@ -539,6 +605,11 @@ esp_err_t wiegand_registry_add_for_user(const char *code,
         return ESP_ERR_INVALID_ARG;
     }
 
+    char normalized_code[WIEGAND_USER_CODE_MAX];
+    if (!wiegand_code_normalize(code, normalized_code, sizeof(normalized_code), NULL)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     ensure_mutex();
     if (!s_mutex) {
         return ESP_ERR_NO_MEM;
@@ -559,7 +630,7 @@ esp_err_t wiegand_registry_add_for_user(const char *code,
         return ESP_ERR_NO_MEM;
     }
 
-    if (find_index_by_code(code) >= 0) {
+    if (find_index_by_code(normalized_code) >= 0) {
         xSemaphoreGive(s_mutex);
         return ESP_ERR_INVALID_STATE;
     }
@@ -579,7 +650,7 @@ esp_err_t wiegand_registry_add_for_user(const char *code,
         .created_at_ms = current_time_ms(),
         .updated_at_ms = current_time_ms(),
     };
-    strlcpy(user.code, code, sizeof(user.code));
+    strlcpy(user.code, normalized_code, sizeof(user.code));
     strlcpy(user.mode, "momentary", sizeof(user.mode));
     generate_id(user.id, sizeof(user.id));
     if (user_uuid) {

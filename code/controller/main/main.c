@@ -13,6 +13,7 @@
 #include "services/alert_target.c"
 #include "services/store.c"
 #include "services/schedule.c"
+#include "services/wiegand_format.c"
 #include "services/wiegand_registry.c"
 #include "services/enrollment.c"
 #include "services/authorize.c"
