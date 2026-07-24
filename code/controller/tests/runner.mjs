@@ -47,6 +47,22 @@ async function runBuildVerification(report) {
   report.startSuite('Build Verification', 'Verifying ESP-IDF firmware build');
   const controllerDir = resolve(__dirname, '..');
 
+  const unitStart = Date.now();
+  try {
+    execSync('npm run test:wiegand-format', { cwd: __dirname, stdio: 'pipe' });
+    report.pass('Wiegand RFID polarity normalization unit tests', '', Date.now() - unitStart);
+  } catch (error) {
+    report.fail('Wiegand RFID polarity normalization unit tests', error.stdout?.toString() || error.message, Date.now() - unitStart);
+  }
+
+  const bootAudioStart = Date.now();
+  try {
+    execSync('npm run test:boot-audio', { cwd: __dirname, stdio: 'pipe' });
+    report.pass('Boot and quiet-mode audio regression tests', '', Date.now() - bootAudioStart);
+  } catch (error) {
+    report.fail('Boot and quiet-mode audio regression tests', error.stdout?.toString() || error.message, Date.now() - bootAudioStart);
+  }
+
   // Check build outputs exist
   const files = [
     ['build/controller.bin', 'Firmware binary'],
@@ -99,6 +115,7 @@ async function main() {
   const serverRouteOnly = args.includes('--server-route-only');
   const soakOnly = args.includes('--soak');
   const uiCredentialResilienceOnly = args.includes('--ui-credential-resilience');
+  const uiScheduleResilienceOnly = args.includes('--ui-schedule-resilience');
   const enrollmentUserMatchingOnly = args.includes('--enrollment-user-matching');
 
   console.log('╔══════════════════════════════════════════════════════════╗');
@@ -117,6 +134,13 @@ async function main() {
 
   if (uiCredentialResilienceOnly) {
     const mod = await import('./suites/ui-credential-resilience.mjs');
+    await mod.default(null, report);
+    report.finish();
+    process.exit(report.results.fail > 0 ? 1 : 0);
+  }
+
+  if (uiScheduleResilienceOnly) {
+    const mod = await import('./suites/ui-schedule-resilience.mjs');
     await mod.default(null, report);
     report.finish();
     process.exit(report.results.fail > 0 ? 1 : 0);

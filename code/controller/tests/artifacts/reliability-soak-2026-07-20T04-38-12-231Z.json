@@ -1,0 +1,309 @@
+{
+  "config": {
+    "startedAt": "2026-07-20T04:36:04.664Z",
+    "baseUrl": "http://192.168.1.115",
+    "durationMs": 120000,
+    "stateWorkers": 2,
+    "settingsWorkers": 1,
+    "browserWorkers": 1,
+    "otaRepeats": 0
+  },
+  "totals": {
+    "count": 2118,
+    "ok": 2109,
+    "fail": 9
+  },
+  "rows": [
+    {
+      "name": "browser refresh",
+      "count": 10,
+      "ok": 1,
+      "fail": 9,
+      "p50": 10257,
+      "p95": 10464,
+      "p99": 10464,
+      "max": 10464
+    },
+    {
+      "name": "browser uptime tick",
+      "count": 10,
+      "ok": 10,
+      "fail": 0,
+      "p50": 127,
+      "p95": 1110,
+      "p99": 1110,
+      "max": 1110
+    },
+    {
+      "name": "GET /api/discovery",
+      "count": 34,
+      "ok": 34,
+      "fail": 0,
+      "p50": 56,
+      "p95": 295,
+      "p99": 1126,
+      "max": 1126
+    },
+    {
+      "name": "GET /api/logs",
+      "count": 34,
+      "ok": 34,
+      "fail": 0,
+      "p50": 72,
+      "p95": 305,
+      "p99": 313,
+      "max": 313
+    },
+    {
+      "name": "GET /api/rf",
+      "count": 34,
+      "ok": 34,
+      "fail": 0,
+      "p50": 1074,
+      "p95": 1181,
+      "p99": 1245,
+      "max": 1245
+    },
+    {
+      "name": "GET /api/signals",
+      "count": 657,
+      "ok": 657,
+      "fail": 0,
+      "p50": 61,
+      "p95": 113,
+      "p99": 1056,
+      "max": 1486
+    },
+    {
+      "name": "GET /api/state",
+      "count": 657,
+      "ok": 657,
+      "fail": 0,
+      "p50": 54,
+      "p95": 259,
+      "p99": 287,
+      "max": 561
+    },
+    {
+      "name": "GET /api/state initial",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 37,
+      "p95": 37,
+      "p99": 37,
+      "max": 37
+    },
+    {
+      "name": "GET /api/wiegand",
+      "count": 34,
+      "ok": 34,
+      "fail": 0,
+      "p50": 117,
+      "p95": 1182,
+      "p99": 1264,
+      "max": 1264
+    },
+    {
+      "name": "GET /api/wifi/list",
+      "count": 34,
+      "ok": 34,
+      "fail": 0,
+      "p50": 97,
+      "p95": 1117,
+      "p99": 1137,
+      "max": 1137
+    },
+    {
+      "name": "POST /api/buzzer/quiet on",
+      "count": 1,
+      "ok": 1,
+      "fail": 0,
+      "p50": 19,
+      "p95": 19,
+      "p99": 19,
+      "max": 19
+    },
+    {
+      "name": "POST /api/exit",
+      "count": 149,
+      "ok": 149,
+      "fail": 0,
+      "p50": 43,
+      "p95": 202,
+      "p99": 292,
+      "max": 546
+    },
+    {
+      "name": "POST /api/fob",
+      "count": 149,
+      "ok": 149,
+      "fail": 0,
+      "p50": 31,
+      "p95": 241,
+      "p99": 297,
+      "max": 1080
+    },
+    {
+      "name": "POST /api/keypad",
+      "count": 149,
+      "ok": 149,
+      "fail": 0,
+      "p50": 39,
+      "p95": 250,
+      "p99": 319,
+      "max": 567
+    },
+    {
+      "name": "POST /api/motion",
+      "count": 149,
+      "ok": 149,
+      "fail": 0,
+      "p50": 51,
+      "p95": 261,
+      "p99": 1079,
+      "max": 1094
+    },
+    {
+      "name": "prepare /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 23,
+      "p95": 27,
+      "p99": 27,
+      "max": 27
+    },
+    {
+      "name": "prepare /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 43,
+      "p95": 89,
+      "p99": 89,
+      "max": 89
+    },
+    {
+      "name": "prepare /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 55,
+      "p95": 67,
+      "p99": 67,
+      "max": 67
+    },
+    {
+      "name": "prepare /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 46,
+      "p95": 79,
+      "p99": 79,
+      "max": 79
+    },
+    {
+      "name": "restore /api/exit",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 21,
+      "p95": 86,
+      "p99": 86,
+      "max": 86
+    },
+    {
+      "name": "restore /api/fob",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 49,
+      "p95": 85,
+      "p99": 85,
+      "max": 85
+    },
+    {
+      "name": "restore /api/keypad",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 48,
+      "p95": 105,
+      "p99": 105,
+      "max": 105
+    },
+    {
+      "name": "restore /api/motion",
+      "count": 2,
+      "ok": 2,
+      "fail": 0,
+      "p50": 61,
+      "p95": 105,
+      "p99": 105,
+      "max": 105
+    }
+  ],
+  "heap": {
+    "samples": 657,
+    "minFree": 47548,
+    "minLargest": 19456,
+    "lastFree": 58672,
+    "lastLargest": 31744
+  },
+  "events": [
+    {
+      "time": "2026-07-20T04:36:04.664Z",
+      "name": "start",
+      "detail": "{\"startedAt\":\"2026-07-20T04:36:04.664Z\",\"baseUrl\":\"http://192.168.1.115\",\"durationMs\":120000,\"stateWorkers\":2,\"settingsWorkers\":1,\"browserWorkers\":1,\"otaRepeats\":0}"
+    }
+  ],
+  "failures": [
+    {
+      "time": "2026-07-20T04:36:21.011Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:36:34.580Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:36:47.962Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:37:01.281Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:37:14.926Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:37:28.483Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:37:41.951Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:37:55.322Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    },
+    {
+      "time": "2026-07-20T04:38:08.710Z",
+      "name": "browser refresh",
+      "detail": "page.waitForSelector: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#modeExit_1') to be visible\u001b[22m\n\u001b[2m    24 × locator resolved to hidden <select id=\"modeExit_1\" data-latch-target=\"latchExit_1\">…</select>\u001b[22m\n"
+    }
+  ]
+}

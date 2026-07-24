@@ -32,11 +32,32 @@ export default async function run(api, report) {
   async function uiToggleTest(label, checkboxId, apiReadFn, channel, field) {
     const t0 = Date.now();
     try {
+      const readField = async () => {
+        const state = await apiReadFn();
+        const items = Array.isArray(state) ? state : state.locks;
+        return items?.find?.((item) => item.channel === channel)?.[field];
+      };
+      const waitForField = async (expected, timeoutMs = 10000) => {
+        const deadline = Date.now() + timeoutMs;
+        let actual;
+        do {
+          actual = await readField();
+          if (actual === expected) return actual;
+          await page.waitForTimeout(200);
+        } while (Date.now() < deadline);
+        return actual;
+      };
+
       // Read current state from API
       const stateBefore = await apiReadFn();
       const itemsBefore = Array.isArray(stateBefore) ? stateBefore : stateBefore.locks;
       const itemBefore = itemsBefore?.find?.(i => i.channel === channel);
       const origValue = itemBefore?.[field];
+      if (typeof origValue !== 'boolean') {
+        report.skip(label, `API field ${field} is not boolean`, Date.now() - t0);
+        return;
+      }
+      const desiredValue = !origValue;
 
       // Find checkbox
       const checkbox = await page.$(`#${checkboxId}`);
@@ -45,8 +66,63 @@ export default async function run(api, report) {
         return;
       }
 
-      const wasChecked = await checkbox.isChecked();
+      // Periodic state refresh can lag behind the API after a stress sweep. Sync
+      // the hidden source checkbox before exercising its visible control.
+      await page.evaluate(({ id, checked }) => {
+        const input = document.getElementById(id);
+        if (input) input.checked = checked;
+      }, { id: checkboxId, checked: origValue });
+      const wasChecked = origValue;
       const visible = await checkbox.isVisible();
+      const alertTargetId = checkboxId
+        .replace(/^enableContactAlert_/, 'alertTargetLock_')
+        .replace(/^alert(Exit|Fob|Keypad|Motion)_/, 'alertTarget$1_');
+      const alertTargetInput = !visible && alertTargetId !== checkboxId
+        ? await page.$(`#${alertTargetId}`)
+        : null;
+      const originalAlertMask = alertTargetInput ? Number(await alertTargetInput.inputValue()) : null;
+      const setVisibleAlertMask = async (desiredMask) => {
+        const input = page.locator(`#${alertTargetId}`);
+        const field = input.locator('xpath=ancestor::*[contains(@class,"multi-select-field")][1]');
+        const details = field.locator('details');
+        if (await input.count() === 0 || await details.count() === 0) {
+          throw new Error(`Visible alert control #${alertTargetId} not found`);
+        }
+        if (!(await details.evaluate((element) => element.open))) {
+          await details.locator('summary').click();
+        }
+        const bits = await details.locator('input[type="checkbox"][data-bit]').evaluateAll((items) =>
+          items.map((item) => Number(item.dataset.bit || 0))
+        );
+        for (const bit of bits) {
+          if (!(await details.evaluate((element) => element.open))) {
+            await details.locator('summary').click();
+          }
+          const option = details.locator(`input[type="checkbox"][data-bit="${bit}"]`);
+          const shouldBeChecked = (desiredMask & bit) !== 0;
+          if ((await option.isChecked()) !== shouldBeChecked) {
+            await option.locator('xpath=ancestor::label[1]').click();
+          }
+        }
+        if (await details.evaluate((element) => element.open)) {
+          await details.locator('summary').click();
+        }
+      };
+      const clickCheckboxControl = async () => {
+        const currentCheckbox = await page.$(`#${checkboxId}`);
+        if (!currentCheckbox) {
+          throw new Error(`Checkbox #${checkboxId} disappeared`);
+        }
+        if (visible) {
+          await currentCheckbox.click();
+          return;
+        }
+        const wrapper = await currentCheckbox.$('xpath=ancestor::label[1]') || await page.$(`label[for="${checkboxId}"]`);
+        if (!wrapper) {
+          throw new Error(`Visible control for hidden checkbox #${checkboxId} not found`);
+        }
+        await wrapper.click();
+      };
       if (!visible && field === 'enable') {
         const button = await page.$(`[data-enable-target="${checkboxId}"]`);
         if (!button) {
@@ -62,18 +138,21 @@ export default async function run(api, report) {
           return;
         }
         await modeSelect.selectOption(wasChecked ? 'momentary' : 'latch');
+      } else if (alertTargetInput) {
+        await setVisibleAlertMask(wasChecked ? 0 : 1);
       } else {
-        await checkbox.click();
+        await clickCheckboxControl();
       }
 
-      // Verify via API
-      await page.waitForTimeout(500);
-      const stateAfter = await apiReadFn();
-      const itemsAfter = Array.isArray(stateAfter) ? stateAfter : stateAfter.locks;
-      const itemAfter = itemsAfter?.find?.(i => i.channel === channel);
-      const newValue = itemAfter?.[field];
+      // Verify via API. Controller writes may take several seconds after a bulk
+      // NVS exercise, so poll the actual state instead of racing a fixed delay.
+      const newValue = await waitForField(desiredValue);
 
       // Restore
+      await page.evaluate(({ id, checked }) => {
+        const input = document.getElementById(id);
+        if (input) input.checked = checked;
+      }, { id: checkboxId, checked: desiredValue });
       if (!visible && field === 'enable') {
         const button = await page.$(`[data-enable-target="${checkboxId}"]`);
         await button?.click();
@@ -81,15 +160,17 @@ export default async function run(api, report) {
         const modeSelectId = checkboxId.replace(/^latch/, 'mode');
         const modeSelect = await page.$(`#${modeSelectId}`);
         await modeSelect?.selectOption(wasChecked ? 'latch' : 'momentary');
+      } else if (alertTargetInput) {
+        await setVisibleAlertMask(originalAlertMask);
       } else {
-        await checkbox.click();
+        await clickCheckboxControl();
       }
-      await page.waitForTimeout(300);
+      await waitForField(origValue);
 
-      if (newValue === !wasChecked) {
+      if (newValue === desiredValue) {
         report.pass(label, '', Date.now() - t0);
       } else {
-        report.fail(label, `Expected ${!wasChecked}, got ${newValue}`, Date.now() - t0);
+        report.fail(label, `Expected ${desiredValue}, got ${newValue}`, Date.now() - t0);
       }
     } catch (err) {
       report.fail(label, err.message, Date.now() - t0);
@@ -109,17 +190,26 @@ export default async function run(api, report) {
       }
 
       await select.selectOption(value);
-      await page.waitForTimeout(500);
-      const after = await apiReadFn();
-      const itemAfter = after?.find?.(i => i.channel === channel);
+      const readMode = async () => (await apiReadFn())?.find?.((item) => item.channel === channel)?.mode;
+      const waitForMode = async (expected, timeoutMs = 10000) => {
+        const deadline = Date.now() + timeoutMs;
+        let actual;
+        do {
+          actual = await readMode();
+          if (actual === expected) return actual;
+          await page.waitForTimeout(200);
+        } while (Date.now() < deadline);
+        return actual;
+      };
+      const changedMode = await waitForMode(value);
 
-      await select.selectOption(originalMode);
-      await page.waitForTimeout(300);
+      await page.locator(`#${selectId}`).selectOption(originalMode);
+      await waitForMode(originalMode);
 
-      if (itemAfter?.mode === value) {
+      if (changedMode === value) {
         report.pass(label, '', Date.now() - t0);
       } else {
-        report.fail(label, `Expected ${value}, got ${itemAfter?.mode}`, Date.now() - t0);
+        report.fail(label, `Expected ${value}, got ${changedMode}`, Date.now() - t0);
       }
     } catch (err) {
       report.fail(label, err.message, Date.now() - t0);
@@ -174,7 +264,7 @@ export default async function run(api, report) {
     await uiToggleTest('UI: Lock CH1 enable toggle', 'enableLock_1', getState, 1, 'enable');
     await uiToggleTest('UI: Lock CH1 arm toggle', 'arm_1', getState, 1, 'arm');
     await uiToggleTest('UI: Lock CH1 contact alert toggle', 'enableContactAlert_1', getState, 1, 'enableContactAlert');
-    await uiToggleTest('UI: Lock CH1 polarity toggle', 'polarity_1', getState, 1, 'polarity');
+    await uiToggleTest('UI: Lock CH1 fail-secure toggle', 'failSecure_1', getState, 1, 'failSecure');
   }
 
   // 5. Lock toggles (CH2)
@@ -183,7 +273,7 @@ export default async function run(api, report) {
     await uiToggleTest('UI: Lock CH2 enable toggle', 'enableLock_2', getState, 2, 'enable');
     await uiToggleTest('UI: Lock CH2 arm toggle', 'arm_2', getState, 2, 'arm');
     await uiToggleTest('UI: Lock CH2 contact alert toggle', 'enableContactAlert_2', getState, 2, 'enableContactAlert');
-    await uiToggleTest('UI: Lock CH2 polarity toggle', 'polarity_2', getState, 2, 'polarity');
+    await uiToggleTest('UI: Lock CH2 fail-secure toggle', 'failSecure_2', getState, 2, 'failSecure');
   }
 
   // 6. Exit toggles

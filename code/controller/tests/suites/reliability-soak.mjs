@@ -228,6 +228,7 @@ async function browserWorker(baseUrl, metrics, done, workerId) {
       const started = Date.now();
       try {
         await page.goto(`${baseUrl}/?worker=${workerId}&t=${Date.now()}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.click('.nav-item[data-target="device"]');
         await page.waitForSelector('#modeExit_1', { timeout: 10000 });
         metrics.record('browser refresh', true, Date.now() - started);
       } catch (error) {
