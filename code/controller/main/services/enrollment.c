@@ -80,6 +80,25 @@ static bool enrollment_load_user_name(const char *user_uuid, char *name, size_t 
         cJSON_Delete(user);
     }
 
+    // The credential UI merges keypad/Wiegand/RF users into one identity list so a
+    // person whose only credential so far is an RFID card or remote still shows up
+    // as a selectable existing user (see buildCredentialUserGroups in script.js).
+    // Their uuid only lives in the Wiegand/RF registries, not the keypad flash
+    // store, so it has to be resolved here too or enrollment start 404s for them.
+    size_t wiegand_count = wiegand_registry_count();
+    for (size_t i = 0; i < wiegand_count; i++) {
+        const wiegand_user_t *wiegand_user = wiegand_registry_get(i);
+        if (wiegand_user && wiegand_user->user_uuid[0] != '\0' &&
+            strcmp(wiegand_user->user_uuid, user_uuid) == 0) {
+            strlcpy(name, wiegand_user->name, name_size);
+            return true;
+        }
+    }
+
+    if (rf_registry_find_name_by_uuid(user_uuid, name, name_size) == ESP_OK) {
+        return true;
+    }
+
     return false;
 }
 

@@ -18,6 +18,7 @@ esp_err_t rf_registration_stop(void);
 void rf_registry_on_code(uint32_t code, size_t pulse_count);
 esp_err_t rf_registry_add_for_user(uint32_t code, size_t pulse_count, const char *user_uuid, const char *name);
 esp_err_t rf_registry_update_name(const char *id, const char *name);
+esp_err_t rf_registry_find_name_by_uuid(const char *user_uuid, char *name_out, size_t name_out_size);
 esp_err_t rf_registry_remove(const char *id);
 esp_err_t rf_registry_clear(void);
 cJSON *rf_state_snapshot(void);

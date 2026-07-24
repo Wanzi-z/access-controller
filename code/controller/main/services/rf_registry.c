@@ -354,6 +354,28 @@ esp_err_t rf_registry_update_name(const char *id, const char *name) {
     return ESP_OK;
 }
 
+esp_err_t rf_registry_find_name_by_uuid(const char *user_uuid, char *name_out, size_t name_out_size) {
+    if (!user_uuid || user_uuid[0] == '\0' || !name_out || name_out_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    rf_ensure_mutex();
+    if (!rf_mutex || xSemaphoreTake(rf_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    esp_err_t result = ESP_ERR_NOT_FOUND;
+    for (size_t i = 0; i < rf_user_count; i++) {
+        if (rf_users[i].user_uuid[0] != '\0' && strcmp(rf_users[i].user_uuid, user_uuid) == 0) {
+            strlcpy(name_out, rf_users[i].name, name_out_size);
+            result = ESP_OK;
+            break;
+        }
+    }
+    xSemaphoreGive(rf_mutex);
+    return result;
+}
+
 esp_err_t rf_registry_remove(const char *id) {
     if (!id) return ESP_ERR_INVALID_ARG;
     rf_ensure_mutex();
