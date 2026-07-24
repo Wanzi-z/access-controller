@@ -69,7 +69,7 @@ static void exit_apply_locks(struct exitButton *ext, bool arm, const char *sourc
 		arm_lock(bit + 1, arm, false);
 	}
 	if (do_alert && ext->alert) {
-		alert_output_signal_force(1, exit_alert_channel(ext), ext->alert_target);
+		alert_output_signal(1, exit_alert_channel(ext), ext->alert_target);
 	}
 }
 
@@ -134,6 +134,9 @@ void start_exit_timer (struct exitButton *ext, bool val)
 
 void exit_timer_func(struct exitButton *ext)
 {
+	if (ext->expired) {
+		return;
+	}
 	if (ext->count >= ext->delay && !ext->expired) {
 			ESP_LOGI(TAG, "Re-arming lock from button %d service.", ext->channel);
 			exit_apply_locks(ext, true, "exit_auto", false);
@@ -447,6 +450,16 @@ void exit_main()
 	} else {
 		gpio_set_direction(exits[0].pin, GPIO_MODE_INPUT);
 		gpio_set_direction(exits[1].pin, GPIO_MODE_INPUT);
+	}
+
+	// Global structs start zeroed, which previously armed every timer and
+	// treated an already-active input as a new press. Seed both the timer and
+	// edge detector from hardware before either task can run.
+	for (int i = 0; i < NUM_OF_EXITS; i++) {
+		exits[i].expired = true;
+		exits[i].count = 0;
+		exits[i].isPressed = !get_io(exits[i].pin);
+		exits[i].prevPress = exits[i].isPressed;
 	}
 
   	xTaskCreate(exit_timer, "exit_timer", 4096, NULL, 10, NULL);

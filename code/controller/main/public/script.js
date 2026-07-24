@@ -779,7 +779,7 @@ const applyLockState = (locks = []) => {
     const enableEl = document.getElementById(`enableLock_${ch}`);
     const armEl = document.getElementById(`arm_${ch}`);
     const contactEl = document.getElementById(`enableContactAlert_${ch}`);
-    const polarityEl = document.getElementById(`polarity_${ch}`);
+    const failSecureEl = document.getElementById(`failSecure_${ch}`);
     const contactStatusEl = document.getElementById(`lockContact_${ch}`);
     const senseStatusEl = document.getElementById(`lockSense_${ch}`);
 
@@ -788,7 +788,7 @@ const applyLockState = (locks = []) => {
     if (armEl) armEl.checked = !!lock.arm;
     if (contactEl) contactEl.checked = !!lock.enableContactAlert;
     setCardAlertTargetState(`alertTargetLock_${ch}`, lock.alert_target, !!lock.enableContactAlert);
-    if (polarityEl) polarityEl.checked = !!lock.polarity;
+    if (failSecureEl) failSecureEl.checked = !!lock.failSecure;
 
     /* Ch1: contact state is in API "sense". Ch2: contact state is in API "contact". */
     const contactState = ch === 1 ? lock.sense : lock.contact;
@@ -1231,6 +1231,10 @@ const mergeStateCredentialDetails = (previous = {}, incoming = {}) => ({
   keypadUsers: Array.isArray(incoming?.keypadUsers)
     ? incoming.keypadUsers
     : (Array.isArray(previous?.keypadUsers) ? previous.keypadUsers : incoming?.keypadUsers),
+  // /api/state never includes schedules (it's only ever served by /api/schedules), so without this
+  // fallback every 30s state poll wipes App.data.schedules and the next renderSchedules() call
+  // (e.g. clicking any schedule chip) renders as if every custom profile had been deleted.
+  schedules: incoming?.schedules !== undefined ? incoming.schedules : previous?.schedules,
 });
 
 const scheduleDeviceCredentialRetry = () => {
@@ -2440,7 +2444,7 @@ const setupLockHandlers = () => {
     const enableEl = document.getElementById(`enableLock_${ch}`);
     const armEl = document.getElementById(`arm_${ch}`);
     const contactEl = document.getElementById(`enableContactAlert_${ch}`);
-    const polarityEl = document.getElementById(`polarity_${ch}`);
+    const failSecureEl = document.getElementById(`failSecure_${ch}`);
 
     if (enableEl) {
       enableEl.addEventListener('change', (event) => {
@@ -2460,9 +2464,9 @@ const setupLockHandlers = () => {
         });
       });
     }
-    if (polarityEl) {
-      polarityEl.addEventListener('change', (event) => {
-        updateLock(ch, { polarity: event.target.checked });
+    if (failSecureEl) {
+      failSecureEl.addEventListener('change', (event) => {
+        updateLock(ch, { failSecure: event.target.checked });
       });
     }
   });

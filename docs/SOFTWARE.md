@@ -65,7 +65,7 @@ logs periodic heap/NVS/uptime status once per minute.
 | `gpio.c` | Direct ESP32 GPIO definitions and wrapper functions that route I/O through MCP23017 when enabled. |
 | `drivers/i2c.c` | I2C master on GPIO13 SCL and GPIO14 SDA. |
 | `drivers/mcp23x17.c/.h` | MCP23017 I/O expander at address `0x20`, polled every service loop. |
-| `lock.c` | Two lock channels, control outputs, contact/sense inputs, polarity, alerts, persisted arm/enable state. |
+| `lock.c` | Two lock channels, control outputs, contact/sense inputs, fail-secure setting, alerts, persisted arm/enable state. |
 | `exit.c` | Two exit button inputs and auto re-arm timers. |
 | `keypad.c` | Two keypad button inputs and keypad re-arm settings. This is separate from Wiegand keypad PIN decoding. |
 | `motion.c` | Two motion inputs and auto re-arm timers. |
@@ -182,7 +182,7 @@ Routes are registered in `code/controller/main/services/api.c`.
 | --- | --- | --- |
 | `GET` | `/api/state` | Full state snapshot: device UUID, locks, exits, fobs, keypads, motions, Wiegand, RF, and Wi-Fi summary. |
 | `GET` | `/api/logs` | Persistent system log snapshot. |
-| `POST` | `/api/lock` | Update lock enable, arm, contact-alert, and polarity settings. |
+| `POST` | `/api/lock` | Update lock enable, arm, contact-alert, and fail-secure settings. |
 | `POST` | `/api/exit` | Update exit button enable, mode, `channel_mask`, `alert_target`, and delay settings. |
 | `POST` | `/api/fob` | Update physical fob enable, mode, `channel_mask`, `alert_target`, and delay settings. |
 | `POST` | `/api/keypad` | Update keypad-button enable, mode, `channel_mask`, `alert_target`, and delay settings. |

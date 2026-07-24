@@ -65,7 +65,7 @@ the service files are still the practical module boundaries.
 ## Access-Control Behavior
 
 Each lock channel has a control output, contact input, sense input, alert flag,
-polarity setting, and persisted enable/arm settings. Services can disarm a lock
+fail-secure setting, and persisted enable/arm settings. Services can disarm a lock
 temporarily and then re-arm it after their configured delay.
 
 Wiegand long frames, currently `>= 24` bits, are treated as card/RFID codes.

@@ -71,7 +71,7 @@ export default async function run(api, report) {
       `Lock CH${ch} contactAlert toggle`, readLocks, api.updateLock.bind(api), ch, 'enableContactAlert', true
     );
     await toggleAndVerify(
-      `Lock CH${ch} polarity toggle`, readLocks, api.updateLock.bind(api), ch, 'polarity', false
+      `Lock CH${ch} fail-secure toggle`, readLocks, api.updateLock.bind(api), ch, 'failSecure', false
     );
   }
 

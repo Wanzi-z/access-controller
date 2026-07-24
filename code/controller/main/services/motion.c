@@ -74,7 +74,7 @@ static void motion_apply_locks(struct motionButton *mot, bool arm, const char *s
 		arm_lock(bit + 1, arm, false);
 	}
 	if (do_alert && mot->alert) {
-		alert_output_signal_force(1, motion_alert_channel(mot), mot->alert_target);
+		alert_output_signal(1, motion_alert_channel(mot), mot->alert_target);
 	}
 }
 
@@ -363,6 +363,9 @@ void handle_motion_message(cJSON * payload)
 
 void motion_timer_func(struct motionButton *mot)
 {
+	if (mot->expired) {
+		return;
+	}
 	if (mot->count >= mot->delay && !mot->expired) {
 		ESP_LOGI(TAG, "Re-arming lock from motion %d service.", mot->channel);
 		motion_apply_locks(mot, true, "motion_auto", false);
@@ -457,6 +460,13 @@ void motion_main()
 	} else {
 		gpio_set_direction(motions[0].pin, GPIO_MODE_INPUT);
 		gpio_set_direction(motions[1].pin, GPIO_MODE_INPUT);
+	}
+
+	for (int i = 0; i < NUM_OF_MOTIONS; i++) {
+		motions[i].expired = true;
+		motions[i].count = 0;
+		motions[i].isPressed = !get_mcp_io(motions[i].pin);
+		motions[i].prevPress = motions[i].isPressed;
 	}
 
   xTaskCreate(motion_timer, "motion_timer", 4096, NULL, 10, NULL);

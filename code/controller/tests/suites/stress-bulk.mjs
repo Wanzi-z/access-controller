@@ -141,7 +141,7 @@ export default async function run(api, report) {
       await toggleVerifyLog('locks', ch, 'enable', false);
       await toggleVerifyLog('locks', ch, 'arm', false);
       await toggleVerifyLog('locks', ch, 'enableContactAlert', true);
-      await toggleVerifyLog('locks', ch, 'polarity', false);
+      await toggleVerifyLog('locks', ch, 'failSecure', false);
     }
 
     // Exit toggles

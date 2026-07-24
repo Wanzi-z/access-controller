@@ -71,7 +71,7 @@ static void fob_apply_locks(struct fob *fb, bool arm, const char *source, bool d
 		arm_lock(bit + 1, arm, false);
 	}
 	if (do_alert && fb->alert) {
-		alert_output_signal_force(1, fob_alert_channel(fb), fb->alert_target);
+		alert_output_signal(1, fob_alert_channel(fb), fb->alert_target);
 	}
 }
 
@@ -136,6 +136,9 @@ void start_fob_timer (struct fob *fb, bool val)
 
 void check_fob_timer (struct fob *fb)
 {
+	if (fb->expired) {
+		return;
+	}
   if (fb->count >= fb->delay && !fb->expired) {
 			ESP_LOGI(TAG, "Re-arming lock from fob %d service.", fb->channel);
 			fob_apply_locks(fb, true, "fob_auto", false);
@@ -419,6 +422,8 @@ void fob_main()
 	fob_set_mode(&fobs[1], "momentary");
 	strcpy(fobs[1].type, "fob");
 
+	restoreFobSettings();
+
 	if (USE_MCP23017) {
 		set_mcp_io_dir(fobs[0].pin, MCP_INPUT);
 		set_mcp_io_dir(fobs[1].pin, MCP_INPUT);
@@ -427,8 +432,13 @@ void fob_main()
 		gpio_set_direction(fobs[1].pin, GPIO_MODE_INPUT);
 	}
 
+	for (int i = 0; i < NUM_OF_FOBS; i++) {
+		fobs[i].expired = true;
+		fobs[i].count = 0;
+		fobs[i].isPressed = !get_mcp_io(fobs[i].pin);
+		fobs[i].prevPress = fobs[i].isPressed;
+	}
+
   	xTaskCreate(fob_timer, "fob_timer", 4096, NULL, 10, NULL);
 	xTaskCreate(fob_service, "fob_service", 5000, NULL, 10, NULL);
-
-	restoreFobSettings();
 }

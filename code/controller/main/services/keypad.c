@@ -76,7 +76,7 @@ static void keypad_apply_locks(struct keypadButton *pad, bool arm, const char *s
 		arm_lock(bit + 1, arm, false);
 	}
 	if (do_alert && pad->alert) {
-		alert_output_signal_force(1, keypad_alert_channel(pad), pad->alert_target);
+		alert_output_signal(1, keypad_alert_channel(pad), pad->alert_target);
 	}
 }
 
@@ -141,6 +141,9 @@ void start_keypad_timer (struct keypadButton *pad, bool val)
 
 void keypad_timer_func(struct keypadButton *pad)
 {
+	if (pad->expired) {
+		return;
+	}
 	if (pad->count >= pad->delay && !pad->expired) {
 		ESP_LOGI(TAG, "Re-arming lock from pad %d service. Alert %d", pad->channel, pad->alert);
 		keypad_apply_locks(pad, true, "kp_auto", false);
@@ -472,6 +475,13 @@ void keypad_main()
 	} else {
 		gpio_set_direction(keypads[0].pin, GPIO_MODE_INPUT);
 		gpio_set_direction(keypads[1].pin, GPIO_MODE_INPUT);
+	}
+
+	for (int i = 0; i < NUM_OF_KEYPADS; i++) {
+		keypads[i].expired = true;
+		keypads[i].count = 0;
+		keypads[i].isPressed = !get_io(keypads[i].pin);
+		keypads[i].prevPress = keypads[i].isPressed;
 	}
 
   xTaskCreate(keypad_timer, "keypad_timer", 4096, NULL, 10, NULL);

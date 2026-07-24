@@ -96,7 +96,7 @@ export default async function run(api, report) {
         report.pass(`Locks: ${locks.length} channels`, '', 0);
         for (const lock of locks) {
           const ch = lock.channel;
-          const hasFields = 'enable' in lock && 'arm' in lock && 'polarity' in lock;
+          const hasFields = 'enable' in lock && 'arm' in lock && 'failSecure' in lock;
           if (hasFields) report.pass(`Lock CH${ch} fields present`, '', 0);
           else report.fail(`Lock CH${ch} missing fields`, JSON.stringify(lock), 0);
         }

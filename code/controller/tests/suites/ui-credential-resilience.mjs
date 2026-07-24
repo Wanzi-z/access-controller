@@ -74,8 +74,8 @@ const stateSnapshot = () => ({
     },
   },
   locks: [
-    { channel: 1, enable: false, arm: false, polarity: false, contact: false, sense: false, enableContactAlert: false },
-    { channel: 2, enable: false, arm: false, polarity: false, contact: false, sense: false, enableContactAlert: false },
+    { channel: 1, enable: false, arm: false, failSecure: false, contact: false, sense: false, enableContactAlert: false },
+    { channel: 2, enable: false, arm: false, failSecure: false, contact: false, sense: false, enableContactAlert: false },
   ],
   exits: [channelState(1), channelState(2)],
   fobs: [channelState(1), channelState(2)],
