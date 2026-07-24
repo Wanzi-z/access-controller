@@ -34,6 +34,7 @@ static const char *API_TAG = "api_server";
 #define OTA_UPLOAD_BUFFER_SIZE 4096
 #define OTA_REBOOT_DELAY_MS 1500
 #define WIFI_REBOOT_DELAY_MS 1000
+#define RESTART_TASK_STACK_SIZE 4096
 
 #ifndef BUILD_GIT_COMMIT
 #define BUILD_GIT_COMMIT "unknown"
@@ -96,7 +97,7 @@ static void delayed_restart_task(void *arg) {
 }
 
 static void schedule_restart(uint32_t delay_ms) {
-    xTaskCreate(delayed_restart_task, "delayed_restart", 2048, (void *)(uintptr_t)delay_ms, 5, NULL);
+    xTaskCreate(delayed_restart_task, "delayed_restart", RESTART_TASK_STACK_SIZE, (void *)(uintptr_t)delay_ms, 5, NULL);
 }
 
 static void mac_to_string(const uint8_t mac[6], char *buf, size_t size) {
@@ -887,7 +888,7 @@ static esp_err_t api_ota_upload_post_handler(httpd_req_t *req) {
         cJSON_AddStringToObject(response, "buildTime", uploaded_desc.time);
     }
 
-    if (xTaskCreate(ota_reboot_task, "ota_reboot", 2048, NULL, 5, NULL) != pdPASS) {
+    if (xTaskCreate(ota_reboot_task, "ota_reboot", RESTART_TASK_STACK_SIZE, NULL, 5, NULL) != pdPASS) {
         xSemaphoreGive(s_ota_mutex);
         cJSON_Delete(response);
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Firmware installed but reboot task failed");
@@ -1441,41 +1442,6 @@ static esp_err_t api_favicon_handler(httpd_req_t *req) {
     return httpd_resp_send(req, NULL, 0);
 }
 
-// Build JSON array of keypad PIN users
-static bool keypad_user_has_pins(cJSON *user) {
-    if (!user) {
-        return false;
-    }
-
-    const cJSON *pin = cJSON_GetObjectItemCaseSensitive(user, "pin");
-    if (cJSON_IsString(pin) && pin->valuestring && pin->valuestring[0] != '\0') {
-        return true;
-    }
-
-    const cJSON *pins = cJSON_GetObjectItemCaseSensitive(user, "pins");
-    if (!cJSON_IsArray(pins)) {
-        return false;
-    }
-
-    int count = cJSON_GetArraySize(pins);
-    for (int i = 0; i < count; i++) {
-        const cJSON *item = cJSON_GetArrayItem(pins, i);
-        if (cJSON_IsString(item) && item->valuestring && item->valuestring[0] != '\0') {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool keypad_user_is_empty_default(cJSON *user) {
-    if (!user || keypad_user_has_pins(user)) {
-        return false;
-    }
-
-    const cJSON *name = cJSON_GetObjectItemCaseSensitive(user, "name");
-    return cJSON_IsString(name) && name->valuestring && strcmp(name->valuestring, "Default User") == 0;
-}
-
 static bool pin_string_is_valid(const char *pin) {
     if (!pin) {
         return false;
@@ -1502,46 +1468,7 @@ static bool pin_mode_is_valid(const char *mode) {
          strcmp(mode, "power_off") == 0);
 }
 
-static void prune_empty_default_keypad_users(void) {
-    bool pruned = false;
-
-    do {
-        pruned = false;
-        uint32_t user_count = get_user_count_from_flash();
-        for (uint32_t i = 0; i < user_count; i++) {
-            cJSON *user = load_user_from_flash(i + 1);
-            if (!user) {
-                continue;
-            }
-
-            const cJSON *uuid_item = cJSON_GetObjectItemCaseSensitive(user, "uuid");
-            char uuid[64] = {0};
-            if (keypad_user_is_empty_default(user) &&
-                cJSON_IsString(uuid_item) &&
-                uuid_item->valuestring &&
-                uuid_item->valuestring[0] != '\0') {
-                strlcpy(uuid, uuid_item->valuestring, sizeof(uuid));
-            }
-            cJSON_Delete(user);
-
-            if (uuid[0] == '\0') {
-                continue;
-            }
-
-            esp_err_t err = delete_user_from_flash(uuid);
-            if (err == ESP_OK) {
-                ESP_LOGI(API_TAG, "Pruned empty Default User keypad record: %s", uuid);
-                pruned = true;
-                break;
-            }
-            ESP_LOGW(API_TAG, "Failed to prune empty Default User keypad record %s (%s)", uuid, esp_err_to_name(err));
-        }
-    } while (pruned);
-}
-
 static cJSON *keypad_users_snapshot(void) {
-    prune_empty_default_keypad_users();
-
     cJSON *array = cJSON_CreateArray();
     if (!array) return NULL;
 

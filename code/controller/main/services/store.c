@@ -974,7 +974,7 @@ esp_err_t store_user_to_flash(char *uuid, char *name, char *pin) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint32_t user_index = get_u32("auth_user_count", 0);
+    uint32_t user_index = get_user_count_from_flash();
     if (user_index >= MAX_USER_COUNT) {
         ESP_LOGE(STORE_TAG, "Reached maximum user count");
         return ESP_ERR_NO_MEM;
@@ -1010,13 +1010,37 @@ esp_err_t store_user_to_flash(char *uuid, char *name, char *pin) {
 }
 
 uint32_t get_user_count_from_flash(void) {
-    uint32_t user_count = get_u32("auth_user_count", 0);
-    if (user_count > MAX_USER_COUNT) {
-        ESP_LOGW(STORE_TAG, "auth_user_count=%" PRIu32 " exceeds max %d; resetting", user_count, MAX_USER_COUNT);
-        store_u32("auth_user_count", 0);
-        return 0;
+    uint32_t cached_count = get_u32("auth_user_count", 0);
+    if (ensure_spiffs() != ESP_OK) {
+        return cached_count <= MAX_USER_COUNT ? cached_count : 0;
     }
-    return user_count;
+
+    uint32_t file_count = 0;
+    DIR *dir = opendir("/spiffs");
+    if (!dir) {
+        ESP_LOGW(STORE_TAG, "Failed to scan PIN user files; using cached count");
+        return cached_count <= MAX_USER_COUNT ? cached_count : 0;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        unsigned long file_index = 0;
+        char trailing = '\0';
+        if (sscanf(entry->d_name, "user_%lu.json%c", &file_index, &trailing) == 1 &&
+            file_index < MAX_USER_COUNT && file_index + 1 > file_count) {
+            file_count = (uint32_t)file_index + 1;
+        }
+    }
+    closedir(dir);
+
+    if (cached_count != file_count) {
+        ESP_LOGW(STORE_TAG,
+                 "Repairing PIN user count from files (cached=%" PRIu32 ", files=%" PRIu32 ")",
+                 cached_count,
+                 file_count);
+        store_u32("auth_user_count", file_count);
+    }
+    return file_count;
 }
 
 esp_err_t find_pin_user_in_flash(const char* pin, pin_user_match_t *out_user) {
