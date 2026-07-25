@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -35,7 +36,8 @@ static const char *TUNNEL_TAG = "tunnel";
 #define TUNNEL_LEGACY_LAN_PORT 9001
 #define PUBLIC_SERVER_HOST "open-automation.org"
 #define PUBLIC_SERVER_PORT 443
-#define TUNNEL_RECONNECT_DELAY_MS 60000
+#define TUNNEL_RECONNECT_DELAY_MS 3000
+#define TUNNEL_CONNECT_TIMEOUT_MS 8000
 #define TUNNEL_MAX_HEADER_BYTES (64 * 1024)
 #define TUNNEL_MAX_BODY_BYTES   (128 * 1024)
 #define LOCAL_HTTP_TIMEOUT_MS   8000
@@ -1233,7 +1235,32 @@ static esp_err_t connect_tunnel_socket(tunnel_client_t *client) {
             ptr = ptr->ai_next;
             continue;
         }
-        if (connect(sock, ptr->ai_addr, ptr->ai_addrlen) == 0) {
+
+        // Non-blocking connect with a bounded timeout so a stalled connect
+        // (unreachable server, half-open network path) can't wedge the reconnect
+        // loop for the OS default (~1-2 min). Restore blocking mode once connected.
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+        int cr = connect(sock, ptr->ai_addr, ptr->ai_addrlen);
+        bool connected = (cr == 0);
+        if (cr < 0 && errno == EINPROGRESS) {
+            fd_set wset;
+            FD_ZERO(&wset);
+            FD_SET(sock, &wset);
+            struct timeval tv = {
+                .tv_sec = TUNNEL_CONNECT_TIMEOUT_MS / 1000,
+                .tv_usec = (TUNNEL_CONNECT_TIMEOUT_MS % 1000) * 1000,
+            };
+            if (select(sock + 1, NULL, &wset, NULL, &tv) > 0) {
+                int soerr = 0;
+                socklen_t slen = sizeof(soerr);
+                if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &soerr, &slen) == 0 && soerr == 0) {
+                    connected = true;
+                }
+            }
+        }
+        if (connected) {
+            fcntl(sock, F_SETFL, flags);
             break;
         }
         close(sock);
@@ -1250,6 +1277,13 @@ static esp_err_t connect_tunnel_socket(tunnel_client_t *client) {
 
     int keepalive = 1;
     setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
+    // Detect a silently-dead link quickly (~30s) so we reconnect fast instead of
+    // blocking on recv for the multi-hour OS default. Best-effort (ignored if the
+    // lwip build lacks per-socket keepalive tuning).
+    int keepidle = 15, keepintvl = 5, keepcnt = 3;
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle));
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+    setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt));
 
     client->sock = sock;
     ESP_LOGI(TUNNEL_TAG, "Connected tunnel socket to %s:%d", client->config.host, client->config.port);

@@ -660,19 +660,38 @@ class TunnelManager {
         });
 
         this.httpServer = http.createServer((req, res) => this.handleHttpRequest(req, res));
-        this.httpServer.on('error', (err) => {
-          log('error', 'HTTP server error', { error: err.message });
-        });
 
-        this.httpServer.listen(this.config.httpPort, this.config.httpBind, () => {
-          log('info', 'HTTP proxy server started', {
-            bind: this.config.httpBind,
-            port: this.config.httpPort,
+        // Bind the HTTP proxy with a self-healing retry. On boot this service can
+        // start before Docker creates docker0, so httpBind (e.g. 172.17.0.1) may not
+        // exist yet and listen() fails with EADDRNOTAVAIL. Rather than swallow that
+        // error and leave the proxy permanently dark, retry until the address appears.
+        const bindHttpProxy = () => {
+          this.httpServer.listen(this.config.httpPort, this.config.httpBind, () => {
+            log('info', 'HTTP proxy server started', {
+              bind: this.config.httpBind,
+              port: this.config.httpPort,
+            });
+
+            this.startHeartbeat();
+            resolve();
           });
+        };
 
-          this.startHeartbeat();
-          resolve();
+        this.httpServer.on('error', (err) => {
+          log('error', 'HTTP server error', { error: err.message, code: err.code });
+          if (err.code === 'EADDRNOTAVAIL' || err.code === 'EADDRINUSE') {
+            setTimeout(() => {
+              log('info', 'Retrying HTTP proxy bind', {
+                bind: this.config.httpBind,
+                port: this.config.httpPort,
+              });
+              try { this.httpServer.close(); } catch (_) { /* not yet listening */ }
+              bindHttpProxy();
+            }, 3000);
+          }
         });
+
+        bindHttpProxy();
       });
       this.tunnelServer.on('error', reject);
     });

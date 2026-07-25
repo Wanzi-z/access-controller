@@ -82,6 +82,129 @@ ExecStart=/usr/bin/autossh -M 0 \
 
 ---
 
+## Device control tunnel & Device Manager HTTP proxy (`esp32-tunnel`)
+
+This is a **separate tunnel from `device-manager-tunnel`** above. That one exposes
+the Device Manager *UI* to the internet. This one lets Device Manager **reach and
+control an Access Controller that is not on the LAN** — e.g. when the controller is
+on a NAT'd / guest / test network (like `ec3409`) where its STA IP (`10.238.65.x`)
+is not routable from `sonic`.
+
+### Path
+
+```
+Access Controller (STA on ec3409, NAT'd)
+      │  outbound TCP, firmware tunnel client (main/services/tunnel.c)
+      ▼
+142.93.57.114:9111   (VPS; listener is the remote end of an ssh -R from sonic)
+      │  ssh -R 0.0.0.0:9111:localhost:9111   (autossh, runs on sonic)
+      ▼
+sonic localhost:9111  ── esp32-tunnel server (code/tunnel/src/server.js)
+      │                    • accepts the device TCP, registers it by device id
+      │                    • exposes an HTTP proxy on 172.17.0.1:9110
+      ▼
+Device Manager container (8102) ── host.docker.internal:9110/device/{uuid}/<path>
+      DEVICE_MANAGER_ACCESS_CONTROLLER_TUNNEL_HTTP_BASE=http://host.docker.internal:9110
+```
+
+The controller registers on the tunnel with the external id
+`access-controller:acce5501-…`. Device Manager maps its own device id
+(`f7f34b9f-…`) to that external id and, for `source=discovery:punched` devices,
+**prioritises the tunnel proxy URL** over the (unreachable) STA IP. So
+`GET /api/devices/{id}/access-controller/state`, the `/access-controller/proxy/<path>`
+routes, and `/access-controller/ota` all flow device→tunnel→proxy→DM with no LAN
+reachability required.
+
+### Components
+
+| Piece | Where | Role |
+|---|---|---|
+| Firmware tunnel client | `code/controller/main/services/tunnel.c` | dials `142.93.57.114:9111`, streams control/OTA frames |
+| `ssh -R 9111` | autossh on sonic | forwards VPS `:9111` → sonic `localhost:9111` |
+| esp32-tunnel server | `code/tunnel/src/server.js`, `esp32-tunnel.service` | device TCP on `:9111`, HTTP proxy on `172.17.0.1:9110` |
+| DM proxy client | device-manager `/app/server/api.py` | `DEVICE_MANAGER_ACCESS_CONTROLLER_TUNNEL_HTTP_BASE` → `…/device/{uuid}/…` |
+
+### `esp32-tunnel.service` (deploy requirements)
+
+```ini
+# /etc/systemd/system/esp32-tunnel.service  (NOT in the repo — record it here)
+[Unit]
+After=network-online.target docker.service      # docker.service is REQUIRED — see boot race below
+Wants=network-online.target docker.service
+[Service]
+WorkingDirectory=/home/andy/projects/access-controller/code/tunnel
+Environment=TUNNEL_BIND=0.0.0.0
+Environment=TUNNEL_PORT=9111
+Environment=HTTP_BIND=172.17.0.1                 # docker0 gateway; how the DM container reaches the proxy
+Environment=HTTP_PORT=9110
+ExecStart=/usr/local/bin/node …/code/tunnel/src/server.js
+Restart=always
+```
+
+`HTTP_BIND=172.17.0.1` is deliberate: the DM container resolves
+`host.docker.internal` to the docker0 gateway (`172.17.0.1`) via its
+`extra_hosts: ["host.docker.internal:host-gateway"]`, so binding there (rather than
+`0.0.0.0`) keeps the control proxy off the LAN while still reachable by the container.
+
+### The boot-race bug (fixed)
+
+**Symptom:** device shows ONLINE but every DM control call 502s / connection-refused.
+**Cause:** `esp32-tunnel` starts before Docker creates `docker0`, so
+`httpServer.listen(9110, '172.17.0.1')` fails `EADDRNOTAVAIL`; the old code logged and
+swallowed it, leaving the proxy permanently dark while `:9111` came up fine.
+**Fix (two layers):**
+1. `server.js` retries the HTTP-proxy bind every 3s on `EADDRNOTAVAIL`/`EADDRINUSE`
+   until the address exists (self-healing, survives any startup ordering).
+2. `After=docker.service` / `Wants=docker.service` on the unit (defense in depth).
+
+### Device-side reconnect hardening
+
+`tunnel.c` previously waited 60s between reconnects and used a **blocking `connect()`**
+with no timeout, so a stall during a network change could wedge the tunnel task
+indefinitely (observed: ~50 min dark until a reboot). Hardened to:
+- `TUNNEL_RECONNECT_DELAY_MS = 3000` (was 60000)
+- non-blocking `connect()` + `select()` with `TUNNEL_CONNECT_TIMEOUT_MS = 8000`
+- `TCP_KEEPIDLE=15 / KEEPINTVL=5 / KEEPCNT=3` for ~30s dead-link detection
+
+Verified: forcing a drop (restart the tunnel server) now recovers in **~4s**.
+
+### Operations
+
+```bash
+# Is the proxy up and the device connected? (run on sonic)
+ss -tlnp | grep -E ':9110|:9111'                 # want BOTH listening
+DEV=acce5501-b8f8-42cb-9aa0-05c0085e08b7
+curl -s -o /dev/null -w '%{http_code}\n' http://172.17.0.1:9110/device/$DEV/api/state
+#   200 = device connected;  404 "Device Not Connected" = proxy healthy, device offline
+
+# Prove reachability from the DM's own docker network:
+docker run --rm --network device-manager_device_net --add-host host.docker.internal:host-gateway \
+  alpine wget -qO- http://host.docker.internal:9110/device/$DEV/api/state
+
+# Live state through Device Manager's front door:
+DMID=f7f34b9f-7ee3-5519-a8db-f703581931c0
+curl -s http://localhost:8102/api/devices/$DMID/access-controller/state
+
+# Buttonless OTA through Device Manager (streams to the device over the tunnel):
+curl -X POST http://localhost:8102/api/devices/$DMID/access-controller/ota \
+  -H 'x-firmware-filename: controller.bin' \
+  --data-binary @code/controller/build/controller.bin
+#   (no Origin header → passes the DM origin check; device writes app0/app1, marks valid, reboots)
+```
+
+### Troubleshooting
+
+- **`ss` shows only `:9111`, not `:9110`** → the proxy failed to bind. With the
+  bind-retry in place this self-heals; otherwise `sudo systemctl restart esp32-tunnel`
+  once `docker0` exists (`ip addr show docker0`).
+- **Proxy returns 404 "Device Not Connected"** → the proxy is fine; the *device*
+  isn't dialed in. Check the controller serial/log for `tunnel: Connected …`. If it's
+  wedged on old firmware, reboot it buttonless with `code/controller/reset_to_app.sh`.
+- **Device on `ec3409` never reconnects after a server restart** → it's running
+  pre-hardening firmware; reboot it once (reset script) and it reconnects in ~4s.
+
+---
+
 ## URLs & Endpoints
 
 **Security note:** The unauthenticated public surface is intentionally narrow.
@@ -209,10 +332,13 @@ curl -X POST https://open-automation.org/devices \
 ## How the Access Controller connects
 
 The Access Controller firmware punches into Device Manager with an HTTPS POST.
-Device Manager then controls the controller over the LAN-reachable STA IP or
-through its private proxy path. The ESP32-side raw TCP tunnel is experimental
-and should stay disabled for normal deploy/test work unless specifically being
-debugged.
+Device Manager controls the controller over the LAN-reachable STA IP when both
+are on the same network, or — when the controller is on a NAT'd / remote network
+(e.g. `ec3409`) where its STA IP is not routable — through the reverse **device
+control tunnel and HTTP proxy** documented above (`esp32-tunnel`). The tunnel path
+is the robust default for off-LAN control; on `ec3409` the direct "punch" fails
+(`ESP_ERR_HTTP_CONNECT`) and the firmware correctly stays on Wi-Fi/LAN while the
+tunnel carries all control traffic.
 
 ### Firmware punch behavior
 
