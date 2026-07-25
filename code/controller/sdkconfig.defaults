@@ -13,3 +13,6 @@ CONFIG_LWIP_TCP_MSL=5000
 CONFIG_LWIP_TCP_FIN_WAIT_TIMEOUT=5000
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
 CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+# WebSocket support in esp_http_server — required by main/services/ws_server.c.
+# Without this a clean clone fails to build (httpd_ws_frame_t undeclared).
+CONFIG_HTTPD_WS_SUPPORT=y
