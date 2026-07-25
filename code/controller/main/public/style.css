@@ -2951,3 +2951,14 @@ button.secondary.danger {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Arm/disarm pill shows the lock state inline: armed keeps the theme's teal
+   "checked" look; disarmed (unlocked) reads amber so the state is unmistakable. */
+.form-switch.lock-toggle-pill.arm-pill.is-disarmed {
+  background: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.5);
+  color: #b45309;
+}
+@media (prefers-color-scheme: dark) {
+  .form-switch.lock-toggle-pill.arm-pill.is-disarmed { color: #fbbf24; }
+}

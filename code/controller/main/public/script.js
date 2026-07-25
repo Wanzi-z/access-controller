@@ -773,6 +773,15 @@ const setCardAlertTargetState = (targetId, alertTarget, alert = true) => {
   setSelectValueIfIdle(targetId, normalizeAlertTarget(alertTarget, alert));
 };
 
+const setLockArmState = (ch, armed) => {
+  const label = document.getElementById(`armLabel_${ch}`);
+  if (!label) return;
+  // Show the state right in the arm button: locked+Armed vs unlocked+Disarmed.
+  label.textContent = armed ? '🔒 Armed' : '🔓 Disarmed';
+  const pill = label.closest('.lock-toggle-pill');
+  if (pill) pill.classList.toggle('is-disarmed', !armed);
+};
+
 const applyLockState = (locks = []) => {
   locks.forEach((lock) => {
     const ch = lock.channel;
@@ -786,6 +795,7 @@ const applyLockState = (locks = []) => {
     if (enableEl) enableEl.checked = !!lock.enable;
     setCardEnabledState(`enableLock_${ch}`, !!lock.enable);
     if (armEl) armEl.checked = !!lock.arm;
+    setLockArmState(ch, !!lock.arm, !!lock.enable);
     if (contactEl) contactEl.checked = !!lock.enableContactAlert;
     setCardAlertTargetState(`alertTargetLock_${ch}`, lock.alert_target, !!lock.enableContactAlert);
     if (failSecureEl) failSecureEl.checked = !!lock.failSecure;
@@ -2453,6 +2463,8 @@ const setupLockHandlers = () => {
     }
     if (armEl) {
       armEl.addEventListener('change', (event) => {
+        const enabled = document.getElementById(`enableLock_${ch}`)?.checked !== false;
+        setLockArmState(ch, event.target.checked, enabled);
         updateLock(ch, { arm: event.target.checked });
       });
     }

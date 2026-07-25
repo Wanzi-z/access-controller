@@ -13,7 +13,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="style.css?v=36">
+  <link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
   <header class="app-bar">
@@ -71,11 +71,11 @@
                   <span>Contact alert</span>
                 </label>
                 <div class="lock-toggle-row">
-                  <label class="form-switch lock-toggle-pill">
+                  <label class="form-switch lock-toggle-pill arm-pill">
                     <input type="checkbox" id="arm_1">
-                    <span>Arm lock</span>
+                    <span id="armLabel_1">🔓 Disarmed</span>
                   </label>
-                  <label class="form-switch lock-toggle-pill" title="Checked = fail-secure (locked when power is lost). Unchecked = fail-safe (unlocked when power is lost).">
+                  <label class="form-switch lock-toggle-pill" title="Keep CHECKED for this lock: armed drives the door LOCKED, a valid credential unlocks it. Only uncheck if the lock behaves inverted (opens when it should lock).">
                     <input type="checkbox" id="failSecure_1">
                     <span>Fail-secure</span>
                   </label>
@@ -102,11 +102,11 @@
                   <span>Contact alert</span>
                 </label>
                 <div class="lock-toggle-row">
-                  <label class="form-switch lock-toggle-pill">
+                  <label class="form-switch lock-toggle-pill arm-pill">
                     <input type="checkbox" id="arm_2">
-                    <span>Arm lock</span>
+                    <span id="armLabel_2">🔓 Disarmed</span>
                   </label>
-                  <label class="form-switch lock-toggle-pill" title="Checked = fail-secure (locked when power is lost). Unchecked = fail-safe (unlocked when power is lost).">
+                  <label class="form-switch lock-toggle-pill" title="Keep CHECKED for this lock: armed drives the door LOCKED, a valid credential unlocks it. Only uncheck if the lock behaves inverted (opens when it should lock).">
                     <input type="checkbox" id="failSecure_2">
                     <span>Fail-secure</span>
                   </label>
@@ -599,6 +599,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="script.js?v=36"></script>
+  <script src="script.js?v=41"></script>
 </body>
 </html>
