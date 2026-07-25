@@ -192,6 +192,9 @@ curl -X POST http://localhost:8102/api/devices/$DMID/access-controller/ota \
 #   (no Origin header → passes the DM origin check; device writes app0/app1, marks valid, reboots)
 ```
 
+> All firmware-delivery methods (LAN, this DM-tunnel path, AP-mode, serial recovery) and how to
+> verify an OTA landed are consolidated in [`code/controller/FLASHING.md`](../code/controller/FLASHING.md).
+
 ### Troubleshooting
 
 - **`ss` shows only `:9111`, not `:9110`** → the proxy failed to bind. With the

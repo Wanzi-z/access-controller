@@ -7,6 +7,10 @@ proving AP recovery, switching between two Wi-Fi networks, validating the
 Use this runbook when a new board is plugged in, after firmware/UI changes, or
 before an install handoff.
 
+> **Deploying firmware?** For the quick decision table and every DEPLOY / OTA / USB
+> method (LAN, Device Manager tunnel, AP-mode in the field, serial recovery), see the
+> authoritative reference: [`code/controller/FLASHING.md`](../code/controller/FLASHING.md).
+
 ## Known Endpoints
 
 - Repo: `/home/andy/projects/access-controller`
@@ -259,6 +263,11 @@ Pass evidence:
 - Public `GET /devices/` is authenticated, not open.
 
 ## 8. OTA Deploy
+
+> Full OTA options — LAN via `tools/ota_client.py`, off-LAN through the Device Manager
+> tunnel, and AP-mode in the field — are in
+> [`code/controller/FLASHING.md`](../code/controller/FLASHING.md). The direct call below is
+> the raw `/api/ota/upload` endpoint they all funnel through.
 
 Direct controller OTA:
 
