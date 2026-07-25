@@ -815,6 +815,7 @@ const applyExitState = (exits = []) => {
     const enableEl = document.getElementById(`enableExit_${ch}`);
     const alertEl = document.getElementById(`alertExit_${ch}`);
     const latchEl = document.getElementById(`latchExit_${ch}`);
+    const invertEl = document.getElementById(`invertExit_${ch}`);
     const delayEl = document.getElementById(`armDelay_${ch}`);
 
     if (enableEl) enableEl.checked = !!exit.enable;
@@ -823,6 +824,7 @@ const applyExitState = (exits = []) => {
     setCardTargetState(`targetExit_${ch}`, exit.channel_mask, ch);
     setCardAlertTargetState(`alertTargetExit_${ch}`, exit.alert_target, !!exit.alert);
     if (latchEl) latchEl.checked = !!exit.latch;
+    if (invertEl) invertEl.checked = !!exit.invert;
     setCardModeState(`modeExit_${ch}`, exit.mode, !!exit.latch);
     if (delayEl) delayEl.value = exit.delay ?? 0;
     applySignalDot(`exitSignal_${ch}`, exit.signal);
@@ -2489,10 +2491,16 @@ const setupExitHandlers = () => {
     const enableEl = document.getElementById(`enableExit_${ch}`);
     const alertEl = document.getElementById(`alertExit_${ch}`);
     const latchEl = document.getElementById(`latchExit_${ch}`);
+    const invertEl = document.getElementById(`invertExit_${ch}`);
 
     if (enableEl) {
       enableEl.addEventListener('change', (event) => {
         updateExit(ch, { enable: event.target.checked });
+      });
+    }
+    if (invertEl) {
+      invertEl.addEventListener('change', (event) => {
+        updateExit(ch, { invert: event.target.checked });
       });
     }
     if (alertEl) {
