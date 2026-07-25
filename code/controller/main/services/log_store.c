@@ -16,6 +16,16 @@
 #define LOG_STORE_KEY       "ring"
 #define LOG_STORE_BLOB_VERSION 0x00010000u
 
+/*
+ * Keep diagnostic logs in RAM only. The 20K NVS partition is shared with device
+ * settings/credentials/wifi; persisting the log ring here filled it, so every
+ * settings save had to evict the log blob and retry — thrashing NVS, starving
+ * heap, and stalling the HTTP server (device looked like it was rebooting).
+ * Logs still serve from RAM via /api/logs within a session; they just no longer
+ * survive a reboot. Set to 1 only if the NVS partition is enlarged.
+ */
+#define LOG_STORE_PERSIST 0
+
 typedef struct {
     uint64_t timestamp_ms;
     int64_t unix_time;
@@ -159,6 +169,21 @@ static esp_err_t erase_persisted_ring(nvs_handle_t handle) {
 }
 
 static esp_err_t flush_ring_locked(void) {
+#if !LOG_STORE_PERSIST
+    // Persistence disabled: free any previously stored log blob exactly once to
+    // reclaim NVS space, then never touch NVS again for logs.
+    static bool s_freed_persisted_blob = false;
+    if (!s_freed_persisted_blob) {
+        nvs_handle_t free_handle;
+        if (open_handle(&free_handle) == ESP_OK) {
+            erase_persisted_ring(free_handle);
+            nvs_close(free_handle);
+        }
+        s_freed_persisted_blob = true;
+    }
+    s_dirty_entries = 0;
+    return ESP_OK;
+#else
     nvs_handle_t handle;
     if (open_handle(&handle) != ESP_OK) {
         return ESP_FAIL;
@@ -245,6 +270,7 @@ static esp_err_t flush_ring_locked(void) {
 
     nvs_close(handle);
     return err;
+#endif
 }
 
 int log_store_init(void) {

@@ -518,7 +518,10 @@ esp_err_t start_file_server(const char *base_path)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = 64; // allow API, websocket, OTA, upload, schedules, and embedded asset routes
-    config.max_open_sockets = 7;
+    // LWIP_MAX_SOCKETS is 10; leave headroom for the tunnel/ws/DNS sockets and cap
+    // how many heavy JSON responses (/api/state etc.) can build concurrently, so a
+    // burst of clients degrades (lru_purge) instead of exhausting heap and crashing.
+    config.max_open_sockets = 5;
     config.backlog_conn = 4;
     config.lru_purge_enable = true;
     config.task_priority = 8;

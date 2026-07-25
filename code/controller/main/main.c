@@ -288,6 +288,18 @@ esp_err_t http_event_handle(esp_http_client_event_t *evt) {
     return ESP_OK;
 }
 
+static bool firmware_md5_is_valid(const char *md5) {
+    if (!md5 || strlen(md5) != 32) {
+        return false;
+    }
+    for (int i = 0; i < 32; i++) {
+        if (!isxdigit((unsigned char)md5[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void fetch_firmware_md5_from_server(char *buffer, size_t buffer_size, const char *server_ip, const char *server_port) {
     if (!buffer || buffer_size == 0) {
         return;
@@ -485,9 +497,14 @@ static bool server_policy_allows_station_with_check(bool run_check_in_current_ta
         }
     }
 
-    ESP_LOGW(TAG, "Configured server URL is not reachable; station mode rejected by policy");
-    automation_record_log("Server unreachable; falling back to AP mode");
-    return false;
+    // Best-effort punch failed. Do NOT drop the LAN connection over it — local
+    // reachability (and physical door control) must never depend on a cloud
+    // server being reachable. Stay in station mode; the tunnel/punch retry in the
+    // background. This prevents the device from stranding itself in AP mode (and
+    // off the LAN) during any open-automation.org outage or transient TLS failure.
+    ESP_LOGW(TAG, "Configured server URL is not reachable; keeping station mode anyway");
+    automation_record_log("Server unreachable; staying on WiFi/LAN (not falling back to AP)");
+    return true;
 }
 
 typedef struct {
@@ -702,13 +719,18 @@ void app_main(void) {
         fetch_firmware_md5_from_server(latest_firmware_md5, sizeof(latest_firmware_md5), server_ip, server_port);
 
         snprintf(ota_url, sizeof(ota_url), "http://%s:%s/firmware.bin", server_ip, server_port);
-        // Compare the latest firmware MD5 hash with the stored one
-        need_to_update_firmware = strcmp(stored_firmware_md5, latest_firmware_md5) != 0;
+        // Only self-update when the server returned a *valid* MD5 that differs from
+        // ours. A failed or garbled fetch (e.g. a misconfigured server, or plain
+        // http against an https:443 endpoint) previously left an empty/garbage hash
+        // here yet still triggered esp_https_ota on every boot — a large transient
+        // allocation during the tightest-heap window that could OOM-crash startup.
+        // Manual OTA (tools/ota_client.py) and the tunnel OTA path are unaffected.
+        need_to_update_firmware =
+            firmware_md5_is_valid(latest_firmware_md5) &&
+            strcmp(stored_firmware_md5, latest_firmware_md5) != 0;
 
         if (need_to_update_firmware) {
-            if (latest_firmware_md5[0] != '\0') {
-                store_char("firmware_md5", latest_firmware_md5);
-            }
+            store_char("firmware_md5", latest_firmware_md5);
             perform_ota_update(ota_url);
         }
 
