@@ -319,6 +319,9 @@ static void apply_wiegand_card_action(struct wiegand *wg_entry,
     if (channel_mask <= 0 || channel_mask > 3) {
         channel_mask = 1 << (wg_entry->channel - 1);
     }
+    // Fire the enabled lock even if the card is targeted at a disabled one — same
+    // rule the exits use, so a tag never "beeps but doesn't unlock".
+    channel_mask = lock_resolve_target_mask(channel_mask);
     const char *mode = user->mode[0] != '\0' ? user->mode : "momentary";
     bool did_action = false;
     for (int bit = 0; bit < NUM_OF_WIEGANDS; bit++) {
@@ -622,9 +625,17 @@ static bool apply_pin_user_action(const pin_user_match_t *user, int reader_chann
         return false;
     }
 
+    int channel_mask = user->channel_mask;
+    if (channel_mask <= 0 || channel_mask > 3) {
+        channel_mask = 1 << (reader_channel - 1);
+    }
+    // Same rule as cards/exits: a PIN targeted at a disabled lock still fires the
+    // enabled one instead of beeping without unlocking.
+    channel_mask = lock_resolve_target_mask(channel_mask);
+
     bool did_action = false;
     for (int bit = 0; bit < NUM_OF_WIEGANDS; bit++) {
-        if ((user->channel_mask & (1 << bit)) == 0) {
+        if ((channel_mask & (1 << bit)) == 0) {
             continue;
         }
         int channel = bit + 1;

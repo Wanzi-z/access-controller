@@ -99,6 +99,39 @@ typedef struct {
 
 Lock locks[NUM_OF_LOCKS];
 
+/*
+ * Map an input's configured lock target (channel_mask, 1=Lock1, 2=Lock2, 3=both)
+ * onto the locks that are actually enabled. If the targeted lock(s) are all
+ * disabled, fall back to the lowest-numbered enabled lock so an input wired to
+ * the "other" channel still fires the enabled (e.g. front-entrance) lock instead
+ * of silently doing nothing. This mirrors the web UI, which normalizes the shown
+ * target to the enabled locks the same way.
+ */
+int lock_resolve_target_mask(int mask) {
+    if (mask <= 0 || mask > 3) {
+        return mask;  // invalid/unspecified; leave defaulting to the caller
+    }
+    int enabled_mask = 0;
+    for (int i = 0; i < NUM_OF_LOCKS; i++) {
+        if (locks[i].enable) {
+            enabled_mask |= (1 << (locks[i].channel - 1));
+        }
+    }
+    if (enabled_mask == 0) {
+        return mask;  // nothing enabled to redirect to
+    }
+    int resolved = mask & enabled_mask;
+    if (resolved != 0) {
+        return resolved;  // at least one targeted lock is enabled
+    }
+    for (int bit = 0; bit < NUM_OF_LOCKS; bit++) {
+        if (enabled_mask & (1 << bit)) {
+            return (1 << bit);  // lowest-numbered enabled lock
+        }
+    }
+    return mask;
+}
+
 static char s_last_action_source[24] = "sys";
 static SemaphoreHandle_t s_action_source_mutex;
 static StaticSemaphore_t s_action_source_mutex_storage;
@@ -288,8 +321,11 @@ void arm_lock(int channel, bool arm, bool alert) {
     bool requested_arm = arm;
     locks[ch].shouldLock = requested_arm;
 
+    // Calibrated against the door: control pin HIGH (out=1) = LOCKED, LOW (out=0)
+    // = UNLOCKED. With fail-secure ON, armed must drive out=1 (locked) and disarm
+    // out=0 (unlock) — i.e. no inversion for fail-secure; fail-safe inverts.
     bool output_level = requested_arm;
-    if (locks[ch].fail_secure) {
+    if (!locks[ch].fail_secure) {
         output_level = !output_level;
     }
 
@@ -621,12 +657,41 @@ static void lock_service(void *pvParameter) {
     }
 }
 
+/*
+ * Drive a lock's control output to match its (restored) armed state. Used at boot
+ * so the lock powers up in the correct state instead of floating at the MCP23017
+ * output default (LOW), which leaves a fail-safe lock unlocked until the first
+ * exit/arm event.
+ */
+static void lock_apply_output_state(Lock *lck) {
+    // Same polarity as arm_lock(): fail-secure armed -> HIGH/out=1/locked.
+    bool output_level = lck->shouldLock;
+    if (!lck->fail_secure) {
+        output_level = !output_level;
+    }
+    set_io(lck->controlPin, output_level);
+}
+
 void lock_main() {
     ESP_LOGI(TAG, "Starting lock service.");
-    TaskHandle_t lock_service_task;
 
     lock_init();
     restoreLockSettings();
+
+    // Always boot armed/secure. An access controller must come up LOCKED after a
+    // power loss or restart, never open — regardless of the last runtime arm state.
+    for (int i = 0; i < NUM_OF_LOCKS; i++) {
+        locks[i].shouldLock = true;
+        lock_apply_output_state(&locks[i]);
+        char message[96];
+        snprintf(message, sizeof(message),
+                 "Lock%d boot output arm=%d fail_secure=%d enable=%d",
+                 locks[i].channel,
+                 locks[i].shouldLock ? 1 : 0,
+                 locks[i].fail_secure ? 1 : 0,
+                 locks[i].enable ? 1 : 0);
+        automation_record_log(message);
+    }
 
     xTaskCreate(&lock_service, "lock_service_task", 6 * 1024, NULL, 5, NULL);
     xTaskCreate(lock_contact_timer, "lock_contact_timer", 4 * 1000, NULL, 10, NULL);

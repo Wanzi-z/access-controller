@@ -70,6 +70,7 @@ static void keypad_apply_locks(struct keypadButton *pad, bool arm, const char *s
 {
 	int mask = pad->channel_mask;
 	if (mask <= 0 || mask > 3) mask = 1 << (pad->channel - 1);
+	mask = lock_resolve_target_mask(mask);
 	for (int bit = 0; bit < 2; bit++) {
 		if ((mask & (1 << bit)) == 0) continue;
 		lock_set_action_source(source);

@@ -49,6 +49,7 @@ int64_t automation_unix_time_for_timestamp_ms(uint64_t timestamp_ms);
 void automation_log_boot_event(void);
 void arm_lock(int channel, bool arm, bool alert);
 void lock_set_action_source(const char *source);
+int lock_resolve_target_mask(int mask);
 
 
 #endif // AUTOMATION_H
